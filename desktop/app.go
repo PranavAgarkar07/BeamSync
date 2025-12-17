@@ -108,17 +108,25 @@ func findSoundDir() (string, error) {
 // processEvents handles events on a safe goroutine
 func (a *App) processEvents() {
 	for event := range a.eventChan {
-		// This runs in a separate goroutine, safe from HTTP handler
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					fmt.Printf("⚠️ Event processing panic: %v\n", r)
-				}
-			}()
-			runtime.EventsEmit(a.ctx, event.Name, event.Data)
-			fmt.Printf("✅ Event emitted: %s\n", event.Name)
-		}()
+		a.safeEmit(event.Name, event.Data)
 	}
+}
+
+// safeEmit safely emits an event to the frontend, handling panics and nil context
+func (a *App) safeEmit(eventName string, data interface{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("⚠️ safeEmit panic for event '%s': %v\n", eventName, r)
+		}
+	}()
+
+	if a.ctx == nil {
+		fmt.Printf("⚠️ safeEmit: Context is nil, cannot emit event '%s'\n", eventName)
+		return
+	}
+
+	runtime.EventsEmit(a.ctx, eventName, data)
+	fmt.Printf("✅ Event emitted: %s\n", eventName)
 }
 
 // shutdown is called when the app is closing
@@ -178,7 +186,7 @@ func (a *App) StartReceiverDefault() string {
 		a.eventChan <- EventData{Name: name, Data: data}
 	})
 
-	app, port := beamsync.StartServer(savePath)
+	app, port := beamsync.StartServer(savePath, 3000)
 	a.serverApp = app
 
 	localIP := getLocalIP()
@@ -212,7 +220,7 @@ func (a *App) StartReceiver() string {
 		a.eventChan <- EventData{Name: name, Data: data}
 	})
 
-	app, port := beamsync.StartServer(selection)
+	app, port := beamsync.StartServer(selection, 3000)
 	a.serverApp = app
 
 	localIP := getLocalIP()
@@ -256,7 +264,7 @@ func (a *App) StartSender() string {
 	// Emit event to frontend with the URL
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		runtime.EventsEmit(a.ctx, "sender_started", url)
+		a.safeEmit("sender_started", url)
 	}()
 
 	return url
@@ -324,17 +332,13 @@ func (a *App) OpenFile(filename string) string {
 // HELPER
 // ---------------------------------------------------------
 func getLocalIP() string {
-	addrs, err := net.InterfaceAddrs()
+	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
-		fmt.Println("⚠️ Failed to get network interfaces:", err)
+		fmt.Println("⚠️ Failed to dial for local IP detection:", err)
 		return "127.0.0.1"
 	}
-	for _, address := range addrs {
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
-			}
-		}
-	}
-	return "127.0.0.1"
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP.String()
 }
