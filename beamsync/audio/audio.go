@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"io"
 	"log"
 	"os"
 	"time"
@@ -39,9 +40,13 @@ func (ae *AudioEngine) LoadSound(name string, filename string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	return ae.LoadSoundFromStream(name, f)
+}
 
-	streamer, format, err := wav.Decode(f)
+func (ae *AudioEngine) LoadSoundFromStream(name string, rc io.ReadCloser) error {
+	defer rc.Close()
+
+	streamer, format, err := wav.Decode(rc)
 	if err != nil {
 		return err
 	}

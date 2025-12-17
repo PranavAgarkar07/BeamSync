@@ -11,6 +11,11 @@ desktop/wailsjs/
 # Packaging
 build/linux/deb_pkg/
 build/linux/*.deb
+desktop/AppDir/
+*.AppImage
+
+# Build Artifacts
+desktop/build/bin/
 
 # Go workspace
 go.work

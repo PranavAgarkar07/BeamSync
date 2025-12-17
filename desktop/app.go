@@ -4,6 +4,7 @@ import (
 	"beamsync"
 	"beamsync/audio"
 	"context"
+	"embed"
 	"fmt"
 	"net"
 	"os"
@@ -14,6 +15,9 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+//go:embed sounds/*.wav
+var soundFS embed.FS
 
 // App struct
 type App struct {
@@ -55,59 +59,32 @@ func (a *App) startup(ctx context.Context) {
 	if err := a.audio.Init(); err != nil {
 		fmt.Println("⚠️ Audio Init Failed:", err)
 	} else {
-		soundDir, err := findSoundDir()
-		if err != nil {
-			fmt.Println("⚠️ Could not locate sound directory:", err)
-		} else {
-			fmt.Println("🔊 Found sound directory:", soundDir)
-			sounds := map[string]string{
-				"hover":   "hover.wav",
-				"click":   "click.wav",
-				"blip":    "hover.wav",
-				"connect": "connect.wav",
-				"success": "transfer_complete.wav",
-				"startup": "startup.wav",
+		fmt.Println("🔊 Loading embedded sounds...")
+		sounds := map[string]string{
+			"hover":   "hover.wav",
+			"click":   "click.wav",
+			"blip":    "hover.wav",
+			"connect": "connect.wav",
+			"success": "transfer_complete.wav",
+			"startup": "startup.wav",
+		}
+
+		for name, file := range sounds {
+			// Access embedded file
+			f, err := soundFS.Open("sounds/" + file)
+			if err != nil {
+				fmt.Printf("⚠️ Failed to open embedded sound '%s': %v\n", file, err)
+				continue
 			}
 
-			for name, file := range sounds {
-				path := filepath.Join(soundDir, file)
-				if err := a.audio.LoadSound(name, path); err != nil {
-					fmt.Printf("⚠️ Failed to load sound '%s' (%s): %v\n", name, path, err)
-				} else {
-					fmt.Printf("🔊 Loaded sound: %s\n", name)
-				}
+			// LoadSoundFromStream (closes f automatically)
+			if err := a.audio.LoadSoundFromStream(name, f); err != nil {
+				fmt.Printf("⚠️ Failed to load sound '%s': %v\n", name, err)
+			} else {
+				fmt.Printf("🔊 Loaded sound: %s\n", name)
 			}
 		}
 	}
-}
-
-func findSoundDir() (string, error) {
-	// Priority list of paths to check
-	possiblePaths := []string{
-		"build/bin/sounds",                 // Dev: standard relative path
-		"../build/bin/sounds",              // Dev: alternative relative
-		"sounds",                           // Binary: adjacent folder
-		"/usr/share/beamsync/sounds",       // Linux: system install
-		"/usr/local/share/beamsync/sounds", // Linux: local install
-	}
-
-	// Also check executable path
-	exe, err := os.Executable()
-	if err == nil {
-		exeDir := filepath.Dir(exe)
-		possiblePaths = append([]string{filepath.Join(exeDir, "sounds")}, possiblePaths...)
-		// Check "resources" folder for mac/windows style if needed later
-		possiblePaths = append([]string{filepath.Join(exeDir, "../Resources/sounds")}, possiblePaths...)
-	}
-
-	for _, path := range possiblePaths {
-		info, err := os.Stat(path)
-		if err == nil && info.IsDir() {
-			absPath, _ := filepath.Abs(path)
-			return absPath, nil
-		}
-	}
-	return "", fmt.Errorf("no valid sound directory found")
 }
 
 // processEvents handles events on a safe goroutine
