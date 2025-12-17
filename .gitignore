@@ -1,9 +1,7 @@
 # Binaries
-desktop/build/bin/
-*.exe
-*.dll
-*.so
-*.dylib
+# *.dll
+# *.so
+# *.dylib
 
 # Wails
 desktop/frontend/dist/

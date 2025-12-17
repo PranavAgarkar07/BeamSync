@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BeamSync Uplink</title>
+    <style>
+        :root {
+            --bg: #000000;
+            --primary: #00ff41;
+            --glass: rgba(0, 255, 65, 0.1);
+            --border: #00ff41;
+            --text: #00ff41;
+            --scanline: rgba(0, 255, 65, 0.05);
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        .scanlines {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0,0,0,0) 0px,
+                rgba(0,0,0,0) 1px,
+                var(--scanline) 1px,
+                var(--scanline) 2px
+            );
+            pointer-events: none;
+            z-index: 0;
+        }
+        .container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        h1 {
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px var(--primary);
+        }
+        .upload-zone {
+            border: 2px dashed var(--primary);
+            background: var(--glass);
+            padding: 40px 20px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            position: relative;
+            transition: all 0.3s;
+        }
+        .upload-zone:active {
+            background: rgba(0, 255, 65, 0.2);
+        }
+        input[type="file"] {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .btn {
+            background: var(--bg);
+            color: var(--primary);
+            border: 2px solid var(--primary);
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            font-family: inherit;
+            cursor: pointer;
+            text-transform: uppercase;
+            width: 100%;
+            margin-bottom: 20px;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+            transition: all 0.2s;
+        }
+        .btn:active {
+            background: var(--primary);
+            color: var(--bg);
+            transform: scale(0.98);
+        }
+        #status {
+            margin-top: 20px;
+            font-size: 0.9rem;
+            min-height: 1.2em;
+        }
+        .file-list {
+            text-align: left;
+            margin-top: 10px;
+            font-size: 0.8rem;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="scanlines"></div>
+    <div class="container">
+        <h1>// UPLINK_NODE</h1>
+        
+        <div class="upload-zone">
+            <input type="file" id="files" multiple onchange="updateFileList()">
+            <div style="font-size: 3rem;">⬆️</div>
+            <p>TAP TO SELECT DATA</p>
+        </div>
+
+        <div id="fileList" class="file-list"></div>
+
+        <button class="btn" onclick="upload()">[ INITIATE UPLOAD ]</button>
+        
+        <div id="status">>> READY_FOR_INPUT</div>
+    </div>
+
+    <script>
+        // Heartbeat to keep connection alive
+        setInterval(() => fetch("/heartbeat", {method: "POST"}).catch(()=>{}), 1000);
+
+        function updateFileList() {
+            const files = document.getElementById('files').files;
+            const list = document.getElementById('fileList');
+            if (files.length > 0) {
+                list.innerHTML = Array.from(files).map(f => `> ${f.name} (${(f.size/1024/1024).toFixed(2)} MB)`).join('<br>');
+                document.getElementById('status').innerText = `>> ${files.length} FILE(S) SELECTED`;
+            } else {
+                list.innerHTML = "";
+                document.getElementById('status').innerText = ">> READY_FOR_INPUT";
+            }
+        }
+
+        function upload() {
+            const files = document.getElementById('files').files;
+            if (!files.length) {
+                document.getElementById('status').innerText = ">> ERROR: NO DATA SELECTED";
+                return;
+            }
+            
+            const fd = new FormData();
+            for (let f of files) fd.append("documents", f);
+            
+            const btn = document.querySelector('.btn');
+            btn.disabled = true;
+            btn.innerText = "[ TRANSMITTING... ]";
+            document.getElementById('status').innerText = ">> UPLOADING PACKETS...";
+
+            fetch("/upload", {method: "POST", body: fd})
+                .then(r => {
+                    if (!r.ok) throw new Error(r.statusText);
+                    return r.text();
+                })
+                .then(t => {
+                    document.getElementById('status').innerText = ">> TRANSFER COMPLETE";
+                    btn.innerText = "[ UPLOAD SUCCESS ]";
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.innerText = "[ INITIATE UPLOAD ]";
+                        document.getElementById('files').value = "";
+                        updateFileList();
+                    }, 2000);
+                })
+                .catch(e => {
+                    document.getElementById('status').innerText = ">> ERROR: " + e;
+                    btn.disabled = false;
+                    btn.innerText = "[ RETRY UPLOAD ]";
+                });
+        }
+    </script>
+</body>
+</html>
