@@ -1,0 +1,31 @@
+# Binaries
+desktop/build/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Wails
+desktop/frontend/dist/
+desktop/frontend/node_modules/
+desktop/wailsjs/
+
+# Packaging
+build/linux/deb_pkg/
+build/linux/*.deb
+
+# Go workspace
+go.work
+go.work.sum
+
+# System
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# IDEs
+.vscode/
+.idea/
+*.swp

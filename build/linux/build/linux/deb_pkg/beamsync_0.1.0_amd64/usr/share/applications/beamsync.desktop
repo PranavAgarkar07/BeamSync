@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=BeamSync
+Comment=Local File Transfer, Reimagined.
+Exec=/usr/bin/beamsync
+Icon=beamsync
+Terminal=false
+Type=Application
+Categories=Utility;Network;FileTransfer;
+Keywords=file;transfer;sync;local;

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "BeamSync",
+  "outputfilename": "BeamSync",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Pranav Agarkar",
+    "email": "pranavagarkar8@gmail.com"
+  },
+  "build": {
+    "windows": {
+      "icon": "build/appicon/icon.ico"
+    },
+    "darwin": {
+      "icon": "build/appicon/icon.icns"
+    },
+    "linux": {
+      "icon": "build/appicon/icon.png"
+    }
+  }
+}

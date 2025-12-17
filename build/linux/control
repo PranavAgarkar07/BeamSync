@@ -1,0 +1,9 @@
+Package: beamsync
+Version: 0.1.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Pranav <pranav@example.com>
+Description: High-speed local file transfer tool.
+ BeamSync allows you to share files between devices on your local network
+ with a cyberpunk interface and zero configuration.
