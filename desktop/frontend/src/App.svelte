@@ -197,6 +197,16 @@
     if (appState === "HANDSHAKE") simulateConnection();
   });
 
+  EventsOn("url_changed", (newURL) => {
+    console.log("🔄 URL Changed:", newURL);
+    link = newURL;
+    generateQR(newURL);
+    // If we are in sender mode, update that too
+    if (showUrlDialog) {
+      senderUrl = newURL;
+    }
+  });
+
   EventsOn("upload_progress", (data) => {
     const parts = data.split("|");
     const filename = parts[0];

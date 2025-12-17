@@ -23,6 +23,8 @@ type App struct {
 	senderApp    *beamsync.HTTPServer
 	eventChan    chan EventData
 	lastSavePath string
+	currentIP    string
+	currentPort  string
 }
 
 // EventData holds event information
@@ -44,6 +46,9 @@ func (a *App) startup(ctx context.Context) {
 
 	// Start event processor on main thread
 	go a.processEvents()
+
+	// Start IP Monitor
+	go a.startIPMonitor()
 
 	// Initialize Audio Engine
 	a.audio = audio.NewAudioEngine()
@@ -108,6 +113,16 @@ func findSoundDir() (string, error) {
 // processEvents handles events on a safe goroutine
 func (a *App) processEvents() {
 	for event := range a.eventChan {
+		// Intercept device_connected to re-verify IP
+		if event.Name == "device_connected" {
+			currentRealIP := getLocalIP()
+			if a.currentIP != "" && a.currentIP != currentRealIP {
+				fmt.Printf("🔄 IP Change Detected! Old: %s, New: %s\n", a.currentIP, currentRealIP)
+				a.currentIP = currentRealIP
+				newURL := fmt.Sprintf("http://%s:%s", a.currentIP, a.currentPort)
+				a.safeEmit("url_changed", newURL)
+			}
+		}
 		a.safeEmit(event.Name, event.Data)
 	}
 }
@@ -191,6 +206,10 @@ func (a *App) StartReceiverDefault() string {
 
 	localIP := getLocalIP()
 	url := "http://" + localIP + ":" + port
+
+	a.currentIP = localIP
+	a.currentPort = port
+
 	fmt.Println("📡 Receiver started:", url)
 	return url
 }
@@ -225,6 +244,10 @@ func (a *App) StartReceiver() string {
 
 	localIP := getLocalIP()
 	url := "http://" + localIP + ":" + port
+
+	a.currentIP = localIP
+	a.currentPort = port
+
 	fmt.Println("📡 Receiver started:", url)
 	return url
 }
@@ -252,6 +275,9 @@ func (a *App) StartSender() string {
 
 	localIP := getLocalIP()
 	url := "http://" + localIP + ":" + port
+
+	a.currentIP = localIP
+	a.currentPort = port
 
 	// Display the URL prominently
 	fmt.Println("========================================")
@@ -341,4 +367,30 @@ func getLocalIP() string {
 
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
 	return localAddr.IP.String()
+}
+
+// startIPMonitor checks for IP changes periodically
+func (a *App) startIPMonitor() {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-ticker.C:
+			newIP := getLocalIP()
+			if a.currentIP != "" && newIP != a.currentIP {
+				fmt.Printf("🔄 Network Change Detected! IP changed from %s to %s\n", a.currentIP, newIP)
+				a.currentIP = newIP
+
+				// Only emit update if we have an active port (server running)
+				if a.currentPort != "" {
+					newURL := fmt.Sprintf("http://%s:%s", a.currentIP, a.currentPort)
+					fmt.Println("📡 Updating URL to:", newURL)
+					a.safeEmit("url_changed", newURL)
+				}
+			}
+		}
+	}
 }

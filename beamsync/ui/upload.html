@@ -101,6 +101,32 @@
             font-size: 0.8rem;
             color: #ccc;
         }
+        .progress-container {
+            width: 100%;
+            background-color: rgba(0, 255, 65, 0.1);
+            border: 1px solid var(--primary);
+            height: 20px;
+            margin-bottom: 20px;
+            display: none; /* Hidden by default */
+            position: relative;
+        }
+        .progress-bar {
+            width: 0%;
+            height: 100%;
+            background-color: var(--primary);
+            transition: width 0.1s linear;
+        }
+        .progress-text {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            color: var(--bg);
+            font-weight: bold;
+            text-shadow: none;
+        }
     </style>
 </head>
 <body>
@@ -115,6 +141,12 @@
         </div>
 
         <div id="fileList" class="file-list"></div>
+        
+        <!-- Progress Bar Section -->
+        <div id="progressContainer" class="progress-container">
+            <div id="progressBar" class="progress-bar"></div>
+            <div id="progressText" class="progress-text">0%</div>
+        </div>
 
         <button class="btn" onclick="upload()">[ INITIATE UPLOAD ]</button>
         
@@ -148,30 +180,76 @@
             for (let f of files) fd.append("documents", f);
             
             const btn = document.querySelector('.btn');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const statusFn = document.getElementById('status');
+            
             btn.disabled = true;
             btn.innerText = "[ TRANSMITTING... ]";
-            document.getElementById('status').innerText = ">> UPLOADING PACKETS...";
+            statusFn.innerText = ">> UPLOADING PACKETS...";
+            
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressText.innerText = '0%';
 
-            fetch("/upload", {method: "POST", body: fd})
-                .then(r => {
-                    if (!r.ok) throw new Error(r.statusText);
-                    return r.text();
-                })
-                .then(t => {
-                    document.getElementById('status').innerText = ">> TRANSFER COMPLETE";
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", "/upload");
+
+            const startTime = Date.now();
+            let lastLoaded = 0;
+
+            xhr.upload.onprogress = function(e) {
+                if (e.lengthComputable) {
+                    const percentComplete = (e.loaded / e.total) * 100;
+                    progressBar.style.width = percentComplete + '%';
+                    
+                    const currentTime = Date.now();
+                    const elapsedTime = (currentTime - startTime) / 1000; // in seconds
+                    
+                    // Calculate speed
+                    // Avoid division by zero and extremely volatile spikes by averaging over total time
+                    let speed = 0; 
+                    if (elapsedTime > 0) {
+                        speed = (e.loaded / 1024 / 1024) / elapsedTime; // MB/s
+                    }
+
+                    progressText.innerText = `${Math.round(percentComplete)}%`;
+                    statusFn.innerText = `>> SPEED: ${speed.toFixed(2)} MB/s`;
+                }
+            };
+
+            xhr.onload = function() {
+                if (xhr.status == 200) {
+                    statusFn.innerText = ">> TRANSFER COMPLETE";
                     btn.innerText = "[ UPLOAD SUCCESS ]";
+                    progressText.innerText = '100%';
+                    progressBar.style.width = '100%';
+                    
                     setTimeout(() => {
                         btn.disabled = false;
                         btn.innerText = "[ INITIATE UPLOAD ]";
                         document.getElementById('files').value = "";
                         updateFileList();
+                        progressContainer.style.display = 'none';
                     }, 2000);
-                })
-                .catch(e => {
-                    document.getElementById('status').innerText = ">> ERROR: " + e;
+                } else {
+                    statusFn.innerText = ">> ERROR: " + xhr.statusText;
                     btn.disabled = false;
                     btn.innerText = "[ RETRY UPLOAD ]";
-                });
+                    // Keep progress bar visible on error so user sees where it failed? 
+                    // Or hide it? Let's hide it for now to reset state.
+                    // progressContainer.style.display = 'none'; 
+                }
+            };
+
+            xhr.onerror = function() {
+                statusFn.innerText = ">> NETWORK ERROR";
+                btn.disabled = false;
+                btn.innerText = "[ RETRY UPLOAD ]";
+            };
+
+            xhr.send(fd);
         }
     </script>
 </body>

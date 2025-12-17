@@ -9,7 +9,7 @@ BeamSync is a fast, offline peer-to-peer file transfer application built with Go
 
 
 <div align="center">
-  <img src="desktop/frontend/src/assets/images/appSS1.png" width="45%" alt="Screenshot 1">
+  <img src="desktop/frontend/src/assets/images/appSS1.png" width="45%" alt="Screenshot 1"> <br>
   <img src="desktop/frontend/src/assets/images/appSS2.png" width="45%" alt="Screenshot 2">
 </div>
 
