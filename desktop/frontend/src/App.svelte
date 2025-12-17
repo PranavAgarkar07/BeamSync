@@ -4,6 +4,7 @@
     StartSender,
     PlaySound,
     OpenFile,
+    ResetApp,
   } from "../wailsjs/go/main/App.js";
   import { EventsOn, BrowserOpenURL } from "../wailsjs/runtime/runtime.js";
   import QRCode from "qrcode";
@@ -231,6 +232,26 @@
   function openFile(filename) {
     // Call backend to open file (bypass sandbox restrictions)
     OpenFile(filename);
+    OpenFile(filename);
+  }
+
+  async function logout() {
+    playSound("click");
+    status = ">> TERMINATING_CONNECTION...";
+    await ResetApp();
+
+    // Reset State
+    appState = "HANDSHAKE";
+    transitionStage = 0;
+    receivedFiles = [];
+    progress = { filename: "", percent: 0, speed: "0 MB/s" };
+    senderUrl = "";
+    showUrlDialog = false;
+
+    // Re-init
+    setTimeout(() => {
+      initHandshake();
+    }, 500);
   }
 </script>
 
@@ -288,6 +309,14 @@
           <div class="instruction-text blink">
             // WAITING_FOR_DEVICE_HANDSHAKE
           </div>
+
+          <div class="protocol-instructions">
+            <div class="instruction-line">
+              > CONNECT_BOTH_UNITS_TO_SAME_NETWORK
+            </div>
+            <div class="instruction-line">> SCAN_DATA_LINK_ABOVE</div>
+            <div class="instruction-line">> MAINTAIN_PROXIMITY</div>
+          </div>
           <!-- DEBUG: Show link -->
           <div
             style="color: red; font-size: 1rem; margin-top: 10px; border: 1px solid red; padding: 5px;"
@@ -341,6 +370,14 @@
               </div>
             </button>
           </div>
+
+          <button
+            class="cyber-btn reset-btn"
+            on:click={logout}
+            on:mouseenter={() => playSound("blip")}
+          >
+            [ TERMINATE_UPLINK ]
+          </button>
 
           <!-- Progress / File Info -->
           {#if progress.filename}
@@ -549,7 +586,6 @@
     font-family: "VT323", monospace;
     color: var(--primary);
     overflow: hidden;
-    cursor: crosshair;
   }
 
   /* --- DROP OVERLAY --- */
@@ -779,6 +815,21 @@
     animation: blink 1.5s infinite;
   }
 
+  .protocol-instructions {
+    margin-top: 25px;
+    text-align: left;
+    border-left: 2px solid var(--primary);
+    padding-left: 15px;
+    opacity: 0.8;
+  }
+
+  .instruction-line {
+    font-size: 1.1rem;
+    margin-bottom: 5px;
+    color: var(--primary);
+    text-shadow: 0 0 2px var(--primary);
+  }
+
   .command-deck-view {
     animation: fade-in 0.8s ease-in;
   }
@@ -799,11 +850,25 @@
     align-items: center;
     justify-content: center;
     font-family: "VT323", monospace;
-    font-size: 1.5rem;
+  }
+
+  .reset-btn {
+    width: 100%;
+    height: 50px;
+    margin-bottom: 20px;
+    border-color: var(--primary); /* Blend with normal UI */
+    color: var(--primary);
+    font-size: 1.2rem;
     cursor: pointer;
-    transition: all 0.1s;
-    position: relative;
-    overflow: hidden;
+    transition: all 0.2s;
+    opacity: 0.7; /* Make it slightly more subtle */
+  }
+  .reset-btn:hover {
+    background: #ff2a2a;
+    border-color: #ff2a2a;
+    color: #000;
+    box-shadow: 0 0 20px rgba(255, 42, 42, 0.8);
+    opacity: 1;
   }
 
   .send-btn {

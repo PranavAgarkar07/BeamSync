@@ -299,6 +299,18 @@ func (a *App) StopSender() string {
 	return "No sender running"
 }
 
+// ResetApp: Stops all servers and resets state
+func (a *App) ResetApp() {
+	fmt.Println("🔄 Resetting App State...")
+	a.StopReceiver()
+	a.StopSender()
+	a.serverApp = nil
+	a.senderApp = nil
+	// We don't reset IP/Port here because we might want to restart immediately
+	// But we should probably clear the currentPort so IP monitor doesn't emit url_changed
+	a.currentPort = ""
+}
+
 // OpenFile opens a file using the default system application.
 func (a *App) OpenFile(filename string) string {
 	if a.lastSavePath == "" {

@@ -10,6 +10,10 @@ export function PlaySound(arg1) {
   return window['go']['main']['App']['PlaySound'](arg1);
 }
 
+export function ResetApp() {
+  return window['go']['main']['App']['ResetApp']();
+}
+
 export function StartReceiver() {
   return window['go']['main']['App']['StartReceiver']();
 }
