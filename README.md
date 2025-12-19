@@ -5,6 +5,14 @@
     <b>Secure. Fast. Local.</b><br>
     The ultimate offline file transfer protocol for the modern web.
   </p>
+
+  <p>
+    <img src="https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
+    <img src="https://img.shields.io/badge/Svelte-4A4A55?style=for-the-badge&logo=svelte&logoColor=FF3E00" alt="Svelte">
+    <img src="https://img.shields.io/badge/Wails-CC0000?style=for-the-badge&logo=wails&logoColor=white" alt="Wails">
+    <img src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite">
+  </p>
+
   <p>
     <a href="#system-capabilities">System Capabilities</a> •
     <a href="#visual-intel">Visual Intel</a> •
@@ -104,6 +112,3 @@ Initialize your environment with the following dependencies:
 
 ---
 
-<div align="center">
-  <sub>// END_OF_FILE</sub>
-</div>
