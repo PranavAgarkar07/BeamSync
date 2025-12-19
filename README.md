@@ -14,8 +14,9 @@
   </p>
 
   <p>
-    <a href="#system-capabilities">System Capabilities</a> •
+    <a href="#mission-briefing">Mission Briefing</a> •
     <a href="#visual-intel">Visual Intel</a> •
+    <a href="#system-capabilities">System Capabilities</a> •
     <a href="#deployment">Deployment</a> •
     <a href="#operational-manual">Operational Manual</a>
   </p>
@@ -23,20 +24,20 @@
 
 ---
 
-## // MISSION_BRIEFING
+## <a id="mission-briefing"></a>// MISSION_BRIEFING
 
 **BeamSync** is a high-performance, offline-first peer-to-peer file transfer system built with **Go (Wails)** and **Svelte**. Engineered for speed and reliability, it bypasses the need for internet access by creating a direct data link over your local network.
 
 Wrapped in a **Cyberpunk-inspired terminal interface**, BeamSync turns mundane file transfers into an immersive experience complete with mechanical sound effects, visual feedback, and zero-latency performance.
 
-## // VISUAL_INTEL
+## <a id="visual-intel"></a>// VISUAL_INTEL
 
 <div align="center">
   <img src="desktop/frontend/src/assets/images/appSS1.png" alt="Main Terminal Interface" >
   <img src="desktop/frontend/src/assets/images/appSS2.png" alt="Data Uplink in Progress" >
 </div>
 
-## // SYSTEM_CAPABILITIES
+## <a id="system-capabilities"></a>// SYSTEM_CAPABILITIES
 
 - **⚡ Hyper-Fast Local Transfer**: Leverages direct HTTP/UDP protocols for maximum bandwidth utilization on your LAN.
 - **🔒 Offline Protocol**: Completely functional without an internet connection. Your data never leaves your local network.
@@ -58,7 +59,7 @@ The core architecture is built upon a robust foundation:
 - **Protocol Layer**: HTTP/UDP (Discovery & Transport)
 - **Styling**: Custom CSS variables & Animations
 
-## // DEPLOYMENT
+## <a id="deployment"></a>// DEPLOYMENT
 
 ### Prerequisites
 
@@ -95,7 +96,7 @@ Initialize your environment with the following dependencies:
    ```
    > *Artifacts will be generated in `desktop/build/bin`*
 
-## // OPERATIONAL_MANUAL
+## <a id="operational-manual"></a>// OPERATIONAL_MANUAL
 
 ### Receiver Mode (Default)
 1. Launch BeamSync.
