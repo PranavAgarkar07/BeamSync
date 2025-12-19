@@ -32,8 +32,8 @@ Wrapped in a **Cyberpunk-inspired terminal interface**, BeamSync turns mundane f
 ## // VISUAL_INTEL
 
 <div align="center">
-  <img src="desktop/frontend/src/assets/images/appSS1.png" alt="Main Terminal Interface" width="45%">
-  <img src="desktop/frontend/src/assets/images/appSS2.png" alt="Data Uplink in Progress" width="45%">
+  <img src="desktop/frontend/src/assets/images/appSS1.png" alt="Main Terminal Interface" >
+  <img src="desktop/frontend/src/assets/images/appSS2.png" alt="Data Uplink in Progress" >
 </div>
 
 ## // SYSTEM_CAPABILITIES
