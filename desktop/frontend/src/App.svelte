@@ -33,6 +33,8 @@
     percent: 0,
     speed: "0 MB/s",
     received: "0.00 MB",
+    total: 0,
+    remaining: "—",
   };
   let lastProgressTime = 0;
   let lastLoaded = 0;
@@ -89,6 +91,8 @@
         percent: 0,
         speed: "0 MB/s",
         received: "0.00 MB",
+        total: 0,
+        remaining: "—",
       };
       lastLoaded = 0;
       lastProgressTime = 0;
@@ -97,10 +101,11 @@
     });
     EventsOn("upload_progress", (data) => {
       const parts = data.split("|");
-      if (parts.length < 3) return;
-      const [filename, wStr, tStr] = parts;
+      if (parts.length < 4) return;
+      const [filename, wStr, tStr, totalStr] = parts;
       const written = parseInt(wStr);
       const total = parseInt(tStr);
+      const totalBytes = parseInt(totalStr);
       const now = Date.now();
       const dt = (now - lastProgressTime) / 1000;
       let speed = progress.speed;
@@ -109,13 +114,19 @@
       lastLoaded = written;
       lastProgressTime = now;
       const pct =
-        total > 0 ? Math.min(100, Math.round((written / total) * 100)) : 0;
+        totalBytes > 0 ? Math.min(100, Math.round((written / totalBytes) * 100)) : 0;
+      const remainingBytes = totalBytes - written;
+      const remainingSeconds = remainingBytes > 0 ? remainingBytes / (speed * 1048576) : 0;
+      const remainingTime = remainingSeconds > 60 ? `${Math.floor(remainingSeconds / 60)}m ${Math.floor(remainingSeconds % 60)}s` : `${Math.floor(remainingSeconds)}s`;
+
       progress = {
         active: true,
         filename,
         percent: pct,
         speed,
         received: `${(written / 1048576).toFixed(2)} MB`,
+        total: `${(totalBytes / 1048576).toFixed(2)} MB`,
+        remaining: remainingTime,
       };
       if (connectionState !== "CONNECTED") connectionState = "CONNECTED";
       // Reset stale-progress watchdog: clears if no progress event for 30s
@@ -127,6 +138,8 @@
           percent: 0,
           speed: "0 MB/s",
           received: "0.00 MB",
+          total: 0,
+          remaining: "—",
         };
         lastLoaded = 0;
         lastProgressTime = 0;
@@ -279,6 +292,8 @@
       percent: 0,
       speed: "0 MB/s",
       received: "0.00 MB",
+      total: 0,
+      remaining: "—",
     };
     lastLoaded = 0;
     lastProgressTime = 0;
@@ -557,7 +572,7 @@
                 <div class="transfer-info">
                   <div class="transfer-name">{progress.filename}</div>
                   <div class="transfer-meta">
-                    {progress.received} · {progress.speed}
+                    {progress.received} / {progress.total} · {progress.speed}
                   </div>
                 </div>
                 <div class="transfer-pct">{progress.percent}%</div>
@@ -567,6 +582,9 @@
                   class="transfer-bar-fill"
                   style="width:{progress.percent}%"
                 ></div>
+              </div>
+              <div class="transfer-footer">
+                <span>{progress.remaining}</span>
               </div>
             </div>
           {:else}
