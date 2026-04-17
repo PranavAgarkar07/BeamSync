@@ -58,7 +58,8 @@ func NewApp() *App {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type configData struct {
-	SavePath string `json:"savePath"`
+	SavePath         string                   `json:"savePath"`
+	TransferSettings beamsync.TransferSettings `json:"transferSettings"`
 }
 
 func configPath() string {
@@ -243,7 +244,7 @@ func (a *App) SetSavePath() string {
 		return "Error: Could not create save directory"
 	}
 
-	app, port, token := beamsync.StartServer(selection, 3000, a.makeCallback())
+	app, port, token := beamsync.StartServer(selection, 3000, a.getTransferSettings(), a.makeCallback())
 	a.serverApp = app
 
 	localIP := getLocalIP()
@@ -273,7 +274,7 @@ func (a *App) StartReceiverDefault() string {
 		return "Error: Could not create save directory"
 	}
 
-	app, port, token := beamsync.StartServer(savePath, 3000, a.makeCallback())
+	app, port, token := beamsync.StartServer(savePath, 3000, a.getTransferSettings(), a.makeCallback())
 	a.serverApp = app
 
 	localIP := getLocalIP()
@@ -304,7 +305,7 @@ func (a *App) StartReceiver() string {
 	}
 	a.lastSavePath = selection
 
-	app, port, token := beamsync.StartServer(selection, 3000, a.makeCallback())
+	app, port, token := beamsync.StartServer(selection, 3000, a.getTransferSettings(), a.makeCallback())
 	a.serverApp = app
 
 	localIP := getLocalIP()
@@ -457,6 +458,53 @@ func (a *App) GetReceivedFiles() []ReceivedFile {
 		return ii.ModTime().After(jj.ModTime())
 	})
 	return result
+}
+
+// ---------------------------------------------------------
+// TRANSFER PERMISSION METHODS
+// ---------------------------------------------------------
+
+// getTransferSettings loads settings from config, falling back to defaults.
+func (a *App) getTransferSettings() beamsync.TransferSettings {
+	cfg := loadConfig()
+	if cfg.TransferSettings.Mode == "" {
+		return beamsync.DefaultTransferSettings()
+	}
+	return cfg.TransferSettings
+}
+
+// GetTransferSettings returns the current transfer permission settings to the frontend.
+func (a *App) GetTransferSettings() beamsync.TransferSettings {
+	return a.getTransferSettings()
+}
+
+// SaveTransferSettings persists the given settings and live-updates the running server.
+func (a *App) SaveTransferSettings(settings beamsync.TransferSettings) string {
+	cfg := loadConfig()
+	cfg.TransferSettings = settings
+	if err := saveConfig(cfg); err != nil {
+		return fmt.Sprintf("Error saving settings: %v", err)
+	}
+	// Update the running server's settings in-place (no restart needed)
+	if a.serverApp != nil && a.serverApp.Settings() != nil {
+		*a.serverApp.Settings() = settings
+	}
+	fmt.Println("✅ Transfer settings saved:", settings.Mode)
+	return "ok"
+}
+
+// ApproveTransfer approves a pending transfer request by its ID.
+func (a *App) ApproveTransfer(id string) {
+	if a.serverApp != nil {
+		a.serverApp.RespondToTransfer(id, true)
+	}
+}
+
+// RejectTransfer rejects a pending transfer request by its ID.
+func (a *App) RejectTransfer(id string) {
+	if a.serverApp != nil {
+		a.serverApp.RespondToTransfer(id, false)
+	}
 }
 
 // ---------------------------------------------------------

@@ -256,33 +256,75 @@
             }
         }
 
-        function upload() {
+        async function upload() {
             const files = document.getElementById('files').files;
             if (!files.length) {
                 document.getElementById('status').innerText = 'Error: No files selected';
                 return;
             }
 
-            _uploading = true;
-
-            const fd = new FormData();
-            
-            // Build and append manifest so the server knows exactly how large each file is
-            // This MUST be the first field appended so the server reads it before the file parts
-            const manifest = Array.from(files).map(f => ({ name: f.name, size: f.size }));
-            const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-            fd.append('beam_manifest', manifestBlob, '');
-
-            for (let f of files) fd.append('documents', f);
-
             const btn = document.querySelector('.btn');
-            const progressContainer = document.getElementById('progressContainer');
-            const progressBar = document.getElementById('progressBar');
-            const progressText = document.getElementById('progressText');
             const statusEl = document.getElementById('status');
-
             btn.disabled = true;
-            btn.innerText = 'UPLOADING...';
+
+            // Optional: for multi-file we could ask per file or just use the first/total.
+            // BeamSync backend expects single file info for the prompt right now:
+            const firstFile = files[0];
+            let totalSize = 0;
+            for (let f of files) totalSize += f.size;
+
+            btn.innerText = 'WAITING FOR APPROVAL...';
+            statusEl.innerText = 'Sent request to receiver... waiting';
+
+            try {
+                // 1. Send pre-flight permission request
+                const res = await fetch('/request-transfer?token=' + TOKEN, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filename: files.length > 1 ? `${files.length} files` : firstFile.name,
+                        sizeBytes: totalSize,
+                        mimeType: files.length > 1 ? 'multipart/mixed' : firstFile.type
+                    })
+                });
+
+                if (!res.ok) {
+                    const errText = await res.text();
+                    statusEl.innerText = errText || 'Transfer rejected or timed out';
+                    btn.disabled = false;
+                    btn.innerText = 'TRY AGAIN';
+                    return;
+                }
+
+                // 2. Approved! Proceed to file upload
+                _uploading = true;
+                btn.innerText = 'UPLOADING...';
+                const progressContainer = document.getElementById('progressContainer');
+                const progressBar = document.getElementById('progressBar');
+                const progressText = document.getElementById('progressText');
+
+                statusEl.innerText = 'Uploading... Please keep this page open';
+                progressContainer.style.display = 'block';
+                progressBar.style.width = '5%'; 
+                progressText.innerText = 'Starting...';
+
+                const fd = new FormData();
+                const manifest = Array.from(files).map(f => ({ name: f.name, size: f.size }));
+                const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+                fd.append('beam_manifest', manifestBlob, '');
+
+                for (let f of files) fd.append('documents', f);
+
+                startActualUpload(fd, btn, statusEl, progressContainer, progressBar, progressText);
+
+            } catch (err) {
+                statusEl.innerText = 'Network error while requesting permission';
+                btn.disabled = false;
+                btn.innerText = 'TRY AGAIN';
+            }
+        }
+
+        function startActualUpload(fd, btn, statusEl, progressContainer, progressBar, progressText) {
             statusEl.innerText = 'Uploading... Please keep this page open';
             progressContainer.style.display = 'block';
             progressBar.style.width = '5%'; // show immediately so user knows it started

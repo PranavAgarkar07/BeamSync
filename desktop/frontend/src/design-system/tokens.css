@@ -1,0 +1,491 @@
+/*
+ * ╔══════════════════════════════════════════════════════════════╗
+ * ║       BEAMSYNC — NEUBRUTALISM DESIGN SYSTEM                  ║
+ * ║       tokens.css — Single source of truth for all tokens     ║
+ * ╚══════════════════════════════════════════════════════════════╝
+ *
+ * Usage: @import './design-system/tokens.css';
+ *
+ * Rules:
+ *  - Zero border-radius (max 2px for inline chips only)
+ *  - Hard offset box-shadow only, no blur
+ *  - No gradients, no glassmorphism, no blur effects
+ *  - Hover: translateX/Y transform + shadow shift, no color fade
+ *  - Bold primary font + monospace utility font
+ */
+
+/*  Syne     — geometric bold display, used by premium fintech/CRED-tier products
+              Distinctive x-height, strong personality, works at any weight
+    Manrope  — variable grotesque body, #5 on Mockuuups 2026 Best Fonts list
+              Open-source, superb screen legibility, clean & modern
+    Space Mono — monospace data layer: IPs, speeds, sizes, timestamps
+
+    References:
+      • Mockuuups 2026: "best fonts for apps" — Manrope ranked #5
+      • UI/UX Pro Max "Premium Sans": Satoshi + General Sans (Fontshare)
+        → Syne is the Google Fonts equivalent for display
+      • CRED design aesthetic: geometric, bold, distinctive characters
+      • Razorpay Blade: strong display + clean grotesque body */
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
+
+/* ─── Smooth Scrolling ────────────────────────────────────────────────────── */
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* ─── Color Palette ───────────────────────────────────────────────────────── */
+:root {
+  /* Primary action color — strong cobalt blue */
+  --nb-primary: #1A56FF;
+  --nb-primary-hover: #0039E0;
+
+  /* Secondary — Tangerine Orange (high energy + startup aesthetic)
+     ✅ Cobalt blue (#1A56FF) + Tangerine Orange (#FF7A00) for bold Neubrutalism
+     ✅ Black text on orange = AAA contrast, high legibility
+     ⚠ ALWAYS --nb-secondary-text: #0A0A0A     */
+  --nb-secondary: #FF7A00;
+  --nb-secondary-dark: #E06B00;
+  /* pressed/hover state */
+  --nb-secondary-text: #0A0A0A;
+  /* ALWAYS dark text on orange */
+
+  /* Accent — hot coral for danger badges, alerts */
+  --nb-accent: #FF3C5F;
+  --nb-accent-dark: #D4003D;
+
+  /* Backgrounds */
+  --nb-bg: #F5F0E8;
+  /* warm off-white, NOT pure white */
+  --nb-surface: #FFFFFF;
+  --nb-surface-raised: #FFF8ED;
+
+  /* Text */
+  --nb-text: #0A0A0A;
+  /* near-black */
+  --nb-text-muted: #4A4A4A;
+  --nb-text-inverse: #FFFFFF;
+
+  /* Semantic */
+  --nb-danger: #FF3C5F;
+  --nb-success: #00C875;
+  --nb-warning: #F5A623;
+  /* amber — distinct from lime secondary, reads as "caution" */
+  --nb-info: #1A56FF;
+
+  /* Border */
+  --nb-border-color: #0A0A0A;
+
+  /* ─── Typography (↑ Premium app stack: CRED / Razorpay tier) ────────────── */
+  --nb-font-display: 'Syne', system-ui, sans-serif;
+  /* section headings, nav, hero labels, buttons */
+  --nb-font-body: 'Manrope', system-ui, sans-serif;
+  /* device names, body text, descriptions, UI */
+  --nb-font-mono: 'Space Mono', 'Courier New', monospace;
+  /* IPs, speeds, sizes, code, data */
+
+  /* Font weights */
+  --nb-fw-regular: 400;
+  --nb-fw-medium: 500;
+  --nb-fw-semibold: 600;
+  --nb-fw-bold: 700;
+
+  /* Font sizes — 4px grid based rem scale */
+  --nb-text-xs: 0.75rem;
+  /* 12px */
+  --nb-text-sm: 0.875rem;
+  /* 14px */
+  --nb-text-base: 1rem;
+  /* 16px */
+  --nb-text-lg: 1.125rem;
+  /* 18px */
+  --nb-text-xl: 1.25rem;
+  /* 20px */
+  --nb-text-2xl: 1.5rem;
+  /* 24px */
+  --nb-text-3xl: 1.875rem;
+  /* 30px */
+  --nb-text-4xl: 2.25rem;
+  /* 36px */
+
+  /* ─── Spacing Scale (4px base grid) ──────────────────────────────────── */
+  --nb-space-1: 4px;
+  --nb-space-2: 8px;
+  --nb-space-3: 12px;
+  --nb-space-4: 16px;
+  --nb-space-5: 20px;
+  --nb-space-6: 24px;
+  --nb-space-8: 32px;
+  --nb-space-10: 40px;
+  --nb-space-12: 48px;
+  --nb-space-16: 64px;
+
+  /* ─── Border ──────────────────────────────────────────────────────────── */
+  --nb-border: 2px solid var(--nb-border-color);
+  --nb-border-lg: 3px solid var(--nb-border-color);
+
+  /* ─── Shadows — hard offset only, ZERO blur ───────────────────────────── */
+  --nb-shadow-sm: 2px 2px 0px var(--nb-border-color);
+  --nb-shadow-md: 4px 4px 0px var(--nb-border-color);
+  --nb-shadow-lg: 6px 6px 0px var(--nb-border-color);
+  --nb-shadow-xl: 8px 8px 0px var(--nb-border-color);
+
+  /* Colored shadows for emphasis */
+  --nb-shadow-primary: 4px 4px 0px var(--nb-primary);
+  --nb-shadow-secondary: 4px 4px 0px var(--nb-secondary-dark);
+  --nb-shadow-accent: 4px 4px 0px var(--nb-accent-dark);
+  --nb-shadow-success: 4px 4px 0px #009060;
+
+  /* ─── Radius — effectively zero ──────────────────────────────────────── */
+  --nb-radius: 0px;
+  --nb-radius-chip: 2px;
+  /* only for inline status badges */
+
+  /* ─── Transitions — shadow/transform only, no color fades ────────────── */
+  --nb-transition: transform 120ms ease, box-shadow 120ms ease;
+
+  /* ─── Z-index layers ──────────────────────────────────────────────────── */
+  --nb-z-base: 1;
+  --nb-z-raised: 10;
+  --nb-z-overlay: 100;
+  --nb-z-toast: 1000;
+}
+
+/* ─── Global Neubrutalism Base Reset ─────────────────────────────────────── */
+.nb-root *,
+.nb-root *::before,
+.nb-root *::after {
+  box-sizing: border-box;
+}
+
+/* Neubrutalism button base — used by all .nb-btn variants */
+.nb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nb-space-2);
+  padding: var(--nb-space-3) var(--nb-space-5);
+  font-family: var(--nb-font-display);
+  font-weight: var(--nb-fw-bold);
+  font-size: var(--nb-text-sm);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: var(--nb-border-lg);
+  border-radius: var(--nb-radius);
+  box-shadow: var(--nb-shadow-md);
+  cursor: pointer;
+  transition: var(--nb-transition);
+  user-select: none;
+  -webkit-user-select: none;
+  text-decoration: none;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.nb-btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--nb-shadow-lg);
+}
+
+.nb-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: var(--nb-shadow-sm);
+}
+
+/* Button variants */
+.nb-btn--primary {
+  background: var(--nb-primary);
+  color: var(--nb-text-inverse);
+  border-color: var(--nb-border-color);
+  box-shadow: var(--nb-shadow-md);
+}
+
+.nb-btn--secondary {
+  background: var(--nb-secondary);
+  color: var(--nb-secondary-text, #0A0A0A);
+  /* dark text on amber — required for AA */
+  border-color: var(--nb-border-color);
+}
+
+.nb-btn--ghost {
+  background: transparent;
+  color: var(--nb-text);
+  border-color: var(--nb-border-color);
+}
+
+.nb-btn--ghost:hover {
+  background: var(--nb-secondary);
+  color: var(--nb-secondary-text, #0A0A0A);
+}
+
+.nb-btn--danger {
+  background: var(--nb-danger);
+  color: var(--nb-text-inverse);
+  border-color: var(--nb-border-color);
+}
+
+/* Neubrutalism input field */
+.nb-input {
+  display: inline-block;
+  font-family: var(--nb-font-sans);
+  font-size: var(--nb-text-base);
+  font-weight: 500;
+  color: var(--nb-text);
+  background: var(--nb-surface);
+  border: var(--nb-border-lg);
+  border-radius: var(--nb-radius);
+  padding: var(--nb-space-3) var(--nb-space-4);
+  box-shadow: inset 2px 2px 0px rgba(0, 0, 0, 0.05);
+  transition: var(--nb-transition);
+  outline: none;
+}
+
+.nb-input:focus {
+  border-color: var(--nb-primary);
+  box-shadow: var(--nb-shadow-sm);
+  transform: translate(-1px, -1px);
+}
+
+.nb-input::placeholder {
+  color: var(--nb-text-muted);
+  opacity: 0.8;
+}
+
+/* Neubrutalism card base */
+.nb-card {
+  background: var(--nb-surface);
+  border: var(--nb-border-lg);
+  border-radius: var(--nb-radius);
+  box-shadow: var(--nb-shadow-md);
+  padding: var(--nb-space-5);
+  transition: var(--nb-transition);
+}
+
+.nb-card--interactive {
+  cursor: pointer;
+}
+
+.nb-card--interactive:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--nb-shadow-lg);
+}
+
+.nb-card--interactive:active {
+  transform: translate(2px, 2px);
+  box-shadow: var(--nb-shadow-sm);
+}
+
+/* Status badge */
+.nb-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nb-space-1);
+  padding: var(--nb-space-1) var(--nb-space-2);
+  font-family: var(--nb-font-mono);
+  font-size: var(--nb-text-xs);
+  font-weight: var(--nb-fw-bold);
+  border: 2px solid var(--nb-border-color);
+  border-radius: var(--nb-radius-chip);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+
+.nb-badge--success {
+  background: var(--nb-success);
+  color: #0A0A0A;
+}
+
+.nb-badge--danger {
+  background: var(--nb-danger);
+  color: #fff;
+}
+
+.nb-badge--warning {
+  background: var(--nb-warning);
+  color: #0A0A0A;
+}
+
+/* warning always needs dark text */
+.nb-badge--info {
+  background: var(--nb-info);
+  color: #fff;
+}
+
+.nb-badge--neutral {
+  background: #E0DACE;
+  color: var(--nb-text);
+}
+
+/* Mono data display — IPs, speeds, file sizes */
+.nb-mono {
+  font-family: var(--nb-font-mono);
+  font-weight: var(--nb-fw-regular);
+}
+
+/* ─── Reduced motion ──────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+
+  .nb-btn,
+  .nb-card--interactive {
+    transition: none;
+  }
+
+  .nb-btn:hover,
+  .nb-card--interactive:hover {
+    transform: none;
+  }
+}
+
+/* ─── Dark Mode ───────────────────────────────────────────────────────────────
+ * Activated automatically via prefers-color-scheme, OR manually via .dark on
+ * <html> / <body> (e.g. document.documentElement.classList.toggle('dark')).
+ *
+ * Neubrutalism dark mode rules:
+ *  - Background → near-black, NOT pure #000 (use #111 / #1A1A1A)
+ *  - Surface → dark grey (#222)
+ *  - Border & shadow → WHITE (#F0F0F0) so hard offset shadows stay visible
+ *  - Primary/secondary/accent stay unchanged (they're already high contrast)
+ *  - Text → off-white (#F5F5F5)
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── Dark Mode ─────────────────────────────────────────────────────────────
+ * Strategy (from UI/UX Pro Max fintech/dashboard palette research):
+ *
+ * 1. THREE surface layers create depth without borders having to work as hard
+ *    bg (#0C1120) → surface (#141E30) → raised (#1C2840)
+ *    Each step is ~8% lighter, giving clear visual hierarchy.
+ *
+ * 2. Border = desaturated slate-blue (#2D3F5E)
+ *    Visible & structural but harmonises with the blue-slate bg.
+ *    NOT white (too harsh), NOT pure grey (cold/flat).
+ *
+ * 3. Hard shadows use a slightly deeper slate (#1A2840) — offset stays
+ *    visible because surface is lighter than the shadow color. This is
+ *    the correct neubrutalism dark trick: shadow DARKER than surface.
+ *
+ * 4. Primary blue lifts to #4F8EFF (more luminous on dark bg, still WCAG AA).
+ *    Yellow secondary stays — it's the best accent on dark surfaces.
+ *
+ * 5. Text = #E2E8F0 (Slate-200) — clean, slightly cool, not clinical #FFF.
+ *    Muted = #64748B (Slate-500) — enough contrast (4.7:1 on bg).
+ * ────────────────────────────────────────────────────────────────────────── */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* ── Backgrounds: 3-layer slate depth ── */
+    --nb-bg: #0C1120;
+    /* deepest — page background */
+    --nb-surface: #141E30;
+    /* card / panel */
+    --nb-surface-raised: #1C2840;
+    /* hover / elevated state */
+
+    /* ── Text ── */
+    --nb-text: #E2E8F0;
+    /* Slate-200 — clean, not blinding */
+    --nb-text-muted: #64748B;
+    /* Slate-500 — 4.7:1 on bg */
+    --nb-text-inverse: #0C1120;
+    /* on yellow/bright surfaces */
+
+    /* ── Border: slate-blue mid-tone ──
+       Harmonises with the blue bg. Structural but not stark. */
+    --nb-border-color: #2D3F5E;
+
+    --nb-border: 2px solid var(--nb-border-color);
+    --nb-border-lg: 3px solid var(--nb-border-color);
+
+    /* ── Shadows: DARKER than surface so offset reads clearly ──
+       Surface = #141E30, shadow = #08101E → clear 4px offset visible */
+    --nb-shadow-sm: 2px 2px 0px #08101E;
+    --nb-shadow-md: 4px 4px 0px #08101E;
+    --nb-shadow-lg: 6px 6px 0px #08101E;
+    --nb-shadow-xl: 8px 8px 0px #08101E;
+
+    /* ── Brand colors: lifted for dark bg legibility ── */
+    --nb-primary: #4F8EFF;
+    /* +20% luminance vs light-mode #1A56FF */
+    --nb-primary-hover: #3D7FFF;
+
+    /* Tangerine orange lifts slightly for dark bg pop */
+    --nb-secondary: #FF8A00;
+    /* brighter orange on dark */
+    --nb-secondary-dark: #FF7A00;
+    --nb-secondary-text: #0A0A0A;
+    /* always dark on orange */
+
+    --nb-success: #10D98A;
+    /* brighter green for dark bg */
+    --nb-danger: #FF5C7A;
+    /* slightly lighter red */
+    --nb-warning: #F5A623;
+
+    /* ── Colored shadows ── */
+    --nb-shadow-primary: 4px 4px 0px #0A2870;
+    --nb-shadow-secondary: 4px 4px 0px #994C00;
+    --nb-shadow-success: 4px 4px 0px #006845;
+    --nb-shadow-accent: 4px 4px 0px #8C0028;
+
+    /* ── Neutral badge bg ── */
+    --nb-badge-neutral-bg: #1C2840;
+  }
+}
+
+/* Manual .dark class on <html> — identical values, takes explicit priority */
+:root.dark,
+html.dark {
+  --nb-bg: #0C1120;
+  --nb-surface: #141E30;
+  --nb-surface-raised: #1C2840;
+
+  --nb-text: #E2E8F0;
+  --nb-text-muted: #64748B;
+  --nb-text-inverse: #0C1120;
+
+  --nb-border-color: #2D3F5E;
+  --nb-border: 2px solid var(--nb-border-color);
+  --nb-border-lg: 3px solid var(--nb-border-color);
+
+  --nb-shadow-sm: 2px 2px 0px #08101E;
+  --nb-shadow-md: 4px 4px 0px #08101E;
+  --nb-shadow-lg: 6px 6px 0px #08101E;
+  --nb-shadow-xl: 8px 8px 0px #08101E;
+
+  --nb-primary: #4F8EFF;
+  --nb-primary-hover: #3D7FFF;
+  --nb-secondary: #FF8A00;
+  --nb-secondary-dark: #FF7A00;
+  --nb-secondary-text: #0A0A0A;
+  --nb-success: #10D98A;
+  --nb-danger: #FF5C7A;
+  --nb-warning: #F5A623;
+
+  --nb-shadow-primary: 4px 4px 0px #0A2870;
+  --nb-shadow-secondary: 4px 4px 0px #994C00;
+  --nb-shadow-success: 4px 4px 0px #006845;
+  --nb-shadow-accent: 4px 4px 0px #8C0028;
+
+  --nb-badge-neutral-bg: #1C2840;
+}
+
+/* ── Dark-mode component fixes ───────────────────────────────────────────── */
+
+/* Neutral badge */
+@media (prefers-color-scheme: dark) {
+  .nb-badge--neutral {
+    background: var(--nb-badge-neutral-bg, #1C2840);
+    color: var(--nb-text);
+  }
+}
+
+html.dark .nb-badge--neutral,
+:root.dark .nb-badge--neutral {
+  background: var(--nb-badge-neutral-bg, #1C2840);
+  color: var(--nb-text);
+}

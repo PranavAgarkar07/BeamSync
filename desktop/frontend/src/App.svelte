@@ -9,6 +9,10 @@
     GetReceivedFiles,
     GetSavePath,
     SetSavePath,
+    GetTransferSettings,
+    SaveTransferSettings,
+    ApproveTransfer,
+    RejectTransfer,
   } from "../wailsjs/go/main/App.js";
   import {
     EventsOn,
@@ -19,6 +23,10 @@
   import { onMount, onDestroy } from "svelte";
   import { fly } from "svelte/transition";
   import Typewriter from "./Typewriter.svelte";
+  import SplashScreen from "./SplashScreen.svelte";
+
+  // ── Splash screen ─────────────────────────────────────────────────────────
+  let showSplash = true;
 
   import {
     TopNavBar,
@@ -32,7 +40,7 @@
   import logoImg from "./assets/images/icon.png";
 
   // ── App State ──────────────────────────────────────────────────────────────
-  let mode = "RECEIVE"; // "RECEIVE" | "SEND" | "ABOUT"
+  let mode = "RECEIVE"; // "RECEIVE" | "SEND" | "ABOUT" | "SETTINGS"
   let connectionState = "IDLE"; // "IDLE" | "WAITING" | "CONNECTED" | "DISCONNECTED"
 
   let qrImage = "";
@@ -60,6 +68,23 @@
   let isDragOver = false;
   let savePath = ""; // persisted save directory
 
+  // ── Transfer Settings ──────────────────────────────────────────────────
+  let settings = {
+    mode: "ask_first",
+    maxFileSizeMB: 0,
+    blockedExtensions: [],
+    trustedDevices: [],
+    blockedDevices: [],
+  };
+  let settingsDirty = false;
+  let transferRequest = null;
+  let rememberDevice = false;
+  let newBlockedExt = "";
+  let newTrustedIP = "";
+  let newTrustedName = "";
+  let newBlockedIP = "";
+  let newBlockedName = "";
+
   // ── Sound toggle ────────────────────────────────────────────────────────
   let soundEnabled = localStorage.getItem("beamsync_sound") !== "false";
   function toggleSound() {
@@ -69,15 +94,12 @@
   }
 
   // ── Batch transfer tracking ──────────────────────────────────────────
-  // Count files received in the current upload session so we can play
-  // the success tone only once at the end instead of once per file.
   let batchCount = 0; // files received this session
   let batchTimer = null; // resets batchCount after idle
   let showTickAnim = false; // drives the "all done" tick overlay
   let lastBatchCount = 0;
 
   // ── Toast system ──────────────────────────────────────────────────────────
-  // Each toast: { id, msg, type }
   let toasts = [];
   let _tid = 0;
   let _progressTimeout; // watchdog: clears stale progress if phone drops mid-upload
@@ -97,9 +119,12 @@
 
   // ── Mount / Unmount ─────────────────────────────────────────────────────
   onMount(async () => {
-    // 💡 Fix for Wails Dev Mode Hot-Reloads:
-    // Clear any zombie listeners from previous hmr reloads that had soundEnabled=true
     EventsOffAll();
+
+    // Load settings
+    try {
+      settings = await GetTransferSettings();
+    } catch {}
 
     EventsOn("device_connected", () => {
       connectionState = "CONNECTED";
@@ -111,9 +136,12 @@
       playSound("click");
       toast("💔 Signal lost — device disconnected", "warn");
     });
+    EventsOn("transfer_request", (dataStr) => {
+      playSound("connect");
+      transferRequest = JSON.parse(dataStr);
+    });
     EventsOn("file_received", (filename) => {
       refreshFileList();
-      // Fully reset progress — don't spread stale filename/numbers
       clearTimeout(_progressTimeout);
       progress = {
         active: false,
@@ -131,9 +159,6 @@
       progressStartTime = 0;
       speedHistory = [];
 
-      // Batch tracking: accumulate count, reset the "all done" idle timer.
-      // The timer is also cancelled inside upload_progress, so it only fires
-      // when there has been no transfer activity at all for 2.5 s.
       batchCount += 1;
       clearTimeout(batchTimer);
       batchTimer = setTimeout(() => {
@@ -148,7 +173,6 @@
       toast(`✅ Received: ${filename}`, "success");
     });
 
-    // Helper function to format time duration (seconds to "2m 45s" format)
     const formatTime = (seconds) => {
       if (isNaN(seconds) || !isFinite(seconds)) return "—";
       if (seconds < 0) return "—";
@@ -161,22 +185,19 @@
       return `${hours}h ${remainMins}m`;
     };
 
-    // Helper function to get speed color indicator
     const getSpeedColor = (speedMBps) => {
-      if (speedMBps > 10) return "#00ff00"; // Green: fast
-      if (speedMBps > 5) return "#ffb000"; // Orange: medium
-      return "#ff6b6b"; // Red: slow
+      if (speedMBps > 10) return "#00ff00";
+      if (speedMBps > 5) return "#ffb000";
+      return "#ff6b6b";
     };
 
-    // Helper function to calculate smooth speed using rolling average
     const calculateSmoothedSpeed = (currentSpeed) => {
       speedHistory.push(currentSpeed);
-      if (speedHistory.length > 10) speedHistory.shift(); // Keep last 10 samples
+      if (speedHistory.length > 10) speedHistory.shift();
       const avg = speedHistory.reduce((a, b) => a + b, 0) / speedHistory.length;
       return avg;
     };
 
-    // Handler for both upload and download progress
     const handleProgressUpdate = (data) => {
       const parts = data.split("|");
       if (parts.length < 3) return;
@@ -186,23 +207,19 @@
       const now = Date.now();
       const dt = (now - lastProgressTime) / 1000;
 
-      // Initialize progress start time on first event
       if (progressStartTime === 0) {
         progressStartTime = now;
       }
 
-      // Calculate raw speed
-      let instantSpeed = 0; // MB/s
+      let instantSpeed = 0;
       if (dt > 0 && lastProgressTime > 0) {
         instantSpeed = (written - lastLoaded) / dt / 1048576;
       }
 
-      // Apply smoothing to speed
       const smoothedSpeed = calculateSmoothedSpeed(Math.max(0, instantSpeed));
       const speedStr = `${Math.max(0, smoothedSpeed).toFixed(2)} MB/s`;
       const speedColor = getSpeedColor(smoothedSpeed);
 
-      // Calculate ETA
       let timeRemaining = "—";
       if (smoothedSpeed > 0) {
         const remainingBytes = total - written;
@@ -210,7 +227,6 @@
         timeRemaining = formatTime(secondsRemaining);
       }
 
-      // Calculate total elapsed time
       const elapsedSeconds = (now - progressStartTime) / 1000;
       const totalTimeStr = formatTime(elapsedSeconds);
 
@@ -232,10 +248,7 @@
       };
 
       if (connectionState !== "CONNECTED") connectionState = "CONNECTED";
-      // If a new file is actively streaming, cancel the batch-complete timer —
-      // we are NOT done yet.
       clearTimeout(batchTimer);
-      // Reset stale-progress watchdog: clears if no progress event for 30s
       clearTimeout(_progressTimeout);
       _progressTimeout = setTimeout(() => {
         progress = {
@@ -271,7 +284,6 @@
     });
 
     await initReceiver();
-    // Load persisted save path for sidebar display
     try {
       savePath = await GetSavePath();
     } catch {
@@ -310,7 +322,6 @@
   }
 
   async function switchMode(newMode) {
-    // Re-allow switching to RECEIVE even if already there but connection is lost
     const alreadySameMode = mode === newMode;
     if (alreadySameMode && connectionState === "CONNECTED") return;
     playSound("blip");
@@ -431,7 +442,6 @@
       toast("❌ " + result, "error");
       return;
     }
-    // SetSavePath restarts receiver and returns new URL
     serverUrl = result;
     generateQR(result);
     savePath = await GetSavePath();
@@ -443,6 +453,83 @@
     await resetAll();
     mode = "RECEIVE";
     await initReceiver();
+  }
+
+  // ── Settings Logic ──────────────────────────────────────────────────
+  async function saveSettings() {
+    playSound("click");
+    settings.maxFileSizeMB = Number(settings.maxFileSizeMB) || 0;
+    await SaveTransferSettings(settings);
+    settingsDirty = false;
+    toast("Settings saved", "success");
+  }
+
+  function addBlockedExt() {
+    let ext = newBlockedExt.trim().toLowerCase();
+    if (!ext) return;
+    if (!ext.startsWith(".")) ext = "." + ext;
+    if (!settings.blockedExtensions.includes(ext)) {
+      settings.blockedExtensions = [...settings.blockedExtensions, ext];
+      settingsDirty = true;
+    }
+    newBlockedExt = "";
+  }
+
+  function removeBlockedExt(ext) {
+    settings.blockedExtensions = settings.blockedExtensions.filter(e => e !== ext);
+    settingsDirty = true;
+  }
+
+  function addTrustedDevice() {
+    const ip = newTrustedIP.trim();
+    if (!ip) return;
+    if (!settings.trustedDevices.find(d => d.ip === ip)) {
+      settings.trustedDevices = [...settings.trustedDevices, { ip, friendlyName: newTrustedName.trim() || ip }];
+      settingsDirty = true;
+    }
+    newTrustedIP = "";
+    newTrustedName = "";
+  }
+
+  function removeTrustedDevice(ip) {
+    settings.trustedDevices = settings.trustedDevices.filter(d => d.ip !== ip);
+    settingsDirty = true;
+  }
+
+  function addBlockedDevice() {
+    const ip = newBlockedIP.trim();
+    if (!ip) return;
+    if (!settings.blockedDevices.find(d => d.ip === ip)) {
+      settings.blockedDevices = [...settings.blockedDevices, { ip, friendlyName: newBlockedName.trim() || ip }];
+      settingsDirty = true;
+    }
+    newBlockedIP = "";
+    newBlockedName = "";
+  }
+
+  function removeBlockedDevice(ip) {
+    settings.blockedDevices = settings.blockedDevices.filter(d => d.ip !== ip);
+    settingsDirty = true;
+  }
+
+  function handleConsent(approve) {
+    if (!transferRequest) return;
+    playSound("click");
+    if (approve) {
+      ApproveTransfer(transferRequest.id);
+      if (rememberDevice) {
+        settings.trustedDevices = [...settings.trustedDevices, { ip: transferRequest.senderIP, friendlyName: transferRequest.senderName }];
+        SaveTransferSettings(settings);
+      }
+    } else {
+      RejectTransfer(transferRequest.id);
+      if (rememberDevice) {
+        settings.blockedDevices = [...settings.blockedDevices, { ip: transferRequest.senderIP, friendlyName: transferRequest.senderName }];
+        SaveTransferSettings(settings);
+      }
+    }
+    transferRequest = null;
+    rememberDevice = false;
   }
 
   // Drag & drop
@@ -461,26 +548,51 @@
     startSend();
   }
 
-  // ── Derived (computed once, not on every render tick) ─────────────────────
-  $: connLabel = {
-    IDLE: "OFFLINE",
-    WAITING: "LISTENING",
-    CONNECTED: "LINKED",
-    DISCONNECTED: "LOST",
-  }[connectionState];
-  $: connClass = {
-    IDLE: "st--idle",
-    WAITING: "st--wait",
-    CONNECTED: "st--ok",
-    DISCONNECTED: "st--err",
-  }[connectionState];
   $: displayUrl = serverUrl.replace(/\/\?token=.*$/, "");
-  $: sortedFiles = [...receivedFiles]; // backend returns newest-first
+  $: sortedFiles = [...receivedFiles];
 </script>
 
 <svelte:window on:mousemove={handleMouseMove} />
 
-<!-- Drop zone layer (always active behind nav for drag-drop SEND initiation) -->
+{#if transferRequest}
+  <div class="nb-card" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10000; width: 440px; padding: 2.5rem; border: 4px solid var(--nb-border-color); background: var(--nb-surface);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem;">
+      <h2 style="margin: 0; font-size: 1.5rem; font-weight: bold; letter-spacing: -0.01em;">Incoming Transfer</h2>
+      <span class="nb-badge nb-badge--primary" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; animation: nb-pulse 2s infinite;">PENDING</span>
+    </div>
+    
+    <div style="background: var(--nb-bg); border: 2px solid var(--nb-border-color); padding: 1.25rem; margin-bottom: 1.5rem;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; border-bottom: 2px dashed var(--nb-border-color); padding-bottom: 0.75rem;">
+        <span style="color: var(--nb-text-muted); font-weight: 600;">From Device</span>
+        <strong style="font-size: 1rem;">{transferRequest.senderName || transferRequest.senderIP}</strong>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; border-bottom: 2px dashed var(--nb-border-color); padding-bottom: 0.75rem;">
+        <span style="color: var(--nb-text-muted); font-weight: 600;">File Name</span>
+        <strong style="font-size: 1rem; word-break: break-all; max-width: 65%; text-align: right;">{transferRequest.filename}</strong>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: var(--nb-text-muted); font-weight: 600;">File Size</span>
+        <strong style="font-size: 1rem;">{transferRequest.sizeMB}</strong>
+      </div>
+    </div>
+    
+    <label style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1.75rem; cursor: pointer; font-size: 1rem; font-weight: 600;">
+      <input type="checkbox" bind:checked={rememberDevice} style="width: 20px; height: 20px; accent-color: var(--nb-primary); border: 2px solid var(--nb-border-color);"> 
+      Always accept transfers from this device
+    </label>
+    
+    <div style="display: flex; gap: 1.5rem;">
+      <button class="nb-btn nb-btn--danger" style="flex: 1; padding: 0.75rem; font-size: 1rem;" on:click={() => handleConsent(false)}>Decline</button>
+      <button class="nb-btn nb-btn--primary" style="flex: 1; padding: 0.75rem; font-size: 1rem;" on:click={() => handleConsent(true)}>Accept Transfer</button>
+    </div>
+  </div>
+  <div style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); z-index: 9999;"></div>
+{/if}
+
+{#if showSplash}
+  <SplashScreen on:done={() => (showSplash = false)} />
+{/if}
+
 <div
   class="app-dropzone"
   on:dragover={handleDragOver}
@@ -493,7 +605,6 @@
     </div>
   {/if}
 
-  <!-- Toast rack -->
   <div class="toast-rack" aria-live="polite">
     {#each toasts as t (t.id)}
       <div class="toast toast--{t.type}">{t.msg}</div>
@@ -507,7 +618,7 @@
       serverUrl={displayUrl}
       appVersion="v2.2"
       on:tabChange={({ detail }) => switchMode(detail.tab.toUpperCase())}
-      on:settings={toggleSound}
+      on:settings={() => switchMode('SETTINGS')}
       on:reset={handleDisconnectReset}
     />
 
@@ -575,16 +686,6 @@
                     >
                   </div>
                 {/if}
-
-                <div class="save-path-row">
-                  <span class="save-path-lbl nb-badge">Save to</span>
-                  <span class="save-path-val">{savePath || "Default"}</span>
-                  <button
-                    class="nb-btn nb-btn--ghost nb-btn--sm"
-                    style="padding: 4px 10px; font-size: 0.75rem;"
-                    on:click={changeSavePath}>CHANGE</button
-                  >
-                </div>
               </div>
             </div>
 
@@ -596,7 +697,6 @@
             {/if}
           </div>
         {:else}
-          <!-- Connected Receive Mode -->
           <div class="receive-active">
             <h2 class="active-title">Device Connected</h2>
 
@@ -688,6 +788,56 @@
               >
             </div>
           {/if}
+        </div>
+      {:else if mode === "SETTINGS"}
+        <div class="mode-wrapper" in:fly={{ y: 15, duration: 250 }}>
+          <div class="nb-card" style="padding: 2rem;">
+            <h2 style="margin-top: 0;">Transfer Settings</h2>
+            
+            <div style="margin-bottom: 2rem;">
+              <h3>Save Location</h3>
+              <div style="display: flex; gap: 0.5rem; align-items: center; border: 2px solid var(--nb-border-color); padding: 0.5rem; background: var(--nb-bg);">
+                <span class="nb-badge" style="background: var(--nb-border-color); color: var(--nb-surface);">Path</span>
+                <span style="flex: 1; word-break: break-all; font-family: monospace;">{savePath || "Default"}</span>
+                <button class="nb-btn nb-btn--ghost nb-btn--sm" on:click={changeSavePath} style="padding: 0.25rem 0.5rem;">CHANGE</button>
+              </div>
+              <p style="color: var(--nb-text-muted); font-size: 0.8rem; margin-top: 0.5rem;">Changing the save location will temporarily restart the receiver.</p>
+            </div>
+
+            <div style="margin-bottom: 2rem;">
+              <h3>Transfer Mode</h3>
+              {#each [{v: "ask_first", l: "Ask First"}, {v: "accept_all", l: "Accept All"}, {v: "block_all", l: "Block All"}] as opt}
+                <label style="display: block; margin: 0.5rem 0;">
+                  <input type="radio" bind:group={settings.mode} value={opt.v} on:change={() => settingsDirty = true}> {opt.l}
+                </label>
+              {/each}
+            </div>
+
+            <div style="margin-bottom: 2rem;">
+              <h3>Blocked Extensions</h3>
+              <div style="display: flex; gap: 0.75rem;">
+                <input class="nb-input" bind:value={newBlockedExt} placeholder=".exe" style="flex: 1;">
+                <button class="nb-btn nb-btn--secondary" on:click={addBlockedExt}>ADD</button>
+              </div>
+              <div style="margin-top: 0.5rem;">
+                {#each settings.blockedExtensions as ext}
+                  <span class="nb-badge" on:click={() => removeBlockedExt(ext)} style="cursor: pointer;">{ext} ✕</span>
+                {/each}
+              </div>
+            </div>
+
+            <div style="margin-bottom: 2rem;">
+              <h3>Application Sounds</h3>
+              <label style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1.75rem; cursor: pointer; font-size: 1rem; font-weight: 600;">
+                <input type="checkbox" bind:checked={soundEnabled} on:change={() => { localStorage.setItem("beamsync_sound", soundEnabled.toString()); playSound("click"); }} style="width: 20px; height: 20px; accent-color: var(--nb-primary); border: 2px solid var(--nb-border-color);"> 
+                Enable application sound effects
+              </label>
+            </div>
+
+            {#if settingsDirty}
+              <button class="nb-btn nb-btn--primary" on:click={saveSettings}>SAVE SETTINGS</button>
+            {/if}
+          </div>
         </div>
       {:else if mode === "ABOUT"}
         <div class="mode-wrapper about-layout" in:fly={{ y: 15, duration: 250 }}>

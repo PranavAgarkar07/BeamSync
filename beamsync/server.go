@@ -12,6 +12,7 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -72,10 +73,43 @@ func (s *serverState) checkTimeout() (wasConnected bool, timedOut bool) {
 	return s.isConnected, false
 }
 
+// PendingTransfer holds a blocked transfer awaiting user approval.
+type PendingTransfer struct {
+	ID         string `json:"id"`
+	Filename   string `json:"filename"`
+	SizeMB     string `json:"sizeMB"`
+	SizeBytes  int64  `json:"sizeBytes"`
+	MimeType   string `json:"mimeType"`
+	SenderIP   string `json:"senderIP"`
+	SenderName string `json:"senderName"`
+	approved   chan bool
+}
+
 // HTTPServer wraps http.Server so we can shut it down cleanly.
 type HTTPServer struct {
-	server *http.Server
-	cancel context.CancelFunc
+	server           *http.Server
+	cancel           context.CancelFunc
+	pendingMu        sync.Mutex
+	pendingTransfers map[string]*PendingTransfer
+	settings         *TransferSettings
+}
+
+// RespondToTransfer approves or rejects a pending transfer by ID.
+func (s *HTTPServer) RespondToTransfer(id string, approved bool) {
+	s.pendingMu.Lock()
+	pt, ok := s.pendingTransfers[id]
+	if ok {
+		delete(s.pendingTransfers, id)
+	}
+	s.pendingMu.Unlock()
+	if ok {
+		pt.approved <- approved
+	}
+}
+
+// Settings returns a pointer to the live TransferSettings for in-place updates.
+func (s *HTTPServer) Settings() *TransferSettings {
+	return s.settings
 }
 
 func (s *HTTPServer) Shutdown() error {
@@ -343,7 +377,7 @@ func safeEmit(emit EventCallback, event, data string) {
 
 // StartServer starts the file-receiver HTTP server.
 // Returns (server handle, port string, session token).
-func StartServer(uploadDir string, startPort int, callback EventCallback) (*HTTPServer, string, string) {
+func StartServer(uploadDir string, startPort int, settings TransferSettings, callback EventCallback) (*HTTPServer, string, string) {
 	fmt.Println("🚀 StartServer() called")
 
 	defer func() {
@@ -365,6 +399,13 @@ func StartServer(uploadDir string, startPort int, callback EventCallback) (*HTTP
 	ctx, cancel := context.WithCancel(context.Background())
 
 	startWatchdog(ctx, state, emit)
+
+	settingsCopy := settings
+	httpServer := &HTTPServer{
+		cancel:           cancel,
+		pendingTransfers: make(map[string]*PendingTransfer),
+		settings:         &settingsCopy,
+	}
 
 	mux := http.NewServeMux()
 
@@ -421,6 +462,125 @@ func StartServer(uploadDir string, startPort int, callback EventCallback) (*HTTP
 		}
 		w.Write(content)
 	})
+
+	// ── Request Transfer (ask before accepting) ──────────────────────────────
+	mux.HandleFunc("/request-transfer", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Extract sender IP
+		senderIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if senderIP == "" {
+			senderIP = r.RemoteAddr
+		}
+
+		var req struct {
+			Filename  string `json:"filename"`
+			SizeBytes int64  `json:"sizeBytes"`
+			MimeType  string `json:"mimeType"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		s := httpServer.settings
+		senderName := s.friendlyNameForIP(senderIP)
+
+		// ── Check blocked devices ─────────────────────────────────────────────
+		if s.isDeviceBlocked(senderIP) {
+			fmt.Printf("🚫 Blocked device tried to send: %s\n", senderIP)
+			http.Error(w, "403 Forbidden: device is blocked", http.StatusForbidden)
+			return
+		}
+
+		// ── Check block_all mode ──────────────────────────────────────────────
+		if s.Mode == TransferModeBlockAll {
+			http.Error(w, "403 Forbidden: all transfers are blocked", http.StatusForbidden)
+			return
+		}
+
+		// ── Check file extension ──────────────────────────────────────────────
+		if s.isExtensionBlocked(req.Filename) {
+			fmt.Printf("🚫 Blocked file extension: %s\n", req.Filename)
+			http.Error(w, "403 Forbidden: file type is blocked", http.StatusForbidden)
+			return
+		}
+
+		// ── Check max file size ───────────────────────────────────────────────
+		if s.MaxFileSizeMB > 0 && req.SizeBytes > s.MaxFileSizeMB*1024*1024 {
+			fmt.Printf("🚫 File too large: %d bytes (max %d MB)\n", req.SizeBytes, s.MaxFileSizeMB)
+			http.Error(w, fmt.Sprintf("403 Forbidden: file exceeds max size of %d MB", s.MaxFileSizeMB), http.StatusForbidden)
+			return
+		}
+
+		// ── accept_all: approve immediately ───────────────────────────────────
+		if s.Mode == TransferModeAcceptAll {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("approved"))
+			return
+		}
+
+		// ── trusted_only: approve if trusted, else reject ─────────────────────
+		if s.Mode == TransferModeTrustedOnly {
+			if s.isDeviceTrusted(senderIP) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("approved"))
+			} else {
+				http.Error(w, "403 Forbidden: device is not trusted", http.StatusForbidden)
+			}
+			return
+		}
+
+		// ── ask_first: emit event and wait for user response ──────────────────
+		id := generateToken()
+		sizeMB := fmt.Sprintf("%.2f MB", float64(req.SizeBytes)/1024/1024)
+
+		pt := &PendingTransfer{
+			ID:         id,
+			Filename:   req.Filename,
+			SizeMB:     sizeMB,
+			SizeBytes:  req.SizeBytes,
+			MimeType:   req.MimeType,
+			SenderIP:   senderIP,
+			SenderName: senderName,
+			approved:   make(chan bool, 1),
+		}
+
+		httpServer.pendingMu.Lock()
+		httpServer.pendingTransfers[id] = pt
+		httpServer.pendingMu.Unlock()
+
+		// Emit event to desktop UI
+		evtData, _ := json.Marshal(pt)
+		emit("transfer_request", string(evtData))
+
+		fmt.Printf("⏳ Waiting for user approval: %s from %s\n", req.Filename, senderIP)
+
+		// Wait up to 60 seconds for user response
+		select {
+		case approved := <-pt.approved:
+			if approved {
+				fmt.Printf("✅ Transfer approved: %s\n", req.Filename)
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("approved"))
+			} else {
+				fmt.Printf("❌ Transfer rejected: %s\n", req.Filename)
+				http.Error(w, "403 Forbidden: transfer rejected by user", http.StatusForbidden)
+			}
+		case <-time.After(60 * time.Second):
+			// Auto-reject on timeout
+			httpServer.pendingMu.Lock()
+			delete(httpServer.pendingTransfers, id)
+			httpServer.pendingMu.Unlock()
+			fmt.Printf("⏰ Transfer request timed out: %s\n", req.Filename)
+			emit("transfer_request_timeout", id)
+			http.Error(w, "408 Request Timeout: no response from user", http.StatusRequestTimeout)
+		}
+	}))
 
 	// ── Upload ────────────────────────────────────────────────────────────────
 	mux.HandleFunc("/upload", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
@@ -649,7 +809,7 @@ func StartServer(uploadDir string, startPort int, callback EventCallback) (*HTTP
 		WriteTimeout: 4 * time.Hour,
 		IdleTimeout:  60 * time.Second,
 	}
-	httpServer := &HTTPServer{server: srv, cancel: cancel}
+	httpServer.server = srv
 
 	go func() {
 		defer func() {

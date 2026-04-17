@@ -41,4 +41,28 @@ Thumbs.db
 
 #md
 reply.md
-desktop
+
+# Specific desktop ignores
+desktop/frontend/dist/
+desktop/frontend/node_modules/
+desktop/wailsjs/
+desktop/build/bin/
+desktop/AppDir/
+desktop/frontend/.svelte-kit/
+desktop/frontend/.vercel/
+desktop/frontend/.output/
+
+# Agent and AI artifacts
+.agent/
+.kilo/
+
+# Wails and Go Build Artifacts
+desktop/desktop
+desktop/desktop.exe
+
+# Arch Packaging Artifacts
+PKGBUILD_aur_temp
+*.pkg.tar.zst
+desktop/packaging/arch/pkg/
+desktop/packaging/arch/src/
+desktop/packaging/arch/BeamSync
