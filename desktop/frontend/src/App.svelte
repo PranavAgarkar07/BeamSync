@@ -46,6 +46,7 @@
   let qrImage = "";
   let serverUrl = "";
   let senderUrl = "";
+  let senderFiles = []; // [{name, sizeBytes}] — populated from sender_files event
 
   let receivedFiles = [];
   let progress = {
@@ -282,6 +283,13 @@
       showSenderDialog = true;
       generateQR(url);
     });
+    EventsOn("sender_files", (raw) => {
+      try {
+        senderFiles = JSON.parse(raw);
+      } catch {
+        senderFiles = [];
+      }
+    });
 
     await initReceiver();
     try {
@@ -416,6 +424,7 @@
     serverUrl = "";
     senderUrl = "";
     showSenderDialog = false;
+    senderFiles = [];
     progress = {
       active: false,
       filename: "",
@@ -700,28 +709,13 @@
           <div class="receive-active">
             <h2 class="active-title">Device Connected</h2>
 
-            {#if progress.active}
-              <TransferProgressBar
-                filename={progress.filename}
-                percent={progress.percent}
-                speed={progress.speed}
-                received={progress.received}
-                total={progress.total}
-                eta={progress.timeRemaining}
-                elapsed={progress.totalTime}
-                role="receiver"
-                active={true}
-                on:cancel={() => resetAll()}
-              />
-            {:else}
-              <div class="ready-banner pulse-bg">
-                <div class="radar-ping"></div>
-                <div class="ready-content">
-                  <span class="status-badge">READY</span>
-                  <span class="status-text">WAITING FOR FILES...</span>
-                </div>
+            <div class="ready-banner pulse-bg">
+              <div class="radar-ping"></div>
+              <div class="ready-content">
+                <span class="status-badge">READY</span>
+                <span class="status-text">WAITING FOR FILES...</span>
               </div>
-            {/if}
+            </div>
 
             <div class="files-panel">
               <div class="files-header">
@@ -752,7 +746,7 @@
         </div>
       {:else if mode === "SEND"}
         <div class="mode-wrapper send-layout" in:fly={{ y: 15, duration: 250 }}>
-          <FileDropZone on:selectFiles={startSend} on:requestPicker={startSend} />
+          <FileDropZone files={senderFiles} on:selectFiles={startSend} on:requestPicker={startSend} />
 
           {#if showSenderDialog}
             <div class="sender-dialog">
@@ -896,6 +890,33 @@
       on:dismiss={() => (showTickAnim = false)}
     />
   {/if}
+
+  <!-- ── Global floating progress overlay ─────────────────────────────── -->
+  <!-- Visible in any tab (RECEIVE or SEND) while a transfer is active -->
+  {#if progress.active}
+    <div class="progress-float" in:fly={{ y: 20, duration: 200 }}>
+      <div class="progress-float__header">
+        <span class="progress-float__label">
+          {mode === 'SEND' ? 'DOWNLOADING' : 'UPLOADING'}
+        </span>
+        <span class="progress-float__filename">{progress.filename}</span>
+        <span class="progress-float__pct" style="color: {progress.speedColor}">
+          {progress.percent >= 0 ? progress.percent + '%' : '▶'}
+        </span>
+      </div>
+      <div class="progress-float__bar-track">
+        <div
+          class="progress-float__bar-fill"
+          style="width: {progress.percent >= 0 ? progress.percent : 100}%; background: {progress.speedColor}; opacity: {progress.percent >= 0 ? 1 : 0.4};"
+        ></div>
+      </div>
+      <div class="progress-float__stats">
+        <span>{progress.speed}</span>
+        <span>{progress.received} / {progress.total}</span>
+        <span>ETA {progress.timeRemaining}</span>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -918,6 +939,81 @@
     align-items: center;
     justify-content: center;
     border: 4px dashed var(--nb-primary);
+  }
+
+  /* ── Global floating transfer progress card ─────────────────────────── */
+  .progress-float {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 5000;
+    width: 320px;
+    background: var(--nb-surface);
+    border: 2px solid var(--nb-border-color);
+    box-shadow: 6px 6px 0px var(--nb-shadow-color, #08101E);
+    padding: 14px 16px;
+    font-family: var(--nb-font-mono, 'Space Mono', monospace);
+  }
+
+  .progress-float__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    min-width: 0;
+  }
+
+  .progress-float__label {
+    font-family: var(--nb-font-display, 'Syne', sans-serif);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--nb-primary);
+    white-space: nowrap;
+    flex-shrink: 0;
+    background: var(--nb-primary);
+    color: #fff;
+    padding: 2px 6px;
+  }
+
+  .progress-float__filename {
+    font-size: 12px;
+    font-weight: 700;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .progress-float__pct {
+    font-family: var(--nb-font-display, 'Syne', sans-serif);
+    font-size: 16px;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+
+  .progress-float__bar-track {
+    height: 10px;
+    background: var(--nb-bg);
+    border: 2px solid var(--nb-border-color);
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+
+  .progress-float__bar-fill {
+    height: 100%;
+    transition: width 0.2s linear;
+  }
+
+  .progress-float__stats {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--nb-text-muted);
+    flex-wrap: wrap;
   }
 
   .drop-message {

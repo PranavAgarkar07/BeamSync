@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>BeamSync Uplink</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Mono:wght@700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Mono:wght@400;700&display=swap');
 
         :root {
             --nb-bg: #F5F0E8;
@@ -19,8 +19,9 @@
             --nb-border-color: #2D3F5E;
             --nb-border: 2px solid var(--nb-border-color);
             --nb-shadow: 4px 4px 0px #08101E;
-            --nb-shadow-hover: 6px 6px 0px #08101E;
             --nb-radius: 0px;
+            --nb-success: #00B87C;
+            --nb-warn: #FF7A00;
         }
 
         @media (prefers-color-scheme: dark) {
@@ -28,17 +29,19 @@
                 --nb-bg: #0C1120;
                 --nb-surface: #141E30;
                 --nb-text: #E2E8F0;
+                --nb-text-muted: #94A3B8;
+                --nb-border-color: #3D5080;
+                --nb-shadow: 4px 4px 0px #020408;
             }
         }
 
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
             background-color: var(--nb-bg);
             color: var(--nb-text);
             font-family: 'Space Mono', monospace;
-            margin: 0;
-            padding: 24px 16px;
+            padding: 20px 14px 32px;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -48,50 +51,55 @@
 
         .container {
             width: 100%;
-            max-width: 400px;
-            text-align: center;
-            background: var(--nb-surface);
-            border: var(--nb-border);
-            box-shadow: var(--nb-shadow);
-            padding: 32px 20px;
+            max-width: 420px;
             display: flex;
             flex-direction: column;
+            gap: 0;
         }
 
-        h1 {
-            font-family: 'Syne', sans-serif;
-            font-size: 24px;
-            font-weight: 800;
-            margin: 0 0 24px 0;
+        /* ── Header ───────────────────────────────────────────────── */
+        .app-header {
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 10px;
+            padding: 20px;
+            background: var(--nb-surface);
+            border: var(--nb-border);
+            border-bottom: none;
+            box-shadow: var(--nb-shadow);
+        }
+
+        .app-header h1 {
+            font-family: 'Syne', sans-serif;
+            font-size: 22px;
+            font-weight: 800;
             text-transform: uppercase;
+            letter-spacing: 0.04em;
         }
 
-        h1 svg {
-            color: var(--nb-primary);
-        }
-
+        /* ── Upload Drop Zone ─────────────────────────────────────── */
         .upload-zone {
             border: var(--nb-border);
+            border-top: none;
             background: var(--nb-bg);
-            padding: 40px 20px;
-            margin-bottom: 20px;
+            padding: 32px 20px;
             position: relative;
             cursor: pointer;
-            transition: transform 0.1s, box-shadow 0.1s;
+            transition: background 0.15s;
+            text-align: center;
+        }
+
+        .upload-zone.has-files {
+            padding: 20px;
         }
 
         .upload-zone:active {
-            transform: translate(2px, 2px);
             background: var(--nb-secondary);
             color: var(--nb-secondary-text);
-            border-color: var(--nb-text);
         }
 
-        input[type="file"] {
+        .upload-zone input[type="file"] {
             position: absolute;
             top: 0; left: 0;
             width: 100%; height: 100%;
@@ -101,183 +109,486 @@
             appearance: none;
         }
 
-        .btn {
+        .zone-label {
+            font-family: 'Syne', sans-serif;
+            font-weight: 800;
+            font-size: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-top: 10px;
+        }
+
+        .zone-icon {
+            color: var(--nb-primary);
+        }
+
+        /* ── File Count Banner ───────────────────────────────────── */
+        .file-count-banner {
+            background: var(--nb-primary);
+            color: #fff;
+            font-family: 'Syne', sans-serif;
+            font-weight: 800;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            padding: 8px 16px;
+            border: var(--nb-border);
+            border-top: none;
+            display: none;
+        }
+
+        /* ── File Cards List ──────────────────────────────────────── */
+        .file-cards {
+            display: none;
+            flex-direction: column;
+            border: var(--nb-border);
+            border-top: none;
+            max-height: 280px;
+            overflow-y: auto;
+            background: var(--nb-surface);
+        }
+
+        .file-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--nb-border-color);
+            transition: background 0.1s;
+        }
+
+        .file-card:last-child {
+            border-bottom: none;
+        }
+
+        .file-card__icon {
+            font-size: 24px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .file-card__body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-card__name {
+            font-size: 12px;
+            font-weight: 700;
+            word-break: break-word;
+            line-height: 1.4;
+            margin-bottom: 4px;
+        }
+
+        .file-card__meta {
+            font-size: 11px;
+            color: var(--nb-text-muted);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .file-card__progress-bar-track {
+            height: 4px;
+            background: var(--nb-bg);
+            border: 1px solid var(--nb-border-color);
+            margin-top: 6px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .file-card__progress-bar-fill {
+            height: 100%;
+            background: var(--nb-primary);
+            width: 0%;
+            transition: width 0.2s linear;
+        }
+
+        .file-card__status {
+            flex-shrink: 0;
+            font-size: 10px;
+            font-weight: 700;
+            font-family: 'Syne', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            padding: 3px 7px;
+            border: 1.5px solid;
+        }
+
+        .file-card__status.queued {
+            border-color: var(--nb-text-muted);
+            color: var(--nb-text-muted);
+        }
+
+        .file-card__status.uploading {
+            border-color: var(--nb-primary);
+            color: var(--nb-primary);
+            animation: status-pulse 1.2s ease-in-out infinite;
+        }
+
+        .file-card__status.done {
+            border-color: var(--nb-success);
+            color: var(--nb-success);
+        }
+
+        .file-card__status.error {
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+
+        @keyframes status-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* ── Overall Progress Bar ─────────────────────────────────── */
+        .overall-progress {
+            border: var(--nb-border);
+            border-top: none;
+            background: var(--nb-surface);
+            padding: 14px 16px;
+            display: none;
+        }
+
+        .overall-progress.visible {
+            display: block;
+        }
+
+        .overall-progress__label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .overall-progress__title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .overall-progress__pct {
+            font-family: 'Syne', sans-serif;
+            font-size: 16px;
+            font-weight: 800;
+            color: var(--nb-primary);
+        }
+
+        .overall-progress__bar-track {
+            height: 12px;
+            background: var(--nb-bg);
+            border: var(--nb-border);
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .overall-progress__bar-fill {
+            height: 100%;
+            background: var(--nb-primary);
+            width: 0%;
+            transition: width 0.15s linear;
+        }
+
+        .overall-progress__stats {
+            display: flex;
+            gap: 16px;
+            font-size: 11px;
+            color: var(--nb-text-muted);
+            font-weight: 700;
+        }
+
+        .stats-value {
+            color: var(--nb-text);
+        }
+
+        /* ── Upload Button ────────────────────────────────────────── */
+        .btn-upload {
             background: var(--nb-primary);
             color: #FFFFFF;
             border: var(--nb-border);
-            padding: 16px;
+            border-top: none;
+            padding: 18px;
             font-size: 16px;
             font-family: 'Syne', sans-serif;
             font-weight: 800;
             cursor: pointer;
             text-transform: uppercase;
+            letter-spacing: 0.06em;
             width: 100%;
-            margin-bottom: 20px;
             box-shadow: var(--nb-shadow);
-            transition: transform 0.1s;
+            transition: transform 0.1s, box-shadow 0.1s;
             touch-action: manipulation;
             -webkit-tap-highlight-color: transparent;
         }
 
-        .btn:active {
+        .btn-upload:active {
             transform: translate(2px, 2px);
             box-shadow: 2px 2px 0px #08101E;
         }
 
-        .btn:disabled {
+        .btn-upload:disabled {
             background: var(--nb-text-muted);
             box-shadow: none;
             transform: none;
             cursor: not-allowed;
-            color: var(--nb-surface);
         }
 
-        #status {
-            font-size: 13px;
-            font-weight: bold;
-            color: var(--nb-text-muted);
-            min-height: 1.2em;
-        }
-
-        .file-list {
-            text-align: left;
-            margin-bottom: 16px;
-            font-size: 12px;
-            padding: 10px;
-            border: 2px dashed var(--nb-border-color);
-            max-height: 120px;
-            overflow-y: auto;
-        }
-
-        .progress-container {
-            width: 100%;
-            background: var(--nb-bg);
+        /* ── Status Line ──────────────────────────────────────────── */
+        .status-bar {
             border: var(--nb-border);
-            height: 32px;
-            margin-bottom: 20px;
-            display: none;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .progress-bar {
-            width: 0%;
-            height: 100%;
-            background: var(--nb-primary);
-            transition: width 0.1s linear;
-        }
-
-        .progress-text {
-            position: absolute;
-            inset: 0;
+            border-top: none;
+            background: var(--nb-bg);
+            padding: 10px 16px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--nb-text-muted);
+            min-height: 38px;
             display: flex;
             align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            color: var(--nb-text);
-            font-weight: 700;
-            text-shadow: 1px 1px 0px var(--nb-surface), -1px -1px 0px var(--nb-surface);
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--nb-text-muted);
+            flex-shrink: 0;
+        }
+
+        .status-dot.active {
+            background: var(--nb-primary);
+            animation: status-pulse 1s ease-in-out infinite;
+        }
+
+        .status-dot.done {
+            background: var(--nb-success);
         }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <h1>
-            <img src="/logo.png" width="32" height="32" alt="BeamSync Logo" style="border-radius: 4px;">
-            BeamSync
-        </h1>
+        <!-- Header -->
+        <div class="app-header">
+            <img src="/logo.png" width="28" height="28" alt="BeamSync" style="border-radius: 4px;">
+            <h1>BeamSync</h1>
+        </div>
 
-        <div class="upload-zone">
-            <input type="file" id="files" multiple accept="*/*" onchange="updateFileList()">
-            <div style="margin-bottom: 8px; color: var(--nb-primary);">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="miter">
-                    <path d="M21 15v4h-18v-4"></path>
+        <!-- Upload Drop Zone -->
+        <div class="upload-zone" id="uploadZone">
+            <input type="file" id="files" multiple accept="*/*">
+            <div class="zone-icon" id="zoneIcon">
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="miter">
+                    <path d="M21 15v4H3v-4"></path>
                     <polyline points="17 8 12 3 7 8"></polyline>
                     <line x1="12" y1="3" x2="12" y2="15"></line>
                 </svg>
             </div>
-            <p style="margin: 0; font-family: 'Syne', sans-serif; font-weight: 800; font-size: 16px;">TAP TO SELECT FILES</p>
+            <div class="zone-label" id="zoneLabel">TAP TO SELECT FILES</div>
         </div>
 
-        <div id="fileList" class="file-list"></div>
+        <!-- File count banner (shown when files are selected) -->
+        <div class="file-count-banner" id="fileCountBanner"></div>
 
-        <div id="progressContainer" class="progress-container">
-            <div id="progressBar" class="progress-bar"></div>
-            <div id="progressText" class="progress-text">0%</div>
+        <!-- Per-file cards -->
+        <div class="file-cards" id="fileCards"></div>
+
+        <!-- Overall upload progress -->
+        <div class="overall-progress" id="overallProgress">
+            <div class="overall-progress__label">
+                <span class="overall-progress__title">Overall Progress</span>
+                <span class="overall-progress__pct"><span id="overallPct">0</span>%</span>
+            </div>
+            <div class="overall-progress__bar-track">
+                <div class="overall-progress__bar-fill" id="overallBar"></div>
+            </div>
+            <div class="overall-progress__stats">
+                <span>SPEED: <span class="stats-value" id="statSpeed">—</span></span>
+                <span>SENT: <span class="stats-value" id="statSent">—</span></span>
+                <span>ETA: <span class="stats-value" id="statETA">—</span></span>
+            </div>
         </div>
 
-        <button class="btn" onclick="upload()">UPLOAD FILES</button>
+        <!-- Upload action button -->
+        <button class="btn-upload" id="uploadBtn" onclick="upload()">UPLOAD FILES</button>
 
-        <div id="status">Ready to upload</div>
+        <!-- Status bar -->
+        <div class="status-bar">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="status">Ready to upload</span>
+        </div>
     </div>
 
     <script>
         const TOKEN = "{{TOKEN}}";
 
-        // ── Heartbeat ───────────────────────────────────────────────────────
-        // Sends every 5s to keep the desktop watchdog alive.
-        // If the server replies 401/403 (token mismatch — server restarted),
-        // we reload the page so the new upload.html is served with a fresh
-        // token. The user never has to rescan the QR code.
+        // ── File state ──────────────────────────────────────────────
+        // fileStates[i] = { name, size, status: 'queued'|'uploading'|'done'|'error' }
+        let fileStates = [];
+        let _uploading = false;
         let _reloading = false;
-        let _uploading = false; // Guard against heartbeats stalling behind large file uploads
 
+        // Upload speed tracking
+        let uploadStartTime = 0;
+        let lastProgressBytes = 0;
+        let lastProgressTime = 0;
+        let speedHistory = [];
+        let totalUploadSize = 0;
+
+        // ── Heartbeat ───────────────────────────────────────────────
         function heartbeat() {
             if (_reloading) return;
             fetch("/heartbeat?token=" + TOKEN, { method: "POST" })
                 .then(r => {
-                    if (r.status === 401 || r.status === 403) {
-                        // Never reload while an upload is in flight — it would abort the transfer
-                        if (_uploading) return;
+                    if ((r.status === 401 || r.status === 403) && !_uploading) {
                         _reloading = true;
-                        document.getElementById('status').innerText = 'Connection changed — Reconnecting...';
-                        // Brief pause so the server is ready before reload
+                        setStatus('Connection changed — reconnecting…', false);
                         setTimeout(() => location.reload(), 800);
                     }
                 })
-                .catch(() => { }); // network down — just wait for next interval
+                .catch(() => {});
         }
         setInterval(heartbeat, 5000);
-        // Run immediately on page load so desktop gets device_connected fast
         heartbeat();
 
-        function updateFileList() {
-            const files = document.getElementById('files').files;
-            const list = document.getElementById('fileList');
-            if (files.length > 0) {
-                list.innerHTML = Array.from(files)
-                    .map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB)`)
-                    .join('<br>');
-                document.getElementById('status').innerText = `${files.length} file(s) selected`;
-            } else {
-                list.innerHTML = '';
-                document.getElementById('status').innerText = 'Ready to upload';
+        // ── Helpers ──────────────────────────────────────────────────
+        function fileIcon(name) {
+            const ext = (name.split('.').pop() || '').toLowerCase();
+            const map = {
+                pdf: '📄', jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', webp: '🖼️', svg: '🖼️',
+                mp4: '🎬', mov: '🎬', mkv: '🎬', avi: '🎬', hevc: '🎬',
+                mp3: '🎵', wav: '🎵', flac: '🎵', aac: '🎵',
+                zip: '📦', tar: '📦', gz: '📦', rar: '📦', '7z': '📦',
+                txt: '📝', md: '📝', doc: '📝', docx: '📝',
+                apk: '📱', exe: '⚙️',
+            };
+            return map[ext] || '📁';
+        }
+
+        function formatBytes(bytes) {
+            if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(2) + ' GB';
+            if (bytes >= 1048576) return (bytes / 1048576).toFixed(2) + ' MB';
+            if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return bytes + ' B';
+        }
+
+        function formatTime(sec) {
+            if (!isFinite(sec) || sec < 0) return '—';
+            if (sec < 60) return Math.round(sec) + 's';
+            const m = Math.floor(sec / 60), s = Math.round(sec % 60);
+            if (m < 60) return `${m}m ${s}s`;
+            return `${Math.floor(m / 60)}h ${m % 60}m`;
+        }
+
+        function smoothSpeed(speed) {
+            speedHistory.push(speed);
+            if (speedHistory.length > 8) speedHistory.shift();
+            return speedHistory.reduce((a, b) => a + b, 0) / speedHistory.length;
+        }
+
+        function setStatus(msg, isActive, isDone) {
+            document.getElementById('status').innerText = msg;
+            const dot = document.getElementById('statusDot');
+            dot.className = 'status-dot' + (isActive ? ' active' : isDone ? ' done' : '');
+        }
+
+        // ── Build file card HTML ───────────────────────────────────
+        function buildFileCard(idx, name, size) {
+            return `
+            <div class="file-card" id="fc-${idx}">
+                <div class="file-card__icon">${fileIcon(name)}</div>
+                <div class="file-card__body">
+                    <div class="file-card__name">${name}</div>
+                    <div class="file-card__meta">
+                        <span>${formatBytes(size)}</span>
+                        <span id="fc-speed-${idx}"></span>
+                    </div>
+                    <div class="file-card__progress-bar-track" id="fc-track-${idx}">
+                        <div class="file-card__progress-bar-fill" id="fc-bar-${idx}"></div>
+                    </div>
+                </div>
+                <div class="file-card__status queued" id="fc-status-${idx}">QUEUED</div>
+            </div>`;
+        }
+
+        function setCardStatus(idx, status) {
+            const chip = document.getElementById(`fc-status-${idx}`);
+            const track = document.getElementById(`fc-track-${idx}`);
+            if (!chip) return;
+            chip.className = `file-card__status ${status}`;
+            const labels = { queued: 'QUEUED', uploading: 'UPLOADING', done: 'DONE', error: 'ERROR' };
+            chip.textContent = labels[status] || status.toUpperCase();
+            if (status === 'uploading') track.style.display = 'block';
+            if (status === 'done') {
+                document.getElementById(`fc-bar-${idx}`).style.width = '100%';
+                document.getElementById(`fc-bar-${idx}`).style.background = 'var(--nb-success)';
             }
         }
 
-        async function upload() {
-            const files = document.getElementById('files').files;
-            if (!files.length) {
-                document.getElementById('status').innerText = 'Error: No files selected';
+        // ── File selection ─────────────────────────────────────────
+        document.getElementById('files').addEventListener('change', updateFileList);
+
+        function updateFileList() {
+            const files = Array.from(document.getElementById('files').files);
+            const cardsEl = document.getElementById('fileCards');
+            const bannerEl = document.getElementById('fileCountBanner');
+            const zoneLabel = document.getElementById('zoneLabel');
+            const zoneIcon = document.getElementById('zoneIcon');
+            const uploadZone = document.getElementById('uploadZone');
+
+            if (files.length === 0) {
+                fileStates = [];
+                cardsEl.innerHTML = '';
+                cardsEl.style.display = 'none';
+                bannerEl.style.display = 'none';
+                zoneLabel.textContent = 'TAP TO SELECT FILES';
+                zoneIcon.style.display = 'block';
+                uploadZone.classList.remove('has-files');
+                setStatus('Ready to upload', false);
                 return;
             }
 
-            const btn = document.querySelector('.btn');
-            const statusEl = document.getElementById('status');
+            fileStates = files.map((f, i) => ({ name: f.name, size: f.size, status: 'queued' }));
+            totalUploadSize = files.reduce((a, f) => a + f.size, 0);
+
+            // Banner
+            bannerEl.textContent = `${files.length} FILE${files.length > 1 ? 'S' : ''} SELECTED — ${formatBytes(totalUploadSize)} TOTAL`;
+            bannerEl.style.display = 'block';
+
+            // Cards
+            cardsEl.innerHTML = files.map((f, i) => buildFileCard(i, f.name, f.size)).join('');
+            cardsEl.style.display = 'flex';
+
+            // Compact zone
+            zoneIcon.style.display = 'none';
+            zoneLabel.textContent = `TAP TO CHANGE SELECTION`;
+            uploadZone.classList.add('has-files');
+
+            setStatus(`${files.length} file(s) ready — tap Upload`, false);
+        }
+
+        // ── Upload ─────────────────────────────────────────────────
+        async function upload() {
+            const files = document.getElementById('files').files;
+            if (!files.length) {
+                setStatus('Select files first', false);
+                return;
+            }
+
+            const btn = document.getElementById('uploadBtn');
             btn.disabled = true;
 
-            // Optional: for multi-file we could ask per file or just use the first/total.
-            // BeamSync backend expects single file info for the prompt right now:
-            const firstFile = files[0];
             let totalSize = 0;
             for (let f of files) totalSize += f.size;
+            const firstFile = files[0];
 
-            btn.innerText = 'WAITING FOR APPROVAL...';
-            statusEl.innerText = 'Sent request to receiver... waiting';
+            btn.textContent = 'WAITING FOR APPROVAL…';
+            setStatus('Requesting transfer permission…', true);
 
             try {
-                // 1. Send pre-flight permission request
                 const res = await fetch('/request-transfer?token=' + TOKEN, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -290,111 +601,160 @@
 
                 if (!res.ok) {
                     const errText = await res.text();
-                    statusEl.innerText = errText || 'Transfer rejected or timed out';
+                    setStatus(errText || 'Transfer rejected or timed out', false);
                     btn.disabled = false;
-                    btn.innerText = 'TRY AGAIN';
+                    btn.textContent = 'TRY AGAIN';
                     return;
                 }
 
-                // 2. Approved! Proceed to file upload
+                // Approved — build FormData
                 _uploading = true;
-                btn.innerText = 'UPLOADING...';
-                const progressContainer = document.getElementById('progressContainer');
-                const progressBar = document.getElementById('progressBar');
-                const progressText = document.getElementById('progressText');
+                btn.textContent = 'UPLOADING…';
+                setStatus('Uploading… keep this page open', true);
 
-                statusEl.innerText = 'Uploading... Please keep this page open';
-                progressContainer.style.display = 'block';
-                progressBar.style.width = '5%'; 
-                progressText.innerText = 'Starting...';
+                // Show overall progress
+                const overallProgressEl = document.getElementById('overallProgress');
+                overallProgressEl.classList.add('visible');
+                document.getElementById('overallBar').style.width = '2%';
+                document.getElementById('overallPct').textContent = '0';
 
                 const fd = new FormData();
                 const manifest = Array.from(files).map(f => ({ name: f.name, size: f.size }));
-                const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-                fd.append('beam_manifest', manifestBlob, '');
-
+                fd.append('beam_manifest', new Blob([JSON.stringify(manifest)], { type: 'application/json' }), '');
                 for (let f of files) fd.append('documents', f);
 
-                startActualUpload(fd, btn, statusEl, progressContainer, progressBar, progressText);
+                startActualUpload(fd, btn, Array.from(files));
 
             } catch (err) {
-                statusEl.innerText = 'Network error while requesting permission';
+                setStatus('Network error while requesting permission', false);
                 btn.disabled = false;
-                btn.innerText = 'TRY AGAIN';
+                btn.textContent = 'TRY AGAIN';
             }
         }
 
-        function startActualUpload(fd, btn, statusEl, progressContainer, progressBar, progressText) {
-            statusEl.innerText = 'Uploading... Please keep this page open';
-            progressContainer.style.display = 'block';
-            progressBar.style.width = '5%'; // show immediately so user knows it started
-            progressText.innerText = 'Starting...';
+        function startActualUpload(fd, btn, files) {
+            uploadStartTime = Date.now();
+            lastProgressBytes = 0;
+            lastProgressTime = Date.now();
+            speedHistory = [];
 
             const xhr = new XMLHttpRequest();
-            const startTime = Date.now();
-
             xhr.open('POST', '/upload?token=' + TOKEN);
 
-            xhr.upload.onprogress = function (e) {
-                const elapsed = Math.max((Date.now() - startTime) / 1000, 0.001);
-                const speed = (e.loaded / 1024 / 1024 / elapsed).toFixed(2);
-                const sentMB = (e.loaded / 1024 / 1024).toFixed(1);
+            // Estimate which file is "current" based on bytes sent vs cumulative size
+            const cumulativeSizes = [];
+            let cum = 0;
+            for (let f of files) { cum += f.size; cumulativeSizes.push(cum); }
 
+            let lastActiveIdx = -1;
+
+            xhr.upload.onprogress = function (e) {
+                const now = Date.now();
+                const elapsed = Math.max((now - uploadStartTime) / 1000, 0.001);
+                const dt = Math.max((now - lastProgressTime) / 1000, 0.001);
+                const deltaBytes = e.loaded - lastProgressBytes;
+                const instantSpeed = deltaBytes / dt / 1048576; // MB/s
+                const avgSpeed = smoothSpeed(Math.max(0, instantSpeed));
+
+                lastProgressBytes = e.loaded;
+                lastProgressTime = now;
+
+                // Overall progress
                 if (e.lengthComputable && e.total > 0) {
-                    // Normal: total size is known
-                    const pct = Math.round((e.loaded / e.total) * 100);
-                    progressBar.style.width = pct + '%';
-                    progressBar.style.opacity = '1';
-                    progressText.innerText = pct + '%';
-                } else {
-                    // iOS fallback: Photos/HEIC/HEVC — total unknown, show bytes sent
-                    progressBar.style.width = '100%';
-                    progressBar.style.opacity = '0.4';
-                    progressText.innerText = sentMB + ' MB sent';
+                    const pct = Math.min(100, Math.round((e.loaded / e.total) * 100));
+                    document.getElementById('overallBar').style.width = pct + '%';
+                    document.getElementById('overallPct').textContent = pct;
+
+                    const remaining = (e.total - e.loaded) / (avgSpeed * 1048576);
+                    document.getElementById('statETA').textContent = formatTime(remaining);
                 }
-                statusEl.innerText = `${speed} MB/s — Please keep this page open`;
+
+                document.getElementById('statSpeed').textContent = avgSpeed.toFixed(2) + ' MB/s';
+                document.getElementById('statSent').textContent = formatBytes(e.loaded);
+
+                setStatus(`${avgSpeed.toFixed(2)} MB/s — keep page open`, true);
+
+                // Mark which per-file card is "active" based on bytes loaded
+                let activeIdx = 0;
+                for (let i = 0; i < cumulativeSizes.length; i++) {
+                    if (e.loaded >= cumulativeSizes[i]) activeIdx = i + 1;
+                    else { activeIdx = i; break; }
+                }
+                activeIdx = Math.min(activeIdx, files.length - 1);
+
+                // Mark all previous cards as done
+                for (let i = 0; i < activeIdx; i++) {
+                    if (fileStates[i].status !== 'done') {
+                        fileStates[i].status = 'done';
+                        setCardStatus(i, 'done');
+                    }
+                }
+                // Mark current card as uploading
+                if (lastActiveIdx !== activeIdx) {
+                    setCardStatus(activeIdx, 'uploading');
+                    lastActiveIdx = activeIdx;
+                    fileStates[activeIdx].status = 'uploading';
+                }
+
+                // Individual file progress bar
+                const prevCum = activeIdx === 0 ? 0 : cumulativeSizes[activeIdx - 1];
+                const fileLoaded = Math.max(0, e.loaded - prevCum);
+                const fileTotal = files[activeIdx].size;
+                const filePct = Math.min(100, Math.round((fileLoaded / fileTotal) * 100));
+                const bar = document.getElementById(`fc-bar-${activeIdx}`);
+                if (bar) bar.style.width = filePct + '%';
+
+                // Speed on active card
+                const speedEl = document.getElementById(`fc-speed-${activeIdx}`);
+                if (speedEl) speedEl.textContent = avgSpeed.toFixed(2) + ' MB/s';
             };
 
             xhr.onload = function () {
-                progressBar.style.opacity = '1';
                 if (xhr.status === 200) {
-                    statusEl.innerText = 'Upload successful';
-                    btn.innerText = 'UPLOAD COMPLETE';
-                    progressText.innerText = '100%';
-                    progressBar.style.width = '100%';
+                    // Mark all cards done
+                    for (let i = 0; i < files.length; i++) setCardStatus(i, 'done');
+                    document.getElementById('overallBar').style.width = '100%';
+                    document.getElementById('overallBar').style.background = 'var(--nb-success)';
+                    document.getElementById('overallPct').textContent = '100';
+
+                    btn.textContent = 'UPLOAD COMPLETE';
+                    setStatus('All files sent successfully', false, true);
+
                     setTimeout(() => {
                         btn.disabled = false;
-                        btn.innerText = 'UPLOAD FILES';
+                        btn.textContent = 'UPLOAD FILES';
                         document.getElementById('files').value = '';
                         updateFileList();
-                        progressContainer.style.display = 'none';
+                        document.getElementById('overallProgress').classList.remove('visible');
                         _uploading = false;
-                    }, 3000);
+                        speedHistory = [];
+                    }, 3500);
                 } else {
-                    statusEl.innerText = 'Error ' + xhr.status + ': ' + (xhr.statusText || 'Server error');
+                    setStatus('Error ' + xhr.status + ': ' + (xhr.statusText || 'Server error'), false);
+                    for (let i = 0; i < files.length; i++) {
+                        if (fileStates[i].status !== 'done') setCardStatus(i, 'error');
+                    }
                     btn.disabled = false;
-                    btn.innerText = 'TRY AGAIN';
+                    btn.textContent = 'TRY AGAIN';
                     _uploading = false;
                 }
             };
 
             xhr.onerror = function () {
-                progressContainer.style.display = 'none';
-                statusEl.innerText = 'Network Error — Are both devices on the same WiFi?';
+                setStatus('Network error — are both devices on the same Wi-Fi?', false);
                 btn.disabled = false;
-                btn.innerText = 'TRY AGAIN';
+                btn.textContent = 'TRY AGAIN';
                 _uploading = false;
             };
 
             xhr.ontimeout = function () {
-                statusEl.innerText = 'Timeout — Connection dropped. Please try again.';
+                setStatus('Timeout — connection dropped. Please try again.', false);
                 btn.disabled = false;
-                btn.innerText = 'TRY AGAIN';
+                btn.textContent = 'TRY AGAIN';
                 _uploading = false;
             };
 
-            xhr.timeout = 4 * 60 * 60 * 1000; // 4 hours — matches server timeout
-
+            xhr.timeout = 4 * 60 * 60 * 1000; // 4 hours
             xhr.send(fd);
         }
     </script>

@@ -352,6 +352,23 @@ func (a *App) StartSender() string {
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		a.safeEmit("sender_started", url)
+
+		// Emit the selected file list so the desktop UI can show filenames.
+		type fileEntry struct {
+			Name      string `json:"name"`
+			SizeBytes int64  `json:"sizeBytes"`
+		}
+		entries := make([]fileEntry, 0, len(selection))
+		for _, p := range selection {
+			entry := fileEntry{Name: filepath.Base(p)}
+			if fi, err := os.Stat(p); err == nil {
+				entry.SizeBytes = fi.Size()
+			}
+			entries = append(entries, entry)
+		}
+		if b, err := json.Marshal(entries); err == nil {
+			a.safeEmit("sender_files", string(b))
+		}
 	}()
 
 	return url

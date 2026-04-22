@@ -861,24 +861,60 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	// The generated download URL embedded in the QR already carries the token.
 
 	buildFileBlock := func(filePaths []string) string {
+		fmtSize := func(sz int64) string {
+			switch {
+			case sz >= 1073741824:
+				return fmt.Sprintf("%.2f GB", float64(sz)/1073741824)
+			case sz >= 1048576:
+				return fmt.Sprintf("%.2f MB", float64(sz)/1048576)
+			case sz >= 1024:
+				return fmt.Sprintf("%.1f KB", float64(sz)/1024)
+			default:
+				return fmt.Sprintf("%d B", sz)
+			}
+		}
+		dlIcon := `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square"><path d="M21 15v4H3v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`
+		card := func(name, sizeStr, cardID, downloadURL string) string {
+			return fmt.Sprintf(`<div class="file-card" id="card-%s">
+				<div class="file-card__row">
+					<div class="file-card__info">
+						<div class="file-card__name" id="name-%s">%s</div>
+						<div class="file-card__size">%s</div>
+					</div>
+					<div class="file-card__actions">
+						<button class="download-btn" id="btn-%s" onclick="event.preventDefault(); startDownload('%s', '%s'); return false;">%s DOWNLOAD</button>
+						<span class="file-card__chip" id="chip-%s"></span>
+					</div>
+				</div>
+				<div class="file-card__progress-track" id="track-%s">
+					<div class="file-card__progress-fill" id="fill-%s"></div>
+				</div>
+			</div>`, cardID, cardID, name, sizeStr, cardID, downloadURL, cardID, dlIcon, cardID, cardID, cardID)
+		}
+
 		var b strings.Builder
 		if len(filePaths) == 1 {
 			name := filepath.Base(filePaths[0])
-			b.WriteString(fmt.Sprintf(`<div class="file-card">
-				<div class="file-info">%s</div>
-				<a href="#" class="download-btn" onclick="event.preventDefault(); startDownload('/download?token=%s'); return false;">⬇️ Download</a>
-			</div>`, name, token))
+			sizeStr := ""
+			if info, err := os.Stat(filePaths[0]); err == nil {
+				sizeStr = fmtSize(info.Size())
+			}
+			b.WriteString(card(name, sizeStr, "single", fmt.Sprintf("/download?token=%s", token)))
 		} else {
 			for i, path := range filePaths {
 				name := filepath.Base(path)
-				b.WriteString(fmt.Sprintf(`<div class="file-card">
-				<div class="file-info">%s</div>
-				<a href="#" class="download-btn" onclick="event.preventDefault(); startDownload('/download/%d?token=%s'); return false;">⬇️ Download</a>
-			</div>`, name, i, token))
+				sizeStr := ""
+				if info, err := os.Stat(path); err == nil {
+					sizeStr = fmtSize(info.Size())
+				}
+				cardID := fmt.Sprintf("multi-%d", i)
+				downloadURL := fmt.Sprintf("/download/%d?token=%s", i, token)
+				b.WriteString(card(name, sizeStr, cardID, downloadURL))
 			}
 		}
 		return b.String()
 	}
+
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
@@ -913,7 +949,10 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			setCORSHeaders(w)
 			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-			
+			// Expose the real filename so the mobile JS can use it for link.download
+			w.Header().Set("X-Filename", filename)
+			w.Header().Set("Access-Control-Expose-Headers", "X-Filename")
+
 			// Track download progress
 			file, err := os.Open(filePath)
 			if err != nil {
@@ -921,13 +960,13 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 				return
 			}
 			defer file.Close()
-			
+
 			fileInfo, err := file.Stat()
 			if err != nil {
 				http.Error(w, "Failed to stat file", http.StatusInternalServerError)
 				return
 			}
-			
+
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
 			// Detect real MIME type from extension so mobile can open the file directly.
 			// Fall back to octet-stream only for unknown/binary types.
@@ -936,7 +975,9 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 				mimeType = "application/octet-stream"
 			}
 			w.Header().Set("Content-Type", mimeType)
-			
+
+			// 8 MB read buffer — avoids many small read syscalls when streaming large files.
+			bufReader := bufio.NewReaderSize(file, 8*1024*1024)
 			progressWriter := &downloadProgressWriter{
 				w:           w,
 				total:       fileInfo.Size(),
@@ -946,8 +987,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 				lastEmit:    time.Now(),
 				minInterval: 500 * time.Millisecond,
 			}
-			
-			io.Copy(progressWriter, file)
+			copyChunked(progressWriter, bufReader, 8*1024*1024)
 		}))
 	} else {
 		for i, path := range filePaths {
@@ -955,9 +995,13 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			filePath := path
 			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 				setCORSHeaders(w)
+				realName := filepath.Base(filePath)
 				w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
-				w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filepath.Base(filePath)))
-				
+				w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, realName))
+				// Expose the real filename so the mobile JS can use it for link.download
+				w.Header().Set("X-Filename", realName)
+				w.Header().Set("Access-Control-Expose-Headers", "X-Filename")
+
 				// Track download progress
 				file, err := os.Open(filePath)
 				if err != nil {
@@ -965,13 +1009,13 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 					return
 				}
 				defer file.Close()
-				
+
 				fileInfo, err := file.Stat()
 				if err != nil {
 					http.Error(w, "Failed to stat file", http.StatusInternalServerError)
 					return
 				}
-				
+
 				w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
 				// Detect real MIME type from extension so mobile can open the file directly.
 				// Fall back to octet-stream only for unknown/binary types.
@@ -980,18 +1024,19 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 					mimeType = "application/octet-stream"
 				}
 				w.Header().Set("Content-Type", mimeType)
-				
+
+				// 8 MB read buffer — avoids many small read syscalls when streaming large files.
+				bufReader := bufio.NewReaderSize(file, 8*1024*1024)
 				progressWriter := &downloadProgressWriter{
 					w:           w,
 					total:       fileInfo.Size(),
 					written:     0,
-					filename:    filepath.Base(filePath),
+					filename:    realName,
 					emit:        emit,
 					lastEmit:    time.Now(),
 					minInterval: 500 * time.Millisecond,
 				}
-				
-				io.Copy(progressWriter, file)
+				copyChunked(progressWriter, bufReader, 8*1024*1024)
 			}))
 		}
 	}
@@ -1018,10 +1063,11 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	portStr := fmt.Sprintf("%d", portInt)
 
 	srv := &http.Server{
-		Handler:      mux,
-		ReadTimeout:  10 * time.Minute,
-		WriteTimeout: 10 * time.Minute,
-		IdleTimeout:  30 * time.Second,
+		Handler: mux,
+		// 4-hour timeouts — large video files over Wi-Fi can easily exceed 10 min.
+		ReadTimeout:  4 * time.Hour,
+		WriteTimeout: 4 * time.Hour,
+		IdleTimeout:  60 * time.Second,
 	}
 	httpServer := &HTTPServer{server: srv, cancel: cancel}
 
