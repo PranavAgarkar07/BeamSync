@@ -5,6 +5,8 @@ import {beamsync} from '../models';
 
 export function ApproveTransfer(arg1:string):Promise<void>;
 
+export function CheckForUpdate():Promise<main.UpdateInfo>;
+
 export function GetReceivedFiles():Promise<Array<main.ReceivedFile>>;
 
 export function GetSavePath():Promise<string>;

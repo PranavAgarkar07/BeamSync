@@ -6,6 +6,10 @@ export function ApproveTransfer(arg1) {
   return window['go']['main']['App']['ApproveTransfer'](arg1);
 }
 
+export function CheckForUpdate() {
+  return window['go']['main']['App']['CheckForUpdate']();
+}
+
 export function GetReceivedFiles() {
   return window['go']['main']['App']['GetReceivedFiles']();
 }

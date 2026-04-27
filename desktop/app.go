@@ -25,7 +25,7 @@ import (
 var soundFS embed.FS
 
 // currentVersion is the running build version — keep in sync with wails.json productVersion.
-const currentVersion = "v2.0.0"
+const currentVersion = "v2.4.0"
 
 // App struct
 type App struct {
