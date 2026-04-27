@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>BeamSync — Secure. Fast. Local.</title>
+  <meta name="description"
+    content="BeamSync: offline-first peer-to-peer desktop file transfer. No cloud. No accounts. Just your LAN.">
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <!-- ── NAVBAR ── -->
+  <nav class="navbar" id="navbar">
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">
+        <img src="icon.png" alt="BeamSync icon" width="30" height="30">
+        BeamSync
+      </a>
+      <div class="nav-links" id="nav-links">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">Workflow</a>
+        <a href="#screenshots">Screenshots</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/PranavAgarkar07/BeamSync" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/PranavAgarkar07/BeamSync/releases" target="_blank" rel="noopener"
+          class="btn-dl btn-dl-pulse" id="nav-dl">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Download
+        </a>
+      </div>
+      <button class="nav-hamburger" id="nav-hamburger" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ── HERO ── -->
+  <section class="hero" id="hero">
+    <div class="hero-inner">
+      <div class="hero-left">
+        <div class="hero-badge reveal">
+          <img src="icon.png" alt="" width="16" height="16" style="object-fit:contain">
+          Open Source · MIT · LAN Only
+        </div>
+        <h1 class="hero-title reveal">
+          Transfer Files at<br>
+          <em>LAN Speed.</em><br>
+          <span>Zero Cloud.</span>
+        </h1>
+        <p class="hero-sub reveal">
+          BeamSync is a cross-platform desktop file transfer app built with Go + Svelte + Wails. Scan a QR code. Drop
+          files. Done — with zero cloud, zero accounts, zero internet.
+        </p>
+        <div class="hero-actions reveal">
+          <a href="https://github.com/PranavAgarkar07/BeamSync/releases" target="_blank" rel="noopener"
+            class="btn-dl btn-lg btn-dl-pulse" id="hero-dl">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Download Free
+          </a>
+          <a href="https://github.com/PranavAgarkar07/BeamSync" target="_blank" rel="noopener" class="btn-secondary"
+            id="hero-gh">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path
+                d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z" />
+            </svg>
+            Star on GitHub
+          </a>
+        </div>
+      </div>
+      <div class="hero-right reveal">
+        <div class="terminal" id="terminal-box">
+          <div class="terminal-bar">
+            <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+            <span class="terminal-title">bash — beamsync</span>
+          </div>
+          <div class="terminal-body">
+            <span class="terminal-line" id="t1"></span>
+            <span class="terminal-line" id="t2"></span>
+            <span class="terminal-line" id="t3"></span>
+            <span class="cursor" id="tcursor">▋</span>
+          </div>
+        </div>
+        <div class="term-label">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+          Arch Linux · AUR · beamsync-bin
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── STATS ── -->
+  <section class="stats-bar">
+    <div class="stats-inner">
+      <div class="stat-item reveal">
+        <span class="stat-num" data-target="0" data-suffix=" Cloud">0 Cloud</span>
+        <span class="stat-label">No Cloud Involved</span>
+      </div>
+      <div class="stat-item reveal">
+        <span class="stat-num" data-target="100" data-suffix="% LAN">100% LAN</span>
+        <span class="stat-label">Fully Offline</span>
+      </div>
+      <div class="stat-item reveal">
+        <span class="stat-num" data-target="0" data-suffix=" Accounts">0 Accounts</span>
+        <span class="stat-label">No Sign-Up</span>
+      </div>
+      <div class="stat-item reveal">
+        <span class="stat-num" data-target="1" data-suffix=" QR">1 QR</span>
+        <span class="stat-label">To Connect Any Device</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FEATURES ── -->
+  <section class="features" id="features">
+    <div class="wrap">
+      <div class="section-header reveal">
+        <span class="section-tag">Features</span>
+        <h2>Built for Speed.<br>Designed for Privacy.</h2>
+        <p>Every feature built on one principle — your files never leave your network.</p>
+      </div>
+      <div class="bento-grid">
+
+        <div class="bento-card bento-large reveal" id="feat-speed" style="grid-area:large">
+          <span class="feat-tag feat-tag-blue">Core</span>
+          <div class="bento-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4F8EFF" stroke-width="2"
+              stroke-linecap="square">
+              <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+          </div>
+          <h3>High-Speed LAN Transfer</h3>
+          <p>Streams files directly over HTTP on your local network. Throughput limited only by your hardware — gigabit
+            speeds achievable with zero configuration.</p>
+          <div class="speed-bar-track" style="margin-top:20px">
+            <div class="speed-fill"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:6px">
+            <span style="font-family:var(--fm);font-size:.65rem;color:var(--muted)">0 MB/s</span>
+            <span style="font-family:var(--fm);font-size:.65rem;color:var(--primary)">~1 Gbps (LAN limit)</span>
+          </div>
+        </div>
+
+        <div class="bento-card reveal" id="feat-offline" style="grid-area:c2">
+          <span class="feat-tag feat-tag-green">Privacy</span>
+          <div class="bento-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10D98A" stroke-width="2"
+              stroke-linecap="square">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+          </div>
+          <h3>Fully Offline</h3>
+          <p>Works without any internet connection. Data never leaves your local network — ever.</p>
+        </div>
+
+        <div class="bento-card reveal" id="feat-qr" style="grid-area:c3">
+          <span class="feat-tag feat-tag-orange">Connect</span>
+          <div class="bento-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FF8A00" stroke-width="2"
+              stroke-linecap="square">
+              <rect x="3" y="3" width="7" height="7" />
+              <rect x="14" y="3" width="7" height="7" />
+              <rect x="3" y="14" width="7" height="7" />
+              <line x1="14" y1="14" x2="17" y2="14" />
+              <line x1="17" y1="14" x2="17" y2="17" />
+              <line x1="17" y1="17" x2="20" y2="17" />
+              <line x1="20" y1="17" x2="20" y2="20" />
+              <line x1="14" y1="20" x2="17" y2="20" />
+            </svg>
+          </div>
+          <h3>QR Code Connect</h3>
+          <p>Connect any mobile device instantly by scanning a QR code. No app install required on the phone.</p>
+        </div>
+
+        <div class="bento-card reveal" id="feat-dd" style="grid-area:c4">
+          <span class="feat-tag feat-tag-blue">UX</span>
+          <div class="bento-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4F8EFF" stroke-width="2"
+              stroke-linecap="square">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+          </div>
+          <h3>Drag &amp; Drop</h3>
+          <p>Drop files directly onto the window to begin transfer immediately. No dialogs.</p>
+        </div>
+
+        <div class="bento-card reveal" id="feat-net" style="grid-area:c5">
+          <span class="feat-tag feat-tag-green">Smart</span>
+          <div class="bento-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10D98A" stroke-width="2"
+              stroke-linecap="square">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M6.3 6.3a8 8 0 0 0 0 11.4" />
+              <path d="M17.7 6.3a8 8 0 0 1 0 11.4" />
+              <path d="M3 12a9 9 0 0 1 9-9" />
+              <path d="M21 12a9 9 0 0 1-9 9" />
+            </svg>
+          </div>
+          <h3>Smart Networking</h3>
+          <p>Auto-detects optimal local IP, finds open ports, configures Linux firewall rules automatically.</p>
+        </div>
+
+        <div class="bento-card reveal" id="feat-audio" style="grid-area:c6">
+          <span class="feat-tag feat-tag-red">Audio</span>
+          <div class="bento-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FF5C7A" stroke-width="2"
+              stroke-linecap="square">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+            </svg>
+          </div>
+          <h3>Auditory Feedback</h3>
+          <p>Integrated <code>AudioEngine</code> provides real-time interaction sounds. Respects
+            <code>prefers-reduced-motion</code> for accessibility.
+          </p>
+          <div class="sound-waves">
+            <div class="wave"></div>
+            <div class="wave"></div>
+            <div class="wave"></div>
+            <div class="wave"></div>
+            <div class="wave"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ── HOW IT WORKS ── -->
+  <section class="how-it-works" id="how-it-works">
+    <div class="wrap">
+      <div class="section-header reveal">
+        <span class="section-tag">Workflow</span>
+        <h2>Three Steps.<br>That's It.</h2>
+        <p>No configuration. No wizard. Open and go.</p>
+      </div>
+      <div class="steps">
+        <div class="step reveal">
+          <span class="step-num">01</span>
+          <h3>Launch BeamSync</h3>
+          <p>Open the desktop app. A QR code and URL appear instantly — no configuration needed.</p>
+        </div>
+        <div class="step reveal">
+          <span class="step-num">02</span>
+          <h3>Scan or Visit</h3>
+          <p>On the receiving device, scan the QR or visit the URL. Works in any browser — mobile or desktop.</p>
+        </div>
+        <div class="step reveal">
+          <span class="step-num">03</span>
+          <h3>Transfer &amp; Done</h3>
+          <p>Drag files to send, or download directly. Files saved to <code>Downloads/BeamSync/</code>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SCREENSHOTS ── -->
+  <section class="screenshots" id="screenshots">
+    <div class="wrap">
+      <div class="section-header reveal">
+        <span class="section-tag">In Action</span>
+        <h2>See BeamSync.<br>Feel the Speed.</h2>
+        <p>Real screenshots from the desktop app — no mockups, no filters.</p>
+      </div>
+      <div class="carousel reveal" id="ss-carousel">
+        <div class="carousel-viewport">
+          <div class="carousel-track" id="ss-track">
+            <div class="carousel-slide">
+              <div class="ss-img-wrap">
+                <img src="assets/appSS1.png" alt="BeamSync main window — file drop and QR connect" loading="lazy">
+              </div>
+              <div class="ss-caption">
+                <span class="ss-num">01</span>
+                <span>Receive files from Mobile</span>
+              </div>
+            </div>
+            <div class="carousel-slide">
+              <div class="ss-img-wrap">
+                <img src="assets/appSS2.png" alt="BeamSync live transfer progress" loading="lazy">
+              </div>
+              <div class="ss-caption">
+                <span class="ss-num">02</span>
+                <span>Sending Files From PC to Mobile</span>
+              </div>
+            </div>
+            <div class="carousel-slide">
+              <div class="ss-img-wrap">
+                <img src="assets/appSS3.png" alt="BeamSync settings and configuration" loading="lazy">
+              </div>
+              <div class="ss-caption">
+                <span class="ss-num">03</span>
+                <span>Settings &amp; Configuration</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button class="carousel-btn carousel-prev" id="ss-prev" aria-label="Previous screenshot">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+        <button class="carousel-btn carousel-next" id="ss-next" aria-label="Next screenshot">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+        <div class="carousel-dots" id="ss-dots">
+          <button class="carousel-dot active" data-idx="0" aria-label="Screenshot 1"></button>
+          <button class="carousel-dot" data-idx="1" aria-label="Screenshot 2"></button>
+          <button class="carousel-dot" data-idx="2" aria-label="Screenshot 3"></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── ARCHITECTURE ── -->
+  <section class="architecture" id="architecture">
+    <div class="wrap">
+      <div class="section-header reveal">
+        <span class="section-tag">Architecture</span>
+        <h2>Engineered for<br>Performance.</h2>
+        <p>Analyzed with graphify — 172 nodes, 223 edges, 20 communities detected.</p>
+      </div>
+      <div class="arch-wrap reveal">
+        <div class="arch-diagram">
+          <div class="arch-header-bar">
+            <span class="arch-header-dot" style="background:#FF5F57"></span>
+            <span class="arch-header-dot" style="background:#FFBD2E"></span>
+            <span class="arch-header-dot" style="background:#28C840"></span>
+            <span style="margin-left:8px">beamsync — architecture</span>
+            <span style="margin-left:auto;color:var(--green)">● 172 nodes active</span>
+          </div>
+
+          <div class="arch-layer">
+            <div class="arch-layer-num">01</div>
+            <div class="arch-layer-body">
+              <div class="arch-label">Frontend Layer</div>
+              <div class="arch-techs">
+                <span class="tech-pill svelte">Svelte</span>
+                <span class="tech-pill vite">Vite</span>
+              </div>
+              <p>Reactive UI · drag-and-drop interface · QR code display · transfer progress</p>
+            </div>
+          </div>
+
+          <div class="arch-connector">
+            <div class="arch-connector-line"></div>
+            <span class="arch-connector-label">Wails IPC Bridge · EventsOn / EventsEmit</span>
+            <div class="arch-connector-line"></div>
+          </div>
+
+          <div class="arch-layer">
+            <div class="arch-layer-num">02</div>
+            <div class="arch-layer-body">
+              <div class="arch-label">Application Shell — God Node (22 edges)</div>
+              <div class="arch-techs">
+                <span class="tech-pill go">Go</span>
+                <span class="tech-pill wails">Wails v2</span>
+              </div>
+              <p><code>App</code> · <code>loadConfig()</code> · <code>saveConfig()</code> · <code>configPath()</code> ·
+                event bridge · lifecycle</p>
+            </div>
+          </div>
+
+          <div class="arch-connector">
+            <div class="arch-connector-line"></div>
+            <span class="arch-connector-label">Go net/http · direct LAN stream</span>
+            <div class="arch-connector-line"></div>
+          </div>
+
+          <div class="arch-layer">
+            <div class="arch-layer-num">03</div>
+            <div class="arch-layer-body">
+              <div class="arch-label">Network Engine (13 edges)</div>
+              <div class="arch-techs">
+                <span class="tech-pill go">Go net/http</span>
+              </div>
+              <p><code>StartServer()</code> · <code>StartSender()</code> · <code>writeFileToDisk()</code> ·
+                <code>copyChunked()</code> · concurrent I/O
+              </p>
+            </div>
+          </div>
+
+          <div class="arch-connector">
+            <div class="arch-connector-line"></div>
+            <span class="arch-connector-label">OS / syscall layer</span>
+            <div class="arch-connector-line"></div>
+          </div>
+
+          <div class="arch-layer">
+            <div class="arch-layer-num">04</div>
+            <div class="arch-layer-body">
+              <div class="arch-label">Utilities &amp; I/O</div>
+              <div class="arch-techs">
+                <span class="tech-pill go">Go</span>
+              </div>
+              <p><code>getLocalIP()</code> · <code>FindAvailablePort()</code> · <code>RunFirewallSetup()</code> ·
+                <code>AudioEngine</code> · <code>TransferSettings</code>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="arch-stats">
+          <div class="arch-stat">
+            <span class="arch-stat-num">172</span>
+            <span class="arch-stat-label">Graph Nodes</span>
+          </div>
+          <div class="arch-stat">
+            <span class="arch-stat-num">223</span>
+            <span class="arch-stat-label">Edges</span>
+          </div>
+          <div class="arch-stat">
+            <span class="arch-stat-num">20</span>
+            <span class="arch-stat-label">Communities</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── INSTALL CTA ── -->
+  <section class="install-cta" id="install">
+    <div class="wrap">
+      <div class="section-header reveal">
+        <span class="section-tag">Get Started</span>
+        <h2>Install in Seconds.</h2>
+        <p>Available on Arch Linux (AUR) and as pre-built binaries for all platforms.</p>
+      </div>
+      <div class="install-options reveal">
+        <div class="install-card">
+          <div class="install-card-label">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 2 7 12 12 22 7 12 2" />
+              <polyline points="2 17 12 22 22 17" />
+              <polyline points="2 12 12 17 22 12" />
+            </svg>
+            Arch Linux (AUR)
+          </div>
+          <div class="code-block">
+            <code>yay -S beamsync-bin</code>
+            <button class="copy-btn" data-copy="yay -S beamsync-bin" id="copy-aur" title="Copy">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="install-card">
+          <div class="install-card-label">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="16 18 22 12 16 6" />
+              <polyline points="8 6 2 12 8 18" />
+            </svg>
+            Build from Source
+          </div>
+          <div class="code-block">
+            <code>git clone github.com/PranavAgarkar07/BeamSync</code>
+            <button class="copy-btn" data-copy="git clone https://github.com/PranavAgarkar07/BeamSync.git" id="copy-src"
+              title="Copy">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="cta-buttons reveal">
+        <a href="https://github.com/PranavAgarkar07/BeamSync/releases" target="_blank" rel="noopener"
+          class="btn-dl btn-lg" id="cta-dl">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Latest Release
+        </a>
+        <a href="https://github.com/PranavAgarkar07/BeamSync" target="_blank" rel="noopener" class="btn-outline btn-lg"
+          id="cta-gh">Contribute on GitHub</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ── -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <a href="#" class="nav-logo">
+          <img src="icon.png" alt="BeamSync" width="28" height="28" style="object-fit:contain">
+          BeamSync
+        </a>
+        <p>Secure. Fast. Local.<br>MIT Licensed Open Source.<br>Built with Go · Svelte · Wails v2.</p>
+      </div>
+      <div class="footer-links">
+        <div class="footer-col">
+          <h4>Project</h4>
+          <a href="https://github.com/PranavAgarkar07/BeamSync" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/PranavAgarkar07/BeamSync/releases" target="_blank" rel="noopener">Releases</a>
+          <a href="https://aur.archlinux.org/packages/beamsync-bin" target="_blank" rel="noopener">AUR Package</a>
+        </div>
+        <div class="footer-col">
+          <h4>Resources</h4>
+          <a href="https://github.com/PranavAgarkar07/BeamSync/blob/main/README.md" target="_blank"
+            rel="noopener">Documentation</a>
+          <a href="https://github.com/PranavAgarkar07/BeamSync/blob/main/LICENSE" target="_blank" rel="noopener">MIT
+            License</a>
+          <a href="https://github.com/PranavAgarkar07/BeamSync/issues" target="_blank" rel="noopener">Report Issue</a>
+        </div>
+        <div class="footer-col">
+          <h4>Stack</h4>
+          <a href="https://wails.io" target="_blank" rel="noopener">Wails v2</a>
+          <a href="https://svelte.dev" target="_blank" rel="noopener">Svelte</a>
+          <a href="https://go.dev" target="_blank" rel="noopener">Go</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2025 BeamSync · MIT License</span>
+      <span>graphify — 172 nodes · 223 edges · 20 communities</span>
+    </div>
+  </footer>
+
+  <!-- ── LIGHTBOX ── -->
+  <div class="lb-overlay" id="lb-overlay" role="dialog" aria-modal="true" aria-label="Image viewer">
+    <div class="lb-panel" id="lb-panel">
+      <button class="lb-close" id="lb-close" aria-label="Close lightbox">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+          stroke-linecap="square">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+      <div class="lb-topbar">
+        <span class="lb-tag" id="lb-tag">In Action</span>
+        <span class="lb-caption-text" id="lb-caption-text"></span>
+      </div>
+      <div class="lb-img-area">
+        <button class="lb-nav lb-prev" id="lb-prev" aria-label="Previous">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+        <img class="lb-img" id="lb-img" src="" alt="">
+        <button class="lb-nav lb-next" id="lb-next" aria-label="Next">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      </div>
+      <div class="lb-dots" id="lb-dots"></div>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+
+</html>

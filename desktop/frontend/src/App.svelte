@@ -94,6 +94,11 @@
     if (soundEnabled) PlaySound("blip"); // confirm it's on
   }
 
+  // ── Update banner ───────────────────────────────────────────────────────
+  let updateInfo = null; // { latestVersion, releaseUrl, releaseNotes }
+  let updateDismissed = false;
+  $: showUpdateBanner = updateInfo !== null && !updateDismissed;
+
   // ── Batch transfer tracking ──────────────────────────────────────────
   let batchCount = 0; // files received this session
   let batchTimer = null; // resets batchCount after idle
@@ -288,6 +293,14 @@
         senderFiles = JSON.parse(raw);
       } catch {
         senderFiles = [];
+      }
+    });
+
+    EventsOn("update_available", (raw) => {
+      try {
+        updateInfo = JSON.parse(raw);
+      } catch {
+        updateInfo = null;
       }
     });
 
@@ -619,6 +632,27 @@
       <div class="toast toast--{t.type}">{t.msg}</div>
     {/each}
   </div>
+
+  {#if showUpdateBanner}
+    <div class="update-banner" role="alert">
+      <span class="update-banner__icon">🆕</span>
+      <span class="update-banner__text">
+        <strong>{updateInfo.latestVersion}</strong> is available
+        {#if updateInfo.releaseNotes}
+          &mdash; {updateInfo.releaseNotes.slice(0, 80)}&hellip;
+        {/if}
+      </span>
+      <button
+        class="nb-btn nb-btn--primary update-banner__cta"
+        on:click={() => BrowserOpenURL(updateInfo.releaseUrl)}
+      >Download</button>
+      <button
+        class="update-banner__dismiss"
+        aria-label="Dismiss update notification"
+        on:click={() => (updateDismissed = true)}
+      >&times;</button>
+    </div>
+  {/if}
 
   <div id="app" class="nb-theme">
     <TopNavBar

@@ -115,3 +115,42 @@ button {
 @keyframes toast-out {
   to { transform: translateY(20px); opacity: 0; }
 }
+
+/* ─── Update Banner ─────────────────────────────────────────────────────── */
+.update-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: calc(var(--nb-z-toast) + 10);
+  display: flex;
+  align-items: center;
+  gap: var(--nb-space-3);
+  padding: var(--nb-space-2) var(--nb-space-4);
+  background: var(--nb-primary);
+  color: var(--nb-surface);
+  font-family: var(--nb-font-display);
+  font-size: var(--nb-text-sm);
+  font-weight: var(--nb-fw-bold);
+  border-bottom: var(--nb-border-lg);
+  animation: slide-down 0.3s ease;
+}
+
+.update-banner__icon { font-size: 1rem; flex-shrink: 0; }
+.update-banner__text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.update-banner__cta  { font-size: var(--nb-text-sm); padding: 0.2rem 0.75rem; flex-shrink: 0; }
+.update-banner__dismiss {
+  flex-shrink: 0;
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 0 var(--nb-space-2);
+  color: var(--nb-surface);
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.update-banner__dismiss:hover { opacity: 1; }
+
+@keyframes slide-down {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}

@@ -915,7 +915,6 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		return b.String()
 	}
 
-
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")

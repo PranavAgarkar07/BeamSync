@@ -7,12 +7,15 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	stdruntime "runtime"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -20,6 +23,9 @@ import (
 
 //go:embed sounds/*.wav
 var soundFS embed.FS
+
+// currentVersion is the running build version — keep in sync with wails.json productVersion.
+const currentVersion = "v2.0.0"
 
 // App struct
 type App struct {
@@ -31,6 +37,15 @@ type App struct {
 	lastSavePath string
 	currentIP    string
 	currentPort  string
+}
+
+// UpdateInfo is returned to the frontend.
+type UpdateInfo struct {
+	CurrentVersion  string `json:"currentVersion"`
+	LatestVersion   string `json:"latestVersion"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+	ReleaseURL      string `json:"releaseUrl"`
+	ReleaseNotes    string `json:"releaseNotes"`
 }
 
 // EventData holds event information
@@ -58,7 +73,7 @@ func NewApp() *App {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type configData struct {
-	SavePath         string                   `json:"savePath"`
+	SavePath         string                    `json:"savePath"`
 	TransferSettings beamsync.TransferSettings `json:"transferSettings"`
 }
 
@@ -106,6 +121,7 @@ func (a *App) startup(ctx context.Context) {
 
 	go a.processEvents()
 	go a.startIPMonitor()
+	go a.checkForUpdateAndNotify()
 
 	a.audio = audio.NewAudioEngine()
 	if err := a.audio.Init(); err != nil {
@@ -521,6 +537,82 @@ func (a *App) ApproveTransfer(id string) {
 func (a *App) RejectTransfer(id string) {
 	if a.serverApp != nil {
 		a.serverApp.RespondToTransfer(id, false)
+	}
+}
+
+// ---------------------------------------------------------
+// UPDATE CHECKER
+// ---------------------------------------------------------
+
+// CheckForUpdate calls the GitHub Releases API and returns update info.
+// The User-Agent header encodes the current version + OS, giving GitHub's
+// traffic analytics natural DAU and platform signals at zero privacy cost.
+func (a *App) CheckForUpdate() UpdateInfo {
+	info := UpdateInfo{CurrentVersion: currentVersion}
+
+	userAgent := fmt.Sprintf(
+		"BeamSync/%s (%s; %s)",
+		currentVersion, stdruntime.GOOS, stdruntime.GOARCH,
+	)
+
+	req, err := http.NewRequest("GET",
+		"https://api.github.com/repos/PranavAgarkar07/BeamSync/releases/latest", nil)
+	if err != nil {
+		fmt.Println("⚠️ UpdateCheck: could not build request:", err)
+		return info
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println("⚠️ UpdateCheck: request failed (offline?):", err)
+		return info
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("⚠️ UpdateCheck: could not read response:", err)
+		return info
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
+		Body    string `json:"body"`
+	}
+	if err := json.Unmarshal(body, &release); err != nil {
+		fmt.Println("⚠️ UpdateCheck: could not parse response:", err)
+		return info
+	}
+
+	info.LatestVersion = release.TagName
+	info.ReleaseURL = release.HTMLURL
+	// Trim release notes to avoid overwhelming the UI
+	notes := strings.TrimSpace(release.Body)
+	if len(notes) > 280 {
+		notes = notes[:280] + "…"
+	}
+	info.ReleaseNotes = notes
+	info.UpdateAvailable = release.TagName != "" && release.TagName != currentVersion
+
+	fmt.Printf("🔍 UpdateCheck: current=%s latest=%s available=%v\n",
+		currentVersion, release.TagName, info.UpdateAvailable)
+	return info
+}
+
+// checkForUpdateAndNotify runs in a goroutine on startup. Emits an event
+// to the frontend only when a new release is available.
+func (a *App) checkForUpdateAndNotify() {
+	// Small delay so the UI finishes loading before we show the banner
+	time.Sleep(3 * time.Second)
+	info := a.CheckForUpdate()
+	if info.UpdateAvailable {
+		if data, err := json.Marshal(info); err == nil {
+			a.safeEmit("update_available", string(data))
+		}
 	}
 }
 
