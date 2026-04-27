@@ -1,68 +1,70 @@
-# Binaries
-# *.dll
-# *.so
-# *.dylib
+# ============================================
+# BeamSync .gitignore
+# ============================================
 
-# Android SDK build outputs
-*.aar
-*-sources.jar
-
-
-# Wails
-desktop/frontend/dist/
-desktop/frontend/node_modules/
-desktop/wailsjs/
-
-# Packaging
-build/linux/deb_pkg/
-build/linux/*.deb
-desktop/AppDir/
-*.AppImage
-
-# Build Artifacts
+# ----- Build Artifacts -----
 desktop/build/bin/
+desktop/desktop
+desktop/desktop.exe
 
-# Go workspace
+# ----- Go Workspace (auto-generated) -----
 go.work
 go.work.sum
 
-# System
-.DS_Store
-Thumbs.db
+# ----- Android SDK Outputs -----
+*.aar
+*-sources.jar
 
-# Logs
-*.log
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-
-
-#md
-reply.md
-
-# Specific desktop ignores
-desktop/frontend/dist/
+# ----- Node / Frontend -----
 desktop/frontend/node_modules/
-desktop/wailsjs/
-desktop/build/bin/
-desktop/AppDir/
+desktop/frontend/dist/
 desktop/frontend/.svelte-kit/
 desktop/frontend/.vercel/
 desktop/frontend/.output/
 
-# Agent and AI artifacts
-.agent/
-.kilo/
+# ----- Wails Auto-generated -----
+desktop/wailsjs/
 
-# Wails and Go Build Artifacts
-desktop/desktop
-desktop/desktop.exe
+# ----- Packaging: Debian -----
+build/linux/deb_pkg/
+build/linux/*.deb
 
-# Arch Packaging Artifacts
+# ----- Packaging: AppImage -----
+desktop/AppDir/
+*.AppImage
+desktop/appimagetool-*.AppImage
+
+# ----- Packaging: Arch Linux -----
 PKGBUILD_aur_temp
 *.pkg.tar.zst
 desktop/packaging/arch/pkg/
 desktop/packaging/arch/src/
 desktop/packaging/arch/BeamSync
+
+# ----- IDE / Editor -----
+.vscode/
+.idea/
+*.swp
+*~
+*.swo
+
+# ----- System Files -----
+.DS_Store
+Thumbs.db
+desktop/Thumbs.db
+ehthumbs.db
+
+# ----- Logs -----
+*.log
+
+# ----- Agent / AI Tooling -----
+.agent/
+.kilo/
+.gemini/
+
+# ----- Graphify (local analysis cache) -----
+graphify-out/
+
+# ----- Scratch / Temp Files -----
+reply.md
+rewrite_app.py
