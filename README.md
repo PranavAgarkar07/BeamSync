@@ -55,10 +55,15 @@
 ## Screenshots
 
 <div align="center">
-  <img src="desktop/frontend/src/assets/images/appSS1.png" alt="BeamSync — Main Interface" width="45%">
-  <img src="desktop/frontend/src/assets/images/appSS2.png" alt="BeamSync — File Transfer" width="45%">
-  <br>
-  <img src="desktop/frontend/src/assets/images/appSS3.png" alt="BeamSync — Mobile Interface" width="45%">
+  <img src="desktop/frontend/src/assets/images/appSS1.png" alt="BeamSync — Main Interface" width="80%">
+</div>
+<br>
+<div align="center">
+  <img src="desktop/frontend/src/assets/images/appSS2.png" alt="BeamSync — File Transfer" width="80%">
+</div>
+<br>
+<div align="center">
+  <img src="desktop/frontend/src/assets/images/appSS3.png" alt="BeamSync — Mobile Interface" width="80%">
 </div>
 
 ## Architecture
