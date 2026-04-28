@@ -61,75 +61,68 @@ code{font-family:var(--fm);font-size:.82em;background:rgba(79,142,255,.1);border
 .nav-links a{font-family:var(--fd);font-weight:700;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;padding:8px 16px;border:1px solid transparent;color:var(--muted);transition:var(--t)}
 .nav-links a:hover{color:var(--text);border-color:var(--border);transform:translate(-1px,-1px);box-shadow:var(--sh-sm)}
 
-/* ── DOWNLOAD BUTTON — Magic Edition ── */
+/* ── DOWNLOAD BUTTON — Professional ── */
 .btn-dl{
-  font-family:var(--fd);font-weight:800;font-size:.8rem;text-transform:uppercase;letter-spacing:.1em;
-  padding:12px 28px;
-  background:linear-gradient(135deg,#0fffa9 0%,#10D98A 45%,#06c97e 100%);
+  font-family:var(--fd);font-weight:800;font-size:.82rem;text-transform:uppercase;letter-spacing:.1em;
+  padding:13px 30px;
+  background:var(--green);
   color:#051a10;
-  border:2px solid rgba(255,255,255,.85);
-  box-shadow:0 0 0 0 rgba(16,217,138,0),4px 4px 0px #006845;
+  border:2px solid rgba(255,255,255,.6);
+  box-shadow:0 2px 8px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.2);
   cursor:pointer;
   display:inline-flex;align-items:center;gap:10px;
   position:relative;overflow:hidden;white-space:nowrap;
-  /* magnetic: allow JS to nudge via --mx/--my custom props */
-  transform:translate(calc(var(--mx,0)*1px),calc(var(--my,0)*1px));
-  transition:transform .18s cubic-bezier(.23,1,.32,1),
-             box-shadow .18s cubic-bezier(.23,1,.32,1),
-             filter .18s ease;
+  transform:translateY(0);
+  transition:transform 200ms ease-out,
+             box-shadow 200ms ease-out,
+             border-color 200ms ease-out,
+             background 200ms ease-out;
   will-change:transform,box-shadow;
-  isolation:isolate;
 }
-/* Shimmer sweep layer */
-.btn-dl::before{
-  content:'';
-  position:absolute;inset:0;
-  background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.55) 50%,transparent 70%);
-  background-size:200% 100%;
-  background-position:200% 0;
-  transition:background-position .6s ease;
-  pointer-events:none;z-index:1;
+/* Ripple layer — revealed by JS adding .ripple child */
+.btn-dl .ripple{
+  position:absolute;border-radius:50%;
+  background:rgba(255,255,255,.35);
+  transform:scale(0);pointer-events:none;
+  animation:ripple-expand 500ms ease-out forwards;
 }
-.btn-dl:hover::before{background-position:-100% 0}
-/* Aurora glow ring */
-.btn-dl::after{
-  content:'';
-  position:absolute;inset:-3px;
-  background:conic-gradient(from var(--a,0deg),#10D98A,#4F8EFF,#0fffa9,#10D98A);
-  border-radius:0;
-  z-index:-1;
-  opacity:0;
-  transition:opacity .25s ease;
-  animation:aurora-spin 3s linear infinite paused;
-  filter:blur(6px);
+@keyframes ripple-expand{
+  to{transform:scale(4);opacity:0}
 }
-.btn-dl:hover::after{opacity:.7;animation-play-state:running}
-@property --a{syntax:'<angle>';initial-value:0deg;inherits:false}
-@keyframes aurora-spin{to{--a:360deg}}
-/* Hover lift */
+/* Hover — professional lift + deeper shadow */
 .btn-dl:hover{
-  filter:brightness(1.1);
-  box-shadow:0 0 28px rgba(16,217,138,.5),0 0 8px rgba(16,217,138,.25),6px 6px 0px #004d31;
-  transform:translate(calc(var(--mx,0)*1px - 2px),calc(var(--my,0)*1px - 2px));
+  transform:translateY(-2px);
+  background:#0de882;
+  border-color:rgba(255,255,255,.9);
+  box-shadow:0 6px 20px rgba(16,217,138,.28),
+             0 2px 6px rgba(0,0,0,.3);
 }
+/* Active — press feedback */
 .btn-dl:active{
-  transform:translate(calc(var(--mx,0)*1px + 2px),calc(var(--my,0)*1px + 2px));
-  box-shadow:2px 2px 0px #004d31;
-  filter:brightness(.95);
+  transform:translateY(1px);
+  box-shadow:0 1px 4px rgba(0,0,0,.3);
+  transition:transform 80ms ease-out,box-shadow 80ms ease-out;
 }
-/* Pulse on idle */
-.btn-dl-pulse{animation:aurora-pulse 2.8s ease infinite}
-@keyframes aurora-pulse{
-  0%,100%{box-shadow:4px 4px 0px #006845,0 0 8px rgba(16,217,138,.2)}
-  50%  {box-shadow:4px 4px 0px #004d31,0 0 32px rgba(16,217,138,.55),0 0 60px rgba(16,217,138,.2)}
+/* Gentle breathing pulse on idle */
+.btn-dl-pulse{animation:dl-breathe 3s ease-in-out infinite}
+@keyframes dl-breathe{
+  0%,100%{box-shadow:0 2px 8px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.2),0 0 0 0 rgba(16,217,138,0)}
+  50%    {box-shadow:0 2px 8px rgba(0,0,0,.35),0 1px 2px rgba(0,0,0,.2),0 0 0 8px rgba(16,217,138,.12)}
 }
-/* Download icon bounce on hover */
-.btn-dl:hover .dl-icon{animation:dl-bounce .5s cubic-bezier(.34,1.56,.64,1) both}
-@keyframes dl-bounce{0%{transform:translateY(0)}40%{transform:translateY(3px)}70%{transform:translateY(-2px)}100%{transform:translateY(0)}}
+/* Icon: smooth downward nudge on hover (implies download) */
+.btn-dl .dl-icon{
+  transition:transform 200ms ease-out;
+}
+.btn-dl:hover .dl-icon{transform:translateY(2px)}
+/* Focus ring — accessibility */
+.btn-dl:focus-visible{
+  outline:2px solid var(--green);
+  outline-offset:3px;
+}
 /* Reduced motion */
 @media(prefers-reduced-motion:reduce){
-  .btn-dl,.btn-dl::before,.btn-dl::after{animation:none!important;transition:box-shadow .15s ease!important}
-  .btn-dl:hover{transform:none;filter:none}
+  .btn-dl{transition:background 150ms ease,border-color 150ms ease;transform:none!important;animation:none!important}
+  .btn-dl .ripple{display:none}
 }
 
 /* ── HERO ── */
@@ -401,47 +394,40 @@ code{font-family:var(--fm);font-size:.82em;background:rgba(79,142,255,.1);border
   .code-block{overflow-x:hidden}
 }
 
-/* ── CUSTOM CURSOR DOT ── */
+/* ── CURSOR — Professional trailing dot ── */
 #cursor-dot{
   pointer-events:none;position:fixed;z-index:99999;
-  width:10px;height:10px;border-radius:50%;
+  width:7px;height:7px;
+  border-radius:50%;
   background:var(--green);
-  box-shadow:0 0 10px rgba(16,217,138,.8),0 0 20px rgba(16,217,138,.4);
   transform:translate(-50%,-50%);
-  transition:width .2s ease,height .2s ease,opacity .3s ease;
-  opacity:0;mix-blend-mode:screen;
-  top:0;left:0;
+  opacity:0;top:0;left:0;
+  transition:width 200ms ease,height 200ms ease,
+             background 200ms ease,opacity .3s ease;
 }
 #cursor-ring{
   pointer-events:none;position:fixed;z-index:99998;
-  width:32px;height:32px;border-radius:50%;
+  width:28px;height:28px;
+  border-radius:50%;
   border:1.5px solid rgba(16,217,138,.5);
   transform:translate(-50%,-50%);
-  transition:width .22s cubic-bezier(.23,1,.32,1),
-             height .22s cubic-bezier(.23,1,.32,1),
-             border-color .2s ease,opacity .3s ease;
   opacity:0;top:0;left:0;
+  /* Natural lag: ring follows mouse at its own speed via JS lerp */
+  transition:width 200ms ease,height 200ms ease,
+             border-color 200ms ease,opacity .3s ease;
 }
 body:not(.touch) #cursor-dot,
 body:not(.touch) #cursor-ring{opacity:1}
+/* Expand ring subtly when hovering download buttons */
 body.btn-hovered #cursor-ring{
-  width:52px;height:52px;
-  border-color:rgba(16,217,138,.9);
-  box-shadow:0 0 14px rgba(16,217,138,.35);
+  width:44px;height:44px;
+  border-color:rgba(16,217,138,.85);
+  border-width:1.5px;
 }
-body.btn-hovered #cursor-dot{width:6px;height:6px}
+body.btn-hovered #cursor-dot{
+  width:5px;height:5px;
+}
 @media(prefers-reduced-motion:reduce){
   #cursor-dot,#cursor-ring{display:none!important}
 }
 
-/* ── PARTICLES ── */
-.dl-particle{
-  pointer-events:none;position:fixed;z-index:99999;
-  width:6px;height:6px;border-radius:50%;
-  animation:particle-fly var(--dur,.7s) ease-out forwards;
-}
-@keyframes particle-fly{
-  0%{transform:translate(0,0) scale(1);opacity:1}
-  100%{transform:translate(var(--tx,0px),var(--ty,0px)) scale(0);opacity:0}
-}
-@media(prefers-reduced-motion:reduce){.dl-particle{display:none!important}}

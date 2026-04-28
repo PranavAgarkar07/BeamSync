@@ -308,74 +308,73 @@ sections.forEach(s => sectionObserver.observe(s));
   });
 })();
 
-// ── MAGIC DOWNLOAD BUTTON ────────────────────────────────
+// ── PROFESSIONAL DOWNLOAD BUTTON ─────────────────────────
 (function () {
-  if (prefersReducedMotion) return;
-
   const dot  = document.getElementById('cursor-dot');
   const ring = document.getElementById('cursor-ring');
 
-  // Detect touch — hide cursor elements on touch devices
+  // Detect touch devices — hide custom cursor
   if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
     document.body.classList.add('touch');
+    return;
   }
 
-  // Cursor tracking (raw position for dot, slightly lagged ring via CSS transition)
-  let rx = -999, ry = -999; // ring position
+  // ── Smooth lerped cursor ──────────────────────────────
+  // Dot follows mouse immediately; ring lerps with natural lag
+  let mouseX = -999, mouseY = -999;
+  let ringX  = -999, ringY  = -999;
+  let rafId;
+
   document.addEventListener('mousemove', e => {
-    if (dot)  { dot.style.left  = e.clientX + 'px'; dot.style.top  = e.clientY + 'px'; }
-    if (ring) { ring.style.left = e.clientX + 'px'; ring.style.top = e.clientY + 'px'; }
-    rx = e.clientX; ry = e.clientY;
+    mouseX = e.clientX;
+    mouseY = e.clientY;
+    if (dot) {
+      dot.style.left = mouseX + 'px';
+      dot.style.top  = mouseY + 'px';
+    }
   }, { passive: true });
 
-  // Magnetic + hover state for all .btn-dl elements
-  const PARTICLE_COLORS = ['#10D98A','#0fffa9','#4F8EFF','#ffffff','#06c97e'];
+  // Ring lerps toward mouse at 12% per frame (natural elastic lag)
+  function lerpRing() {
+    ringX += (mouseX - ringX) * 0.12;
+    ringY += (mouseY - ringY) * 0.12;
+    if (ring) {
+      ring.style.left = ringX + 'px';
+      ring.style.top  = ringY + 'px';
+    }
+    rafId = requestAnimationFrame(lerpRing);
+  }
+  // Init ring position on first mousemove
+  document.addEventListener('mousemove', function init(e) {
+    ringX = e.clientX; ringY = e.clientY;
+    lerpRing();
+    document.removeEventListener('mousemove', init);
+  }, { once: true });
 
+  // ── Button interactions ───────────────────────────────
   document.querySelectorAll('.btn-dl').forEach(btn => {
-    // Magnetic pull
-    btn.addEventListener('mousemove', e => {
-      const r   = btn.getBoundingClientRect();
-      const cx  = r.left + r.width  / 2;
-      const cy  = r.top  + r.height / 2;
-      const dx  = (e.clientX - cx) / (r.width  / 2);
-      const dy  = (e.clientY - cy) / (r.height / 2);
-      // Max ±6px pull
-      btn.style.setProperty('--mx', (dx * 6).toFixed(2));
-      btn.style.setProperty('--my', (dy * 6).toFixed(2));
+    // Expand cursor ring on hover
+    btn.addEventListener('mouseenter', () => {
       document.body.classList.add('btn-hovered');
     });
-
     btn.addEventListener('mouseleave', () => {
-      btn.style.setProperty('--mx', '0');
-      btn.style.setProperty('--my', '0');
       document.body.classList.remove('btn-hovered');
     });
 
-    // Particle burst on click
+    // CSS ripple on click — professional, not gamey
     btn.addEventListener('click', e => {
-      const count = 18;
-      for (let i = 0; i < count; i++) {
-        const p   = document.createElement('div');
-        p.className = 'dl-particle';
-        const angle  = (360 / count) * i + Math.random() * 20;
-        const dist   = 60 + Math.random() * 80;
-        const rad    = angle * Math.PI / 180;
-        const tx     = Math.cos(rad) * dist;
-        const ty     = Math.sin(rad) * dist;
-        const dur    = (.45 + Math.random() * .35).toFixed(2) + 's';
-        const size   = (4 + Math.random() * 6).toFixed(1) + 'px';
-        const color  = PARTICLE_COLORS[Math.floor(Math.random() * PARTICLE_COLORS.length)];
-        p.style.cssText = `
-          left:${e.clientX}px;top:${e.clientY}px;
-          --tx:${tx.toFixed(1)}px;--ty:${ty.toFixed(1)}px;
-          --dur:${dur};
-          width:${size};height:${size};
-          background:${color};
-          box-shadow:0 0 6px ${color};
-        `;
-        document.body.appendChild(p);
-        p.addEventListener('animationend', () => p.remove());
-      }
+      if (prefersReducedMotion) return;
+      const r      = btn.getBoundingClientRect();
+      const size   = Math.max(r.width, r.height) * 2;
+      const ripple = document.createElement('span');
+      ripple.className = 'ripple';
+      ripple.style.cssText = `
+        width:${size}px;height:${size}px;
+        left:${e.clientX - r.left - size / 2}px;
+        top:${e.clientY - r.top  - size / 2}px;
+      `;
+      btn.appendChild(ripple);
+      ripple.addEventListener('animationend', () => ripple.remove());
     });
   });
 })();
