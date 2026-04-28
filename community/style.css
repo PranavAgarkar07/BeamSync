@@ -264,12 +264,12 @@ code{font-family:var(--fm);font-size:.82em;background:rgba(79,142,255,.1);border
 
 /* ── INSTALL CTA ── */
 .install-cta{padding:100px 28px;background:var(--surface);border-bottom:2px solid var(--border);text-align:center}
-.install-options{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:36px}
-.install-card{text-align:left;background:var(--bg);border:2px solid var(--border);padding:20px 24px;min-width:320px;box-shadow:var(--sh-md);transition:var(--t)}
+.install-options{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:36px;padding:0 4px}
+.install-card{text-align:left;background:var(--bg);border:2px solid var(--border);padding:20px 24px;min-width:min(320px,100%);box-shadow:var(--sh-md);transition:var(--t);width:100%;max-width:480px}
 .install-card:hover{transform:translate(-2px,-2px);box-shadow:var(--sh-lg);border-color:var(--primary)}
 .install-card-label{display:flex;align-items:center;gap:8px;font-family:var(--fm);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px}
 .code-block{display:flex;align-items:center;justify-content:space-between;background:#060D1A;border:1px solid var(--border);padding:10px 14px;gap:10px}
-.code-block code{background:none;border:none;padding:0;font-size:.82rem;color:var(--green);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.code-block code{background:none;border:none;padding:0;font-size:.82rem;color:var(--green);white-space:pre-wrap;word-break:break-all;overflow:hidden}
 .copy-btn{background:none;border:none;cursor:pointer;color:var(--muted);padding:4px;display:flex;align-items:center;flex-shrink:0;transition:color 150ms ease}
 .copy-btn:hover{color:var(--green)}
 .cta-buttons{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
@@ -323,7 +323,8 @@ code{font-family:var(--fm);font-size:.82em;background:rgba(79,142,255,.1);border
   .features,.how-it-works,.architecture,.screenshots,.install-cta,.stats-bar{padding-left:16px;padding-right:16px}
   .wrap{padding:0 16px}
   .bento-grid,.steps,.arch-diagram,.arch-stats,.ss-track,.carousel{width:100%;min-width:0}
-  .install-options{flex-direction:column;padding:0}
+  .install-options{flex-direction:column;align-items:stretch;padding:0 16px}
+  .install-card{min-width:0;width:100%;max-width:100%;box-sizing:border-box}
   .arch-layer{padding:16px}
   h2{font-size:clamp(1.4rem,7vw,2.2rem)}
   h3{font-size:1rem}
@@ -333,15 +334,15 @@ code{font-family:var(--fm);font-size:.82em;background:rgba(79,142,255,.1);border
   .stats-inner{grid-template-columns:1fr}
   .stat-item{border-right:none!important;border-bottom:1px solid var(--border)}
   .stat-item:last-child{border-bottom:none}
-  .install-card{min-width:100%}
-  .install-options{flex-direction:column}
   .arch-stats{grid-template-columns:1fr}
   .arch-stat{border-right:none;border-bottom:1px solid var(--border)}
   .arch-stat:last-child{border-bottom:none}
   .footer-links{grid-template-columns:1fr}
   .footer-bottom{flex-direction:column;gap:6px;text-align:center}
-  .cta-buttons{flex-direction:column;align-items:center}
+  .cta-buttons{flex-direction:column;align-items:stretch;padding:0 16px}
+  .cta-buttons .btn-dl,.cta-buttons .btn-outline{width:100%;justify-content:center;text-align:center}
   .lb-close{right:0;top:-46px}
   .carousel-prev{left:-12px}
   .carousel-next{right:-12px}
+  .code-block{overflow-x:hidden}
 }
