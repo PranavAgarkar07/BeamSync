@@ -307,3 +307,75 @@ sections.forEach(s => sectionObserver.observe(s));
     if (window.innerWidth > 900) toggle(false);
   });
 })();
+
+// ── MAGIC DOWNLOAD BUTTON ────────────────────────────────
+(function () {
+  if (prefersReducedMotion) return;
+
+  const dot  = document.getElementById('cursor-dot');
+  const ring = document.getElementById('cursor-ring');
+
+  // Detect touch — hide cursor elements on touch devices
+  if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+    document.body.classList.add('touch');
+  }
+
+  // Cursor tracking (raw position for dot, slightly lagged ring via CSS transition)
+  let rx = -999, ry = -999; // ring position
+  document.addEventListener('mousemove', e => {
+    if (dot)  { dot.style.left  = e.clientX + 'px'; dot.style.top  = e.clientY + 'px'; }
+    if (ring) { ring.style.left = e.clientX + 'px'; ring.style.top = e.clientY + 'px'; }
+    rx = e.clientX; ry = e.clientY;
+  }, { passive: true });
+
+  // Magnetic + hover state for all .btn-dl elements
+  const PARTICLE_COLORS = ['#10D98A','#0fffa9','#4F8EFF','#ffffff','#06c97e'];
+
+  document.querySelectorAll('.btn-dl').forEach(btn => {
+    // Magnetic pull
+    btn.addEventListener('mousemove', e => {
+      const r   = btn.getBoundingClientRect();
+      const cx  = r.left + r.width  / 2;
+      const cy  = r.top  + r.height / 2;
+      const dx  = (e.clientX - cx) / (r.width  / 2);
+      const dy  = (e.clientY - cy) / (r.height / 2);
+      // Max ±6px pull
+      btn.style.setProperty('--mx', (dx * 6).toFixed(2));
+      btn.style.setProperty('--my', (dy * 6).toFixed(2));
+      document.body.classList.add('btn-hovered');
+    });
+
+    btn.addEventListener('mouseleave', () => {
+      btn.style.setProperty('--mx', '0');
+      btn.style.setProperty('--my', '0');
+      document.body.classList.remove('btn-hovered');
+    });
+
+    // Particle burst on click
+    btn.addEventListener('click', e => {
+      const count = 18;
+      for (let i = 0; i < count; i++) {
+        const p   = document.createElement('div');
+        p.className = 'dl-particle';
+        const angle  = (360 / count) * i + Math.random() * 20;
+        const dist   = 60 + Math.random() * 80;
+        const rad    = angle * Math.PI / 180;
+        const tx     = Math.cos(rad) * dist;
+        const ty     = Math.sin(rad) * dist;
+        const dur    = (.45 + Math.random() * .35).toFixed(2) + 's';
+        const size   = (4 + Math.random() * 6).toFixed(1) + 'px';
+        const color  = PARTICLE_COLORS[Math.floor(Math.random() * PARTICLE_COLORS.length)];
+        p.style.cssText = `
+          left:${e.clientX}px;top:${e.clientY}px;
+          --tx:${tx.toFixed(1)}px;--ty:${ty.toFixed(1)}px;
+          --dur:${dur};
+          width:${size};height:${size};
+          background:${color};
+          box-shadow:0 0 6px ${color};
+        `;
+        document.body.appendChild(p);
+        p.addEventListener('animationend', () => p.remove());
+      }
+    });
+  });
+})();
