@@ -33,7 +33,7 @@
   export let activeTab     = 'receive';
   export let networkStatus = 'idle';
   export let serverUrl     = '';
-  export let appVersion    = 'v2.2';
+  export let appVersion    = '';
 
   const dispatch = createEventDispatcher();
 

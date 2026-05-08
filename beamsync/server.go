@@ -75,14 +75,16 @@ func (s *serverState) checkTimeout() (wasConnected bool, timedOut bool) {
 
 // PendingTransfer holds a blocked transfer awaiting user approval.
 type PendingTransfer struct {
-	ID         string `json:"id"`
-	Filename   string `json:"filename"`
-	SizeMB     string `json:"sizeMB"`
-	SizeBytes  int64  `json:"sizeBytes"`
-	MimeType   string `json:"mimeType"`
-	SenderIP   string `json:"senderIP"`
-	SenderName string `json:"senderName"`
-	approved   chan bool
+	ID             string `json:"id"`
+	Filename       string `json:"filename"`
+	SizeMB         string `json:"sizeMB"`
+	SizeBytes      int64  `json:"sizeBytes"`
+	MimeType       string `json:"mimeType"`
+	SenderIP       string `json:"senderIP"`
+	SenderName     string `json:"senderName"`
+	AvailableBytes int64  `json:"availableBytes"`
+	AvailableStr   string `json:"availableStr"`
+	approved       chan bool
 }
 
 // HTTPServer wraps http.Server so we can shut it down cleanly.
@@ -517,6 +519,24 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			return
 		}
 
+		// ── Check available disk space ──────────────────────────────────────
+		if s.MinFreeSpaceMB > 0 {
+			space, err := GetDiskFreeSpace(uploadDir)
+			if err == nil {
+				needed := req.SizeBytes + s.MinFreeSpaceMB*1024*1024
+				if space.AvailableBytes < needed {
+					msg := fmt.Sprintf("Insufficient disk space: need %s, have %s available",
+						formatBytes(needed), space.AvailableStr)
+					fmt.Printf("🚫 Disk space insufficient: need %s, have %s\n",
+						formatBytes(needed), space.AvailableStr)
+					http.Error(w, msg, http.StatusInsufficientStorage)
+					return
+				}
+			} else {
+				fmt.Printf("⚠️ Could not check disk space: %v\n", err)
+			}
+		}
+
 		// ── accept_all: approve immediately ───────────────────────────────────
 		if s.Mode == TransferModeAcceptAll {
 			w.WriteHeader(http.StatusOK)
@@ -539,15 +559,24 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		id := generateToken()
 		sizeMB := fmt.Sprintf("%.2f MB", float64(req.SizeBytes)/1024/1024)
 
+		availBytes := int64(0)
+		availStr := ""
+		if space, err := GetDiskFreeSpace(uploadDir); err == nil {
+			availBytes = space.AvailableBytes
+			availStr = space.AvailableStr
+		}
+
 		pt := &PendingTransfer{
-			ID:         id,
-			Filename:   req.Filename,
-			SizeMB:     sizeMB,
-			SizeBytes:  req.SizeBytes,
-			MimeType:   req.MimeType,
-			SenderIP:   senderIP,
-			SenderName: senderName,
-			approved:   make(chan bool, 1),
+			ID:             id,
+			Filename:       req.Filename,
+			SizeMB:         sizeMB,
+			SizeBytes:      req.SizeBytes,
+			MimeType:       req.MimeType,
+			SenderIP:       senderIP,
+			SenderName:     senderName,
+			AvailableBytes: availBytes,
+			AvailableStr:   availStr,
+			approved:       make(chan bool, 1),
 		}
 
 		httpServer.pendingMu.Lock()
@@ -603,6 +632,28 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 		// 100 GB max — guard runaway clients
 		r.Body = http.MaxBytesReader(w, r.Body, 100*1024*1024*1024)
+
+		// ── Periodic disk space monitor ──────────────────────────────────────
+		lastSpaceCheck := time.Now()
+		minFree := httpServer.settings.MinFreeSpaceMB
+		checkDiskSpace := func() error {
+			if minFree <= 0 {
+				return nil
+			}
+			if time.Since(lastSpaceCheck) < 10*time.Second {
+				return nil
+			}
+			lastSpaceCheck = time.Now()
+			space, err := GetDiskFreeSpace(uploadDir)
+			if err != nil {
+				return nil
+			}
+			if space.AvailableBytes < minFree*1024*1024 {
+				return fmt.Errorf("disk space below minimum: %s available, need %d MB reserve",
+					space.AvailableStr, minFree)
+			}
+			return nil
+		}
 
 		// ── High-throughput streaming multipart ───────────────────────────────
 		contentType := r.Header.Get("Content-Type")
@@ -678,6 +729,15 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			savedName := filepath.Base(dstPath)
 			fmt.Printf("💾 Queuing write: %s\n", dstPath)
 
+			// Check disk space before each file during multi-file batches
+			if err := checkDiskSpace(); err != nil {
+				fmt.Printf("🚫 Aborting upload — %v\n", err)
+				io.Copy(io.Discard, part)
+				part.Close()
+				parseErr = err
+				break
+			}
+
 			// Read up to largeFileThreshold bytes to determine dispatch strategy.
 			var buf bytes.Buffer
 			buf.Grow(largeFileThreshold)
@@ -690,6 +750,16 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 				fmt.Printf("📦 Large file — writing synchronously: %s\n", savedName)
 				state.beginUpload()
 
+				// Final space check before starting the big write
+				if err := checkDiskSpace(); err != nil {
+					fmt.Printf("🚫 Aborting large file write — %v\n", err)
+					io.Copy(io.Discard, part)
+					part.Close()
+					state.endUpload()
+					parseErr = err
+					break
+				}
+
 				dst, createErr := os.Create(dstPath)
 				if createErr != nil {
 					fmt.Println("❌ File creation error:", createErr)
@@ -701,6 +771,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 				diskBuf := bufio.NewWriterSize(dst, 8*1024*1024)
 				estTotal := int64(-1)
+				writtenTotal := int64(len(buf.Bytes()))
 
 				// Order of size preference:
 				// 1. Explicit size from manifest (sent by mobile JS)
@@ -728,9 +799,36 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 				// Write the already-buffered prefix first.
 				prefixBytes := buf.Bytes()
 				lpw.Write(prefixBytes)
-				// Stream the remainder from the network.
-				lWritten, lErr := copyChunked(lpw, part, 8*1024*1024)
-				lWritten += int64(len(prefixBytes))
+
+				// Stream the remainder from the network — check space every ~100 MB.
+				var spaceCheckBudget int64 = 100 * 1024 * 1024
+				var lErr error
+				for {
+					chunkSize := int64(8 * 1024 * 1024)
+					nw, rErr := io.CopyN(lpw, part, chunkSize)
+					writtenTotal += nw
+					spaceCheckBudget -= nw
+					if rErr != nil {
+						lErr = rErr
+						if lErr == io.EOF || lErr == io.ErrUnexpectedEOF {
+							lErr = nil
+						}
+					}
+					if spaceCheckBudget <= 0 && lErr == nil {
+						spaceCheckBudget = 100 * 1024 * 1024
+						if err := checkDiskSpace(); err != nil {
+							fmt.Printf("🚫 Aborting during streaming — %v\n", err)
+							io.Copy(io.Discard, part)
+							lErr = err
+						}
+					}
+					if lErr != nil {
+						break
+					}
+					if writtenTotal >= estTotal && estTotal > 0 {
+						break
+					}
+				}
 				diskBuf.Flush()
 				dst.Close()
 				part.Close()
@@ -738,10 +836,13 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 				if lErr != nil {
 					fmt.Println("❌ Large file copy error:", lErr)
+					if lErr != nil && strings.Contains(lErr.Error(), "disk space below minimum") {
+						parseErr = lErr
+					}
 					continue
 				}
-				emit("upload_progress", fmt.Sprintf("%s|%d|%d", savedName, lWritten, lWritten))
-				fmt.Printf("✅ Large file saved: %s (%d bytes)\n", savedName, lWritten)
+				emit("upload_progress", fmt.Sprintf("%s|%d|%d", savedName, writtenTotal, writtenTotal))
+				fmt.Printf("✅ Large file saved: %s (%d bytes)\n", savedName, writtenTotal)
 				go func(fname string) {
 					time.Sleep(100 * time.Millisecond)
 					emit("file_received", fname)

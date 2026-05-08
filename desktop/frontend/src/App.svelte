@@ -13,6 +13,8 @@
     SaveTransferSettings,
     ApproveTransfer,
     RejectTransfer,
+    GetDiskSpace,
+    GetVersion,
   } from "../wailsjs/go/main/App.js";
   import {
     EventsOn,
@@ -68,6 +70,8 @@
   let showSenderDialog = false;
   let isDragOver = false;
   let savePath = ""; // persisted save directory
+  let diskSpace = { availableBytes: 0, totalBytes: 0, usedBytes: 0, availableStr: "", totalStr: "" };
+  let appVersion = ""; // loaded from backend
 
   // ── Transfer Settings ──────────────────────────────────────────────────
   let settings = {
@@ -135,12 +139,12 @@
     EventsOn("device_connected", () => {
       connectionState = "CONNECTED";
       playSound("connect");
-      toast("⚡ Device linked to network", "success");
+      toast("Device linked to network", "success");
     });
     EventsOn("device_disconnected", () => {
       connectionState = "DISCONNECTED";
       playSound("click");
-      toast("💔 Signal lost — device disconnected", "warn");
+      toast("Signal lost — device disconnected", "warn");
     });
     EventsOn("transfer_request", (dataStr) => {
       playSound("connect");
@@ -310,6 +314,22 @@
     } catch {
       savePath = "";
     }
+    try {
+      appVersion = await GetVersion();
+    } catch {
+      appVersion = "v2.4.0";
+    }
+    try {
+      diskSpace = await GetDiskSpace();
+    } catch {
+      diskSpace = { availableBytes: 0, totalBytes: 0, usedBytes: 0, availableStr: "Unknown", totalStr: "" };
+    }
+    // Refresh disk space every 30 seconds
+    setInterval(async () => {
+      try {
+        diskSpace = await GetDiskSpace();
+      } catch {}
+    }, 30000);
   });
 
   onDestroy(() => {
@@ -325,7 +345,7 @@
       serverUrl = await StartReceiverDefault();
     } catch {
       serverUrl = "";
-      toast("❌ Failed to start receiver", "error");
+      toast("Failed to start receiver", "error");
       connectionState = "IDLE";
       return;
     }
@@ -398,35 +418,28 @@
     return bytes + " B";
   }
 
+  const _fi = `width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"`;
   function fileIcon(name = "") {
     const ext = name.split(".").pop().toLowerCase();
-    const m = {
-      pdf: "📄",
-      jpg: "🖼️",
-      jpeg: "🖼️",
-      png: "🖼️",
-      gif: "🖼️",
-      webp: "🖼️",
-      svg: "🖼️",
-      mp4: "🎬",
-      mov: "🎬",
-      mkv: "🎬",
-      avi: "🎬",
-      mp3: "🎵",
-      wav: "🎵",
-      flac: "🎵",
-      zip: "📦",
-      tar: "📦",
-      gz: "📦",
-      rar: "📦",
-      txt: "📝",
-      md: "📝",
-      doc: "📝",
-      docx: "📝",
-      apk: "📱",
-      exe: "⚙️",
+    const groups = {
+      image:  new Set(["jpg","jpeg","png","gif","webp","svg","bmp","tiff","ico"]),
+      video:  new Set(["mp4","mov","mkv","avi","webm","hevc","m4v"]),
+      audio:  new Set(["mp3","wav","flac","aac","ogg","m4a"]),
+      archive:new Set(["zip","tar","gz","rar","7z","bz2","xz"]),
+      doc:    new Set(["txt","md","doc","docx","rtf","odt"]),
+      code:   new Set(["exe","js","ts","go","py","rs","java","kt","swift","cpp","c","css","html"]),
+      pdf:    new Set(["pdf"]),
+      apk:    new Set(["apk"]),
     };
-    return m[ext] || "📁";
+    if (groups.image.has(ext))   return `<svg ${_fi}><rect x="3" y="3" width="18" height="18" rx="1"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
+    if (groups.video.has(ext))   return `<svg ${_fi}><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="1" ry="1"/></svg>`;
+    if (groups.audio.has(ext))   return `<svg ${_fi}><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
+    if (groups.archive.has(ext)) return `<svg ${_fi}><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>`;
+    if (groups.doc.has(ext))     return `<svg ${_fi}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`;
+    if (groups.code.has(ext))    return `<svg ${_fi}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`;
+    if (groups.pdf.has(ext))     return `<svg ${_fi}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`;
+    if (groups.apk.has(ext))     return `<svg ${_fi}><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>`;
+    return `<svg ${_fi}><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`;
   }
 
   async function resetAll() {
@@ -461,14 +474,14 @@
       return;
     }
     if (result.startsWith("Error:")) {
-      toast("❌ " + result, "error");
+      toast(result, "error");
       return;
     }
     serverUrl = result;
     generateQR(result);
     savePath = await GetSavePath();
     connectionState = "WAITING";
-    toast(`📁 Save path updated`, "success");
+      toast("Save path updated", "success");
   }
 
   async function handleDisconnectReset() {
@@ -596,6 +609,25 @@
         <span style="color: var(--nb-text-muted); font-weight: 600;">File Size</span>
         <strong style="font-size: 1rem;">{transferRequest.sizeMB}</strong>
       </div>
+      {#if transferRequest.availableStr}
+        <div style="display: flex; justify-content: space-between; padding-top: 0.75rem; margin-top: 0.75rem; border-top: 2px dashed var(--nb-border-color);">
+          <span style="color: var(--nb-text-muted); font-weight: 600;">Available Space</span>
+          <strong style="font-size: 1rem;" class:insufficient={transferRequest.availableBytes < transferRequest.sizeBytes}>
+            {transferRequest.availableStr}
+          </strong>
+        </div>
+        {#if transferRequest.availableBytes < transferRequest.sizeBytes}
+          <div style="margin-top: 0.75rem; padding: 0.75rem; background: #ff4444; color: #fff; font-weight: 800; font-size: 0.85rem; text-align: center; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            NOT ENOUGH SPACE — {formatSize(transferRequest.sizeBytes - transferRequest.availableBytes)} more needed
+          </div>
+        {:else if transferRequest.availableBytes < transferRequest.sizeBytes * 1.5}
+          <div style="margin-top: 0.75rem; padding: 0.75rem; background: #ffb000; color: #000; font-weight: 800; font-size: 0.85rem; text-align: center; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Low space — {transferRequest.availableStr} free
+          </div>
+        {/if}
+      {/if}
     </div>
     
     <label style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1.75rem; cursor: pointer; font-size: 1rem; font-weight: 600;">
@@ -659,7 +691,7 @@
       activeTab={mode.toLowerCase()}
       networkStatus={connectionState.toLowerCase()}
       serverUrl={displayUrl}
-      appVersion="v2.2"
+      appVersion={appVersion}
       on:tabChange={({ detail }) => switchMode(detail.tab.toUpperCase())}
       on:settings={() => switchMode('SETTINGS')}
       on:reset={handleDisconnectReset}
@@ -729,6 +761,11 @@
                     >
                   </div>
                 {/if}
+                {#if diskSpace.availableStr}
+                  <div class="disk-footer">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" style="vertical-align: middle; margin-right: 4px;"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>Free: {diskSpace.availableStr}
+                  </div>
+                {/if}
               </div>
             </div>
 
@@ -767,7 +804,7 @@
                     class="file-item"
                     on:click={() => openFile(file.name)}
                   >
-                    <span class="file-icon">{fileIcon(file.name)}</span>
+                    <span class="file-icon">{@html fileIcon(file.name)}</span>
                     <span class="file-name">{file.name}</span>
                     <span class="file-size">{formatSize(file.sizeBytes)}</span>
                     <span class="file-time">{file.modTime}</span>
@@ -829,6 +866,12 @@
                 <span style="flex: 1; word-break: break-all; font-family: monospace;">{savePath || "Default"}</span>
                 <button class="nb-btn nb-btn--ghost nb-btn--sm" on:click={changeSavePath} style="padding: 0.25rem 0.5rem;">CHANGE</button>
               </div>
+              {#if diskSpace.availableStr}
+                <div style="margin-top: 0.5rem; display: flex; gap: 1rem; font-size: 0.8rem; font-family: monospace; color: var(--nb-text-muted);">
+                  <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" style="vertical-align: middle; margin-right: 4px;"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>Free: {diskSpace.availableStr}</span>
+                  <span>Total: {diskSpace.totalStr}</span>
+                </div>
+              {/if}
               <p style="color: var(--nb-text-muted); font-size: 0.8rem; margin-top: 0.5rem;">Changing the save location will temporarily restart the receiver.</p>
             </div>
 
@@ -839,6 +882,17 @@
                   <input type="radio" bind:group={settings.mode} value={opt.v} on:change={() => settingsDirty = true}> {opt.l}
                 </label>
               {/each}
+            </div>
+
+            <div style="margin-bottom: 2rem;">
+              <h3>Minimum Free Space</h3>
+              <div style="display: flex; gap: 0.75rem; align-items: center;">
+                <input class="nb-input" type="number" bind:value={settings.minFreeSpaceMB} min="0" style="width: 100px;">
+                <span>MB reserve (0 = no check)</span>
+              </div>
+              {#if diskSpace.availableStr}
+                <p style="color: var(--nb-text-muted); font-size: 0.8rem; margin-top: 0.25rem;">Free now: {diskSpace.availableStr}</p>
+              {/if}
             </div>
 
             <div style="margin-bottom: 2rem;">
@@ -876,7 +930,7 @@
               </div>
               <div class="about-title">
                 <h1>BEAMSYNC</h1>
-                <span class="version-badge">v2.2</span>
+                <span class="version-badge">{appVersion}</span>
               </div>
             </div>
             
@@ -1271,6 +1325,15 @@
     color: var(--nb-primary-text, #ffffff);
   }
 
+  .disk-footer {
+    font-family: var(--nb-font-mono);
+    font-size: var(--nb-text-xs);
+    color: var(--nb-text-muted);
+    text-align: center;
+    padding-top: var(--nb-space-2);
+    border-top: 2px dashed var(--nb-border-color);
+  }
+
   .save-path-row {
     font-size: var(--nb-text-sm);
     font-family: var(--nb-font-mono);
@@ -1449,6 +1512,14 @@
 
   .file-item:hover {
     background: var(--nb-bg);
+  }
+
+  .file-icon {
+    display: inline-flex;
+    align-items: center;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
   }
 
   .file-name {
@@ -1684,5 +1755,9 @@
   .about-links {
     display: flex;
     gap: var(--nb-space-3);
+  }
+
+  .insufficient {
+    color: #ff4444 !important;
   }
 </style>

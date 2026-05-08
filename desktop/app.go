@@ -24,8 +24,14 @@ import (
 //go:embed sounds/*.wav
 var soundFS embed.FS
 
-// currentVersion is the running build version — keep in sync with wails.json productVersion.
-const currentVersion = "v2.4.0"
+//go:embed VERSION
+var versionRaw string
+
+var currentVersion string
+
+func init() {
+	currentVersion = "v" + strings.TrimSpace(versionRaw)
+}
 
 // App struct
 type App struct {
@@ -614,6 +620,41 @@ func (a *App) checkForUpdateAndNotify() {
 			a.safeEmit("update_available", string(data))
 		}
 	}
+}
+
+// ---------------------------------------------------------
+// DISK SPACE
+// ---------------------------------------------------------
+
+// DiskSpaceInfo is returned to the frontend.
+type DiskSpaceInfo struct {
+	AvailableBytes int64  `json:"availableBytes"`
+	TotalBytes     int64  `json:"totalBytes"`
+	UsedBytes      int64  `json:"usedBytes"`
+	AvailableStr   string `json:"availableStr"`
+	TotalStr       string `json:"totalStr"`
+}
+
+// GetDiskSpace returns disk space info for the current save path.
+func (a *App) GetDiskSpace() DiskSpaceInfo {
+	path := a.GetSavePath()
+	info, err := beamsync.GetDiskFreeSpace(path)
+	if err != nil {
+		fmt.Println("⚠️ GetDiskSpace:", err)
+		return DiskSpaceInfo{}
+	}
+	return DiskSpaceInfo{
+		AvailableBytes: info.AvailableBytes,
+		TotalBytes:     info.TotalBytes,
+		UsedBytes:      info.UsedBytes,
+		AvailableStr:   info.AvailableStr,
+		TotalStr:       info.TotalStr,
+	}
+}
+
+// GetVersion returns the running app version (e.g. "v2.4.0").
+func (a *App) GetVersion() string {
+	return currentVersion
 }
 
 // ---------------------------------------------------------

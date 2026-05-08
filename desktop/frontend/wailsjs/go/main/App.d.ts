@@ -7,11 +7,15 @@ export function ApproveTransfer(arg1:string):Promise<void>;
 
 export function CheckForUpdate():Promise<main.UpdateInfo>;
 
+export function GetDiskSpace():Promise<main.DiskSpaceInfo>;
+
 export function GetReceivedFiles():Promise<Array<main.ReceivedFile>>;
 
 export function GetSavePath():Promise<string>;
 
 export function GetTransferSettings():Promise<beamsync.TransferSettings>;
+
+export function GetVersion():Promise<string>;
 
 export function OpenFile(arg1:string):Promise<string>;
 

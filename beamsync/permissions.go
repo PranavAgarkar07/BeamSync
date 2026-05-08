@@ -21,7 +21,8 @@ type DeviceRule struct {
 // TransferSettings holds the user-configured transfer permission preferences.
 type TransferSettings struct {
 	Mode              TransferMode `json:"mode"`
-	MaxFileSizeMB     int64        `json:"maxFileSizeMB"`    // 0 = unlimited
+	MaxFileSizeMB     int64        `json:"maxFileSizeMB"`     // 0 = unlimited
+	MinFreeSpaceMB    int64        `json:"minFreeSpaceMB"`    // reserve N MB free; 0 = no check
 	BlockedExtensions []string     `json:"blockedExtensions"` // e.g. [".exe", ".bat"]
 	TrustedDevices    []DeviceRule `json:"trustedDevices"`
 	BlockedDevices    []DeviceRule `json:"blockedDevices"`
@@ -32,6 +33,7 @@ func DefaultTransferSettings() TransferSettings {
 	return TransferSettings{
 		Mode:              TransferModeAskFirst,
 		MaxFileSizeMB:     0,
+		MinFreeSpaceMB:    100,
 		BlockedExtensions: []string{},
 		TrustedDevices:    []DeviceRule{},
 		BlockedDevices:    []DeviceRule{},

@@ -17,6 +17,7 @@ export namespace beamsync {
 	export class TransferSettings {
 	    mode: string;
 	    maxFileSizeMB: number;
+	    minFreeSpaceMB: number;
 	    blockedExtensions: string[];
 	    trustedDevices: DeviceRule[];
 	    blockedDevices: DeviceRule[];
@@ -29,6 +30,7 @@ export namespace beamsync {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.mode = source["mode"];
 	        this.maxFileSizeMB = source["maxFileSizeMB"];
+	        this.minFreeSpaceMB = source["minFreeSpaceMB"];
 	        this.blockedExtensions = source["blockedExtensions"];
 	        this.trustedDevices = this.convertValues(source["trustedDevices"], DeviceRule);
 	        this.blockedDevices = this.convertValues(source["blockedDevices"], DeviceRule);
@@ -57,6 +59,26 @@ export namespace beamsync {
 
 export namespace main {
 	
+	export class DiskSpaceInfo {
+	    availableBytes: number;
+	    totalBytes: number;
+	    usedBytes: number;
+	    availableStr: string;
+	    totalStr: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DiskSpaceInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.availableBytes = source["availableBytes"];
+	        this.totalBytes = source["totalBytes"];
+	        this.usedBytes = source["usedBytes"];
+	        this.availableStr = source["availableStr"];
+	        this.totalStr = source["totalStr"];
+	    }
+	}
 	export class ReceivedFile {
 	    name: string;
 	    sizeBytes: number;

@@ -6,7 +6,7 @@ We currently support the latest stable release of BeamSync. Older releases may r
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability, please **do not** open a public issue. Instead, report it privately by emailing `security@beamsync.org`. Include the following information:
+If you discover a security vulnerability, please **do not** open a public issue. Instead, report it privately by emailing `pranavagarkar8@gmail.com`. Include the following information:
 - Description of the vulnerability
 - Version(s) affected
 - Steps to reproduce the issue

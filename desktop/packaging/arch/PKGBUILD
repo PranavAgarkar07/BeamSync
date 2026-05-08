@@ -1,28 +1,23 @@
 # Maintainer: Pranav Agarkar <sarthyambal@gmail.com>
 pkgname=beamsync-bin
-pkgver=2.3
+pkgver=2.4.0
 pkgrel=1
 pkgdesc="A fast, local peer-to-peer file transfer application with a Neubrutalist interface"
 arch=('x86_64')
 url="https://github.com/PranavAgarkar07/BeamSync"
 license=('MIT')
-depends=('webkit2gtk' 'gtk3')
+# webkit2gtk-4.1 is in Arch's official extra repo — pre-compiled binary, no AUR compilation
+depends=('webkit2gtk-4.1' 'gtk3')
 provides=('beamsync')
 conflicts=('beamsync')
 
-# Pull directly from our official v2.3 release binary we just uploaded!
+# Pull the pre-built binary from our official GitHub release
 source=("https://github.com/PranavAgarkar07/BeamSync/releases/download/v${pkgver}/BeamSync"
         "beamsync.desktop")
-sha256sums=('28e40fcd5258b62a5f7fec24dd25f9dac8aa93b7908c7a59c880e5f6856235c0'
+sha256sums=('075eb9c9bf580574b5550600ee85f01f64b1733dd36717578bc60cf563378b1c'
             '897fa734e9806ccd7354c72979196f563c55119152999b1b94d03231ee0d96a1')
 
 package() {
-    # Install the main executable
     install -Dm755 "${srcdir}/BeamSync" "${pkgdir}/usr/bin/beamsync"
-    
-    # Install the Desktop file for the App Menu
     install -Dm644 "${srcdir}/beamsync.desktop" "${pkgdir}/usr/share/applications/beamsync.desktop"
-    
-    # Wails provides the app icon, we could extract it or link it, but for a basic 
-    # package, having the executable in /usr/bin/ is the first priority.
 }

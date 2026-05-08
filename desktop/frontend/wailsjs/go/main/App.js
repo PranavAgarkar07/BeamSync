@@ -10,6 +10,10 @@ export function CheckForUpdate() {
   return window['go']['main']['App']['CheckForUpdate']();
 }
 
+export function GetDiskSpace() {
+  return window['go']['main']['App']['GetDiskSpace']();
+}
+
 export function GetReceivedFiles() {
   return window['go']['main']['App']['GetReceivedFiles']();
 }
@@ -20,6 +24,10 @@ export function GetSavePath() {
 
 export function GetTransferSettings() {
   return window['go']['main']['App']['GetTransferSettings']();
+}
+
+export function GetVersion() {
+  return window['go']['main']['App']['GetVersion']();
 }
 
 export function OpenFile(arg1) {
