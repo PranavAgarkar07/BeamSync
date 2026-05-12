@@ -317,7 +317,7 @@
     try {
       appVersion = await GetVersion();
     } catch {
-      appVersion = "v2.4.0";
+      appVersion = "v2.4.1-beta";
     }
     try {
       diskSpace = await GetDiskSpace();

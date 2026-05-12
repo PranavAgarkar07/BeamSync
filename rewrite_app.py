@@ -32,7 +32,7 @@ new_template = """<svelte:window on:mousemove={handleMouseMove} />
       activeTab={mode.toLowerCase()}
       networkStatus={connectionState.toLowerCase()}
       serverUrl={displayUrl}
-      appVersion="v2.2"
+      appVersion={appVersion}
       on:tabChange={({ detail }) => switchMode(detail.tab.toUpperCase())}
       on:settings={toggleSound}
       on:reset={handleDisconnectReset}
@@ -144,7 +144,7 @@ new_template = """<svelte:window on:mousemove={handleMouseMove} />
       {:else if mode === "ABOUT"}
         <div class="about-layout">
           <img src={logoImg} class="about-logo" alt="BeamSync Logo" />
-          <h1>BEAMSYNC v2.2</h1>
+          <h1>BEAMSYNC {appVersion}</h1>
           <p>Fast, token-secured file transfers over your local network. No cloud. No accounts.</p>
           <div class="about-tags">
             <span class="nb-badge nb-badge--info">LAN ONLY</span>

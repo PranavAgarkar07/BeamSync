@@ -124,13 +124,15 @@ func (s *HTTPServer) Shutdown() error {
 	return nil
 }
 
-// progressWriter wraps an io.Writer and emits upload_progress events
-// as bytes are written. Uses an adaptive interval to avoid event flooding.
+// progressWriter wraps an io.Writer and emits progress events.
+// Uses an adaptive interval to avoid event flooding.
 type progressWriter struct {
+	mu          sync.Mutex
 	w           io.Writer
 	total       int64
 	written     int64
 	filename    string
+	eventName   string
 	emit        func(string, string)
 	lastEmit    time.Time
 	minInterval time.Duration
@@ -138,48 +140,40 @@ type progressWriter struct {
 
 func (pw *progressWriter) Write(p []byte) (int, error) {
 	n, err := pw.w.Write(p)
+
+	pw.mu.Lock()
 	pw.written += int64(n)
 	now := time.Now()
-	if now.Sub(pw.lastEmit) >= pw.minInterval {
-		data := fmt.Sprintf("%s|%d|%d", pw.filename, pw.written, pw.total)
-		pw.emit("upload_progress", data)
+	shouldEmit := now.Sub(pw.lastEmit) >= pw.minInterval
+	if shouldEmit {
 		pw.lastEmit = now
 	}
-	return n, err
-}
+	written := pw.written
+	total := pw.total
+	eventName := pw.eventName
+	pw.mu.Unlock()
 
-// downloadProgressWriter wraps an io.Writer and emits download_progress events
-// as bytes are written. Uses an adaptive interval to avoid event flooding.
-type downloadProgressWriter struct {
-	w           io.Writer
-	total       int64
-	written     int64
-	filename    string
-	emit        func(string, string)
-	lastEmit    time.Time
-	minInterval time.Duration
-}
-
-func (dw *downloadProgressWriter) Write(p []byte) (int, error) {
-	n, err := dw.w.Write(p)
-	dw.written += int64(n)
-	now := time.Now()
-	if now.Sub(dw.lastEmit) >= dw.minInterval {
-		data := fmt.Sprintf("%s|%d|%d", dw.filename, dw.written, dw.total)
-		dw.emit("download_progress", data)
-		dw.lastEmit = now
+	if shouldEmit {
+		data := fmt.Sprintf("%s|%d|%d", pw.filename, written, total)
+		pw.emit(eventName, data)
 	}
 	return n, err
+}
+
+// copyBufferPool reduces heap allocations for the 8 MB copy buffer.
+var copyBufferPool = sync.Pool{
+	New: func() interface{} { return make([]byte, 8*1024*1024) },
 }
 
 // copyChunked reads src in large chunks before writing to dst.
 // Go's multipart.Part has an internal 4 KB bufio, so Part.Read returns ≤4 KB
 // per call regardless of the dst buffer size. Without this helper, we end up
 // making thousands of tiny Write() syscalls per second which kills throughput.
-// copyChunked accumulates those 4 KB reads into a single chunkSize Write(),
+// copyChunked accumulates those 4 KB reads into a single large Write(),
 // giving the OS large sequential disk I/O instead of random small writes.
-func copyChunked(dst io.Writer, src io.Reader, chunkSize int) (int64, error) {
-	buf := make([]byte, chunkSize)
+func copyChunked(dst io.Writer, src io.Reader) (int64, error) {
+	buf := copyBufferPool.Get().([]byte)
+	defer copyBufferPool.Put(buf)
 	var total int64
 	for {
 		n, err := io.ReadFull(src, buf)
@@ -246,7 +240,7 @@ func writeFileToDisk(job writeJob, state *serverState, emit func(string, string)
 
 	dst, err := os.Create(job.dstPath)
 	if err != nil {
-		fmt.Println("❌ File creation error:", err)
+		Error("File creation error: %v", err)
 		return
 	}
 	defer dst.Close()
@@ -259,17 +253,18 @@ func writeFileToDisk(job writeJob, state *serverState, emit func(string, string)
 		w:           diskBuf,
 		total:       int64(len(job.buf)),
 		filename:    job.savedName,
+		eventName:   "upload_progress",
 		emit:        emit,
 		minInterval: 200 * time.Millisecond,
 	}
 	n, werr := pw.Write(job.buf)
 	written := int64(n)
 	if werr != nil {
-		fmt.Println("❌ Write error:", werr)
+		Error("Write error: %v", werr)
 	}
 
 	if flushErr := diskBuf.Flush(); flushErr != nil {
-		fmt.Println("❌ Disk flush error:", flushErr)
+		Error("Disk flush error: %v", flushErr)
 	}
 
 	emit("upload_progress", fmt.Sprintf("%s|%d|%d", job.savedName, written, written))
@@ -291,7 +286,7 @@ func generateToken() string {
 	return hex.EncodeToString(b)
 }
 
-// validateToken middleware — returns 403 if the token query-param doesn't match.
+// validateToken middleware — returns 403 if the Authorization header doesn't match.
 // Exempt routes: "/" (serves UI page).
 func tokenMiddleware(token string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -300,7 +295,8 @@ func tokenMiddleware(token string, next http.HandlerFunc) http.HandlerFunc {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if got := r.URL.Query().Get("token"); got != token {
+		got := r.Header.Get("Authorization")
+		if got == "" || got != "Bearer "+token {
 			http.Error(w, "403 Forbidden: invalid token", http.StatusForbidden)
 			return
 		}
@@ -389,7 +385,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}()
 
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
-		fmt.Println("❌ Failed to create upload directory:", err)
+		Error("Failed to create upload directory: %v", err)
 		return nil, "", ""
 	}
 	fmt.Printf("📁 Upload directory: %s\n", uploadDir)
@@ -494,7 +490,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 		// ── Check blocked devices ─────────────────────────────────────────────
 		if s.isDeviceBlocked(senderIP) {
-			fmt.Printf("🚫 Blocked device tried to send: %s\n", senderIP)
+			Warn("Blocked device tried to send: %s", senderIP)
 			http.Error(w, "403 Forbidden: device is blocked", http.StatusForbidden)
 			return
 		}
@@ -507,14 +503,14 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 		// ── Check file extension ──────────────────────────────────────────────
 		if s.isExtensionBlocked(req.Filename) {
-			fmt.Printf("🚫 Blocked file extension: %s\n", req.Filename)
+			Warn("Blocked file extension: %s", req.Filename)
 			http.Error(w, "403 Forbidden: file type is blocked", http.StatusForbidden)
 			return
 		}
 
 		// ── Check max file size ───────────────────────────────────────────────
 		if s.MaxFileSizeMB > 0 && req.SizeBytes > s.MaxFileSizeMB*1024*1024 {
-			fmt.Printf("🚫 File too large: %d bytes (max %d MB)\n", req.SizeBytes, s.MaxFileSizeMB)
+			Warn("File too large: %d bytes (max %d MB)", req.SizeBytes, s.MaxFileSizeMB)
 			http.Error(w, fmt.Sprintf("403 Forbidden: file exceeds max size of %d MB", s.MaxFileSizeMB), http.StatusForbidden)
 			return
 		}
@@ -533,7 +529,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 					return
 				}
 			} else {
-				fmt.Printf("⚠️ Could not check disk space: %v\n", err)
+				Warn("Could not check disk space: %v", err)
 			}
 		}
 
@@ -605,7 +601,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			httpServer.pendingMu.Lock()
 			delete(httpServer.pendingTransfers, id)
 			httpServer.pendingMu.Unlock()
-			fmt.Printf("⏰ Transfer request timed out: %s\n", req.Filename)
+			Warn("Transfer request timed out: %s", req.Filename)
 			emit("transfer_request_timeout", id)
 			http.Error(w, "408 Request Timeout: no response from user", http.StatusRequestTimeout)
 		}
@@ -659,7 +655,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		contentType := r.Header.Get("Content-Type")
 		mediaType, params, ctErr := mime.ParseMediaType(contentType)
 		if ctErr != nil || !strings.HasPrefix(mediaType, "multipart/") {
-			fmt.Println("❌ Invalid Content-Type:", contentType)
+			Error("Invalid Content-Type: %s", contentType)
 			http.Error(w, "Expected multipart/form-data", http.StatusBadRequest)
 			return
 		}
@@ -684,7 +680,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 				break
 			}
 			if err != nil {
-				fmt.Println("❌ Multipart read error:", err)
+				Error("Multipart read error: %v", err)
 				parseErr = err
 				break
 			}
@@ -793,6 +789,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 					w:           diskBuf,
 					total:       estTotal,
 					filename:    savedName,
+					eventName:   "upload_progress",
 					emit:        emit,
 					minInterval: 500 * time.Millisecond,
 				}
@@ -884,11 +881,11 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 	portInt, listener, err := FindAvailablePort(startPort, 2, 50)
 	if err != nil {
-		fmt.Println("❌ Failed to find available port for Receiver:", err)
+		Error("Failed to find available port for Receiver: %v", err)
 		if strings.Contains(err.Error(), "permission") || strings.Contains(err.Error(), "access") {
-			fmt.Println("🔒 Permission error — attempting firewall setup...")
+			Info("Permission error — attempting firewall setup...")
 			if fwErr := RunFirewallSetup(); fwErr != nil {
-				fmt.Printf("❌ Firewall setup failed: %v\n", fwErr)
+				Error("Firewall setup failed: %v", fwErr)
 			} else {
 				portInt, listener, err = FindAvailablePort(startPort, 2, 50)
 				if err != nil {
@@ -931,6 +928,12 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 // StartSender starts the file-sender HTTP server.
 // Returns (server handle, port string, session token).
 func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, string, string) {
+	defer func() {
+		if r := recover(); r != nil {
+			Error("PANIC IN StartSender: %v\n%s", r, debug.Stack())
+		}
+	}()
+
 	token := generateToken()
 	emit := func(evt, data string) { safeEmit(callback, evt, data) }
 
@@ -1000,7 +1003,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			if info, err := os.Stat(filePaths[0]); err == nil {
 				sizeStr = fmtSize(info.Size())
 			}
-			b.WriteString(card(name, sizeStr, "single", fmt.Sprintf("/download?token=%s", token)))
+			b.WriteString(card(name, sizeStr, "single", "/download"))
 		} else {
 			for i, path := range filePaths {
 				name := filepath.Base(path)
@@ -1009,7 +1012,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 					sizeStr = fmtSize(info.Size())
 				}
 				cardID := fmt.Sprintf("multi-%d", i)
-				downloadURL := fmt.Sprintf("/download/%d?token=%s", i, token)
+				downloadURL := fmt.Sprintf("/download/%d", i)
 				b.WriteString(card(name, sizeStr, cardID, downloadURL))
 			}
 		}
@@ -1078,16 +1081,16 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 
 			// 8 MB read buffer — avoids many small read syscalls when streaming large files.
 			bufReader := bufio.NewReaderSize(file, 8*1024*1024)
-			progressWriter := &downloadProgressWriter{
+			pw := &progressWriter{
 				w:           w,
 				total:       fileInfo.Size(),
-				written:     0,
 				filename:    filename,
+				eventName:   "download_progress",
 				emit:        emit,
 				lastEmit:    time.Now(),
 				minInterval: 500 * time.Millisecond,
 			}
-			copyChunked(progressWriter, bufReader, 8*1024*1024)
+			copyChunked(pw, bufReader)
 		}))
 	} else {
 		for i, path := range filePaths {
@@ -1127,16 +1130,16 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 
 				// 8 MB read buffer — avoids many small read syscalls when streaming large files.
 				bufReader := bufio.NewReaderSize(file, 8*1024*1024)
-				progressWriter := &downloadProgressWriter{
+				pw := &progressWriter{
 					w:           w,
 					total:       fileInfo.Size(),
-					written:     0,
 					filename:    realName,
+					eventName:   "download_progress",
 					emit:        emit,
 					lastEmit:    time.Now(),
 					minInterval: 500 * time.Millisecond,
 				}
-				copyChunked(progressWriter, bufReader, 8*1024*1024)
+				copyChunked(pw, bufReader)
 			}))
 		}
 	}

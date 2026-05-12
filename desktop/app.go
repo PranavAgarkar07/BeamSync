@@ -103,14 +103,18 @@ func loadConfig() configData {
 
 func saveConfig(cfg configData) error {
 	p := configPath()
-	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, data, 0644)
+	tmpPath := p + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, p)
 }
 
 func defaultSavePath() string {
@@ -266,14 +270,14 @@ func (a *App) SetSavePath() string {
 		return "Error: Could not create save directory"
 	}
 
-	app, port, token := beamsync.StartServer(selection, 3000, a.getTransferSettings(), a.makeCallback())
+	app, port, _ := beamsync.StartServer(selection, 3000, a.getTransferSettings(), a.makeCallback())
 	a.serverApp = app
 
 	localIP := getLocalIP()
 	a.currentIP = localIP
 	a.currentPort = port
 
-	url := fmt.Sprintf("http://%s:%s/?token=%s", localIP, port, token)
+	url := fmt.Sprintf("http://%s:%s/", localIP, port)
 	fmt.Println("📡 Receiver restarted on new path:", url)
 	return url
 }
@@ -296,15 +300,14 @@ func (a *App) StartReceiverDefault() string {
 		return "Error: Could not create save directory"
 	}
 
-	app, port, token := beamsync.StartServer(savePath, 3000, a.getTransferSettings(), a.makeCallback())
+	app, port, _ := beamsync.StartServer(savePath, 3000, a.getTransferSettings(), a.makeCallback())
 	a.serverApp = app
 
 	localIP := getLocalIP()
 	a.currentIP = localIP
 	a.currentPort = port
 
-	// Embed token in the URL so the mobile page's JS can attach it to requests.
-	url := fmt.Sprintf("http://%s:%s/?token=%s", localIP, port, token)
+	url := fmt.Sprintf("http://%s:%s/", localIP, port)
 	fmt.Println("📡 Receiver started:", url)
 	return url
 }
@@ -327,14 +330,14 @@ func (a *App) StartReceiver() string {
 	}
 	a.lastSavePath = selection
 
-	app, port, token := beamsync.StartServer(selection, 3000, a.getTransferSettings(), a.makeCallback())
+	app, port, _ := beamsync.StartServer(selection, 3000, a.getTransferSettings(), a.makeCallback())
 	a.serverApp = app
 
 	localIP := getLocalIP()
 	a.currentIP = localIP
 	a.currentPort = port
 
-	url := fmt.Sprintf("http://%s:%s/?token=%s", localIP, port, token)
+	url := fmt.Sprintf("http://%s:%s/", localIP, port)
 	fmt.Println("📡 Receiver started:", url)
 	return url
 }
@@ -472,7 +475,12 @@ func (a *App) GetReceivedFiles() []ReceivedFile {
 		fmt.Println("⚠️ GetReceivedFiles: could not read dir:", err)
 		return nil
 	}
-	var result []ReceivedFile
+	type entry struct {
+		name    string
+		size    int64
+		modTime time.Time
+	}
+	var collected []entry
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -481,21 +489,23 @@ func (a *App) GetReceivedFiles() []ReceivedFile {
 		if err != nil {
 			continue
 		}
-		result = append(result, ReceivedFile{
-			Name:      e.Name(),
-			SizeBytes: info.Size(),
-			ModTime:   info.ModTime().Format("02 Jan · 15:04"),
+		collected = append(collected, entry{
+			name:    e.Name(),
+			size:    info.Size(),
+			modTime: info.ModTime(),
 		})
 	}
-	// Sort newest-first by filesystem mod time
-	sort.Slice(result, func(i, j int) bool {
-		ii, _ := os.Stat(filepath.Join(a.lastSavePath, result[i].Name))
-		jj, _ := os.Stat(filepath.Join(a.lastSavePath, result[j].Name))
-		if ii == nil || jj == nil {
-			return false
-		}
-		return ii.ModTime().After(jj.ModTime())
+	sort.Slice(collected, func(i, j int) bool {
+		return collected[i].modTime.After(collected[j].modTime)
 	})
+	result := make([]ReceivedFile, len(collected))
+	for i, e := range collected {
+		result[i] = ReceivedFile{
+			Name:      e.name,
+			SizeBytes: e.size,
+			ModTime:   e.modTime.Format("02 Jan · 15:04"),
+		}
+	}
 	return result
 }
 
@@ -662,13 +672,103 @@ func (a *App) GetVersion() string {
 // ---------------------------------------------------------
 
 func getLocalIP() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
+	// First try: routing table lookup via UDP (doesn't send data, no internet needed)
+	ip, err := getIPByRouting()
+	if err == nil && ip != "" {
+		return ip
+	}
+
+	// Fallback: enumerate physical interfaces
+	ip, err = getIPByInterfaces()
+	if err == nil && ip != "" {
+		return ip
+	}
+
+	return "127.0.0.1"
+}
+
+// getIPByRouting does a UDP "connect" to determine the source IP for the
+// default route.  No packets are sent — the kernel just selects a source address
+// based on the routing table.  Works offline, requires no DNS.
+func getIPByRouting() (string, error) {
+	conn, err := net.Dial("udp4", "8.8.8.8:80")
 	if err != nil {
-		fmt.Println("⚠️ Failed to dial for local IP detection:", err)
-		return "127.0.0.1"
+		return "", err
 	}
 	defer conn.Close()
-	return conn.LocalAddr().(*net.UDPAddr).IP.String()
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	if localAddr.IP.IsLoopback() || localAddr.IP.To4() == nil {
+		return "", fmt.Errorf("routing returned loopback or non-IPv4: %s", localAddr.IP)
+	}
+	return localAddr.IP.String(), nil
+}
+
+// getIPByInterfaces enumerates non-virtual, up, physical interfaces for a private IPv4.
+func getIPByInterfaces() (string, error) {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		if isVirtualInterface(iface.Name) {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok || ipnet.IP.To4() == nil {
+				continue
+			}
+			if isPrivateIP(ipnet.IP) {
+				return ipnet.IP.String(), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no suitable interface found")
+}
+
+func isVirtualInterface(name string) bool {
+	switch {
+	case name == "lo":
+		return true
+	case name == "docker0" || name == "docker_gwbridge":
+		return true
+	case len(name) >= 4 && name[:4] == "br-":
+		return true
+	case len(name) >= 4 && name[:4] == "veth":
+		return true
+	case len(name) >= 4 && name[:4] == "tail":
+		return true
+	case len(name) >= 3 && name[:3] == "vm-":
+		return true
+	case len(name) >= 3 && name[:3] == "wg":
+		return true
+	case len(name) >= 6 && name[:6] == "tun":
+		return true
+	case len(name) >= 6 && name[:6] == "virbr":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPrivateIP(ip net.IP) bool {
+	if ip[0] == 10 {
+		return true
+	}
+	if ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31 {
+		return true
+	}
+	if ip[0] == 192 && ip[1] == 168 {
+		return true
+	}
+	return false
 }
 
 // startIPMonitor polls for IP changes every 3 seconds.

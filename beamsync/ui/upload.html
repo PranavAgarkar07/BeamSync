@@ -441,7 +441,7 @@
         // ── Heartbeat ───────────────────────────────────────────────
         function heartbeat() {
             if (_reloading) return;
-            fetch("/heartbeat?token=" + TOKEN, { method: "POST" })
+            fetch("/heartbeat", { method: "POST", headers: { "Authorization": "Bearer " + TOKEN } })
                 .then(r => {
                     if ((r.status === 401 || r.status === 403) && !_uploading) {
                         _reloading = true;
@@ -589,9 +589,9 @@
             setStatus('Requesting transfer permission…', true);
 
             try {
-                const res = await fetch('/request-transfer?token=' + TOKEN, {
+                const res = await fetch('/request-transfer', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
                     body: JSON.stringify({
                         filename: files.length > 1 ? `${files.length} files` : firstFile.name,
                         sizeBytes: totalSize,
@@ -639,7 +639,8 @@
             speedHistory = [];
 
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/upload?token=' + TOKEN);
+            xhr.open('POST', '/upload');
+            xhr.setRequestHeader('Authorization', 'Bearer ' + TOKEN);
 
             // Estimate which file is "current" based on bytes sent vs cumulative size
             const cumulativeSizes = [];

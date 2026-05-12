@@ -569,6 +569,7 @@
 
             xhr.responseType = 'blob';
             xhr.open('GET', url);
+            xhr.setRequestHeader('Authorization', 'Bearer ' + TOKEN);
             xhr.send();
         };
 
@@ -576,8 +577,8 @@
         let _reloading = false;
         function heartbeat() {
             if (_reloading) return;
-            const url = TOKEN ? `/heartbeat?token=${TOKEN}` : '/heartbeat';
-            fetch(url, { method: 'POST' })
+            const headers = TOKEN ? { 'Authorization': 'Bearer ' + TOKEN } : {};
+            fetch('/heartbeat', { method: 'POST', headers: headers })
                 .then(r => {
                     if (r.status === 401 || r.status === 403) {
                         _reloading = true;

@@ -1,51 +1,30 @@
 package beamsync
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 )
 
-// RunFirewallSetup attempts to run the firewall_setup.sh script using pkexec.
+//go:embed firewall_setup.sh
+var firewallScript []byte
+
+// RunFirewallSetup attempts to run the embedded firewall_setup.sh script using pkexec.
 func RunFirewallSetup() error {
-	fmt.Println("🛡️ Initiating Firewall Setup...")
+	Info("Initiating Firewall Setup...")
 
-	// Resolve binary location so we find the script relative to the executable,
-	// rather than using any hardcoded developer path.
-	exePath, err := os.Executable()
+	// Extract embedded script to a temp file
+	tmpDir, err := os.MkdirTemp("", "beamsync-firewall-*")
 	if err != nil {
-		exePath = "."
+		return fmt.Errorf("cannot create temp dir: %w", err)
 	}
-	exeDir := filepath.Dir(exePath)
+	defer os.RemoveAll(tmpDir)
 
-	potentialPaths := []string{
-		filepath.Join(exeDir, "firewall_setup.sh"),
-		filepath.Join(exeDir, "build", "linux", "firewall_setup.sh"),
-		"firewall_setup.sh",
-		"build/linux/firewall_setup.sh",
-		"../build/linux/firewall_setup.sh",
-	}
-
-	var scriptPath string
-	for _, path := range potentialPaths {
-		if _, err := os.Stat(path); err == nil {
-			absPath, err := filepath.Abs(path)
-			if err == nil {
-				scriptPath = absPath
-				break
-			}
-		}
-	}
-
-	if scriptPath == "" {
-		return fmt.Errorf("firewall_setup.sh not found in any known location")
-	}
-
-	fmt.Printf("🛡️ Found script at: %s\n", scriptPath)
-
-	if err := os.Chmod(scriptPath, 0755); err != nil {
-		fmt.Printf("⚠️ Warning: Could not chmod script: %v\n", err)
+	scriptPath := filepath.Join(tmpDir, "firewall_setup.sh")
+	if err := os.WriteFile(scriptPath, firewallScript, 0755); err != nil {
+		return fmt.Errorf("cannot write firewall script: %w", err)
 	}
 
 	cmd := exec.Command("pkexec", scriptPath)
@@ -54,6 +33,6 @@ func RunFirewallSetup() error {
 		return fmt.Errorf("firewall setup failed: %v\nOutput: %s", err, string(output))
 	}
 
-	fmt.Println("✅ Firewall Setup Output:\n", string(output))
+	Info("Firewall Setup Output:\n%s", string(output))
 	return nil
 }
