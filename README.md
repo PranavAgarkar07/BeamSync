@@ -29,6 +29,7 @@
 - [Installation](#installation)
 - [Building from Source](#building-from-source)
 - [Usage Guide](#usage-guide)
+- [API Documentation](API.md)
 - [Security & Privacy](#security--privacy)
 - [License](#license)
 - [Contributing](#contributing)
@@ -153,6 +154,10 @@ Download the latest release from the [Releases](https://github.com/PranavAgarkar
 2. Select the files to transfer.
 3. A unique URL and QR code are generated.
 4. Open the URL or scan the QR on the receiving device to start the download.
+
+## Developer API
+
+For developers, contributors, and security auditors who want to understand the underlying peer-to-peer file transfer protocol or build custom scripts/clients, the complete HTTP API and authentication specifications are available in the **[API Documentation (API.md)](API.md)**.
 
 ## Security & Privacy
 
