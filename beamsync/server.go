@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"mime/multipart"
 	"net"
@@ -80,19 +81,21 @@ type rateLimitState struct {
 }
 
 type clientRateLimiter struct {
-	mu      sync.Mutex
-	limit   int
-	window  time.Duration
-	clients map[string]*rateLimitState
-	now     func() time.Time
+	mu         sync.Mutex
+	limit      int
+	window     time.Duration
+	maxClients int
+	clients    map[string]*rateLimitState
+	now        func() time.Time
 }
 
 func newClientRateLimiter(limit int, window time.Duration) *clientRateLimiter {
 	return &clientRateLimiter{
-		limit:   limit,
-		window:  window,
-		clients: make(map[string]*rateLimitState),
-		now:     time.Now,
+		limit:      limit,
+		window:     window,
+		maxClients: 4096,
+		clients:    make(map[string]*rateLimitState),
+		now:        time.Now,
 	}
 }
 
@@ -109,6 +112,9 @@ func (l *clientRateLimiter) allow(client string) (bool, time.Duration) {
 
 	state, ok := l.clients[client]
 	if !ok || now.Sub(state.windowStart) >= l.window {
+		if !ok {
+			l.evictOldestIfFull()
+		}
 		l.clients[client] = &rateLimitState{
 			windowStart: now,
 			count:       1,
@@ -131,6 +137,27 @@ func (l *clientRateLimiter) prune(now time.Time) {
 		if now.Sub(state.lastSeen) > 2*l.window {
 			delete(l.clients, client)
 		}
+	}
+}
+
+func (l *clientRateLimiter) evictOldestIfFull() {
+	if l.maxClients <= 0 || len(l.clients) < l.maxClients {
+		return
+	}
+
+	var oldestClient string
+	var oldestSeen time.Time
+	for client, state := range l.clients {
+		if oldestClient == "" ||
+			state.lastSeen.Before(oldestSeen) ||
+			(state.lastSeen.Equal(oldestSeen) && client < oldestClient) {
+			oldestClient = client
+			oldestSeen = state.lastSeen
+		}
+	}
+
+	if oldestClient != "" {
+		delete(l.clients, oldestClient)
 	}
 }
 
@@ -394,7 +421,8 @@ func rateLimitMiddleware(limiter *clientRateLimiter, next http.HandlerFunc) http
 			if retryAfter < time.Second {
 				retryAfter = time.Second
 			}
-			w.Header().Set("Retry-After", strconv.FormatInt(int64(retryAfter.Seconds()), 10))
+			seconds := int64(math.Ceil(retryAfter.Seconds()))
+			w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
 			http.Error(w, "429 Too Many Requests: rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}

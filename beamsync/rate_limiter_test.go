@@ -41,6 +41,34 @@ func TestClientRateLimiterResetsAfterWindow(t *testing.T) {
 	}
 }
 
+func TestClientRateLimiterEvictsOldestClientWhenFull(t *testing.T) {
+	now := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
+	limiter := newClientRateLimiter(2, time.Minute)
+	limiter.maxClients = 2
+	limiter.now = func() time.Time { return now }
+
+	if allowed, _ := limiter.allow("192.168.1.10"); !allowed {
+		t.Fatal("first client should be allowed")
+	}
+
+	now = now.Add(time.Second)
+	if allowed, _ := limiter.allow("192.168.1.11"); !allowed {
+		t.Fatal("second client should be allowed")
+	}
+
+	now = now.Add(time.Second)
+	if allowed, _ := limiter.allow("192.168.1.12"); !allowed {
+		t.Fatal("new client should be admitted after oldest eviction")
+	}
+
+	if limiter.clients["192.168.1.10"] != nil {
+		t.Fatal("oldest client should be evicted when the limiter is full")
+	}
+	if limiter.clients["192.168.1.11"] == nil || limiter.clients["192.168.1.12"] == nil {
+		t.Fatal("newest clients should remain after eviction")
+	}
+}
+
 func TestRateLimitMiddlewareReturns429(t *testing.T) {
 	now := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	limiter := newClientRateLimiter(1, time.Minute)
@@ -66,5 +94,31 @@ func TestRateLimitMiddlewareReturns429(t *testing.T) {
 	}
 	if second.Header().Get("Retry-After") == "" {
 		t.Fatal("rate-limited response should set Retry-After")
+	}
+}
+
+func TestRateLimitMiddlewareRoundsRetryAfterUp(t *testing.T) {
+	now := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
+	limiter := newClientRateLimiter(1, 1600*time.Millisecond)
+	limiter.now = func() time.Time { return now }
+
+	handler := rateLimitMiddleware(limiter, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "192.168.1.21:1234"
+
+	handler(httptest.NewRecorder(), req)
+
+	now = now.Add(500 * time.Millisecond)
+	second := httptest.NewRecorder()
+	handler(second, req)
+
+	if second.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request status = %d, want %d", second.Code, http.StatusTooManyRequests)
+	}
+	if got := second.Header().Get("Retry-After"); got != "2" {
+		t.Fatalf("Retry-After = %q, want %q", got, "2")
 	}
 }
