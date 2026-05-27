@@ -162,6 +162,7 @@ For developers, contributors, and security auditors who want to understand the u
 ## Security & Privacy
 
 - **Local-only** — All transfers happen over your LAN. No external servers are contacted.
+- **Session token timeout** — QR/session tokens expire after 10 minutes of inactivity and are refreshed by valid page, heartbeat, upload, or download activity.
 - **Zero data collection** — BeamSync does not store, transmit, or analyze your files beyond the direct peer-to-peer transfer.
 - **Open source** — The entire codebase is available for audit.
 

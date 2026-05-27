@@ -289,16 +289,21 @@ func generateToken() string {
 	return hex.EncodeToString(b)
 }
 
-// validateToken middleware — returns 403 if the token query-param doesn't match.
+// validateToken middleware returns 403 for invalid tokens and 401 for expired sessions.
 // Exempt routes: "/" (serves UI page).
-func tokenMiddleware(token string, next http.HandlerFunc) http.HandlerFunc {
+func tokenMiddleware(session *sessionToken, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if got := r.URL.Query().Get("token"); got != token {
+		valid, expired := session.Validate(r.URL.Query().Get("token"))
+		if expired {
+			http.Error(w, "401 Unauthorized: session token expired", http.StatusUnauthorized)
+			return
+		}
+		if !valid {
 			http.Error(w, "403 Forbidden: invalid token", http.StatusForbidden)
 			return
 		}
@@ -392,7 +397,8 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}
 	fmt.Printf("📁 Upload directory: %s\n", uploadDir)
 
-	token := generateToken()
+	session := newSessionToken(generateToken(), defaultSessionTokenTimeout)
+	token := session.Value()
 	emit := func(evt, data string) { safeEmit(callback, evt, data) }
 
 	state := &serverState{}
@@ -410,7 +416,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	mux := http.NewServeMux()
 
 	// ── Heartbeat ────────────────────────────────────────────────────────────
-	mux.HandleFunc("/heartbeat", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/heartbeat", tokenMiddleware(session, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -441,6 +447,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		html := strings.Replace(string(content), "{{TOKEN}}", token, 1)
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(html))
+		session.Touch()
 
 		// Emit device_connected immediately — the phone loading this page
 		// is already proof of connection; no need to wait for first heartbeat.
@@ -464,7 +471,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	})
 
 	// ── Request Transfer (ask before accepting) ──────────────────────────────
-	mux.HandleFunc("/request-transfer", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/request-transfer", tokenMiddleware(session, func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -583,7 +590,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}))
 
 	// ── Upload ────────────────────────────────────────────────────────────────
-	mux.HandleFunc("/upload", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/upload", tokenMiddleware(session, func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("📤 POST /upload - Upload started")
 
 		defer func() {
@@ -830,7 +837,8 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 // StartSender starts the file-sender HTTP server.
 // Returns (server handle, port string, session token).
 func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, string, string) {
-	token := generateToken()
+	session := newSessionToken(generateToken(), defaultSessionTokenTimeout)
+	token := session.Value()
 	emit := func(evt, data string) { safeEmit(callback, evt, data) }
 
 	state := &serverState{}
@@ -842,7 +850,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	mux := http.NewServeMux()
 
 	// ── Heartbeat ─────────────────────────────────────────────────────────────
-	mux.HandleFunc("/heartbeat", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/heartbeat", tokenMiddleware(session, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -927,6 +935,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		html := strings.Replace(string(content), "{{FILES}}", buildFileBlock(filePaths), 1)
 		html = strings.Replace(html, "{{TOKEN}}", token, 1)
 		w.Write([]byte(html))
+		session.Touch()
 	})
 
 	mux.HandleFunc("/logo.png", func(w http.ResponseWriter, r *http.Request) {
@@ -944,7 +953,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	if len(filePaths) == 1 {
 		filePath := filePaths[0]
 		filename := filepath.Base(filePath)
-		mux.HandleFunc("/download", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/download", tokenMiddleware(session, func(w http.ResponseWriter, r *http.Request) {
 			setCORSHeaders(w)
 			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
@@ -992,7 +1001,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		for i, path := range filePaths {
 			idx := i
 			filePath := path
-			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), tokenMiddleware(session, func(w http.ResponseWriter, r *http.Request) {
 				setCORSHeaders(w)
 				realName := filepath.Base(filePath)
 				w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
