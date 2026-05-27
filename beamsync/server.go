@@ -73,6 +73,67 @@ func (s *serverState) checkTimeout() (wasConnected bool, timedOut bool) {
 	return s.isConnected, false
 }
 
+type rateLimitState struct {
+	windowStart time.Time
+	count       int
+	lastSeen    time.Time
+}
+
+type clientRateLimiter struct {
+	mu      sync.Mutex
+	limit   int
+	window  time.Duration
+	clients map[string]*rateLimitState
+	now     func() time.Time
+}
+
+func newClientRateLimiter(limit int, window time.Duration) *clientRateLimiter {
+	return &clientRateLimiter{
+		limit:   limit,
+		window:  window,
+		clients: make(map[string]*rateLimitState),
+		now:     time.Now,
+	}
+}
+
+func (l *clientRateLimiter) allow(client string) (bool, time.Duration) {
+	if l == nil || l.limit <= 0 || l.window <= 0 {
+		return true, 0
+	}
+
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.prune(now)
+
+	state, ok := l.clients[client]
+	if !ok || now.Sub(state.windowStart) >= l.window {
+		l.clients[client] = &rateLimitState{
+			windowStart: now,
+			count:       1,
+			lastSeen:    now,
+		}
+		return true, 0
+	}
+
+	state.lastSeen = now
+	if state.count >= l.limit {
+		return false, l.window - now.Sub(state.windowStart)
+	}
+
+	state.count++
+	return true, 0
+}
+
+func (l *clientRateLimiter) prune(now time.Time) {
+	for client, state := range l.clients {
+		if now.Sub(state.lastSeen) > 2*l.window {
+			delete(l.clients, client)
+		}
+	}
+}
+
 // PendingTransfer holds a blocked transfer awaiting user approval.
 type PendingTransfer struct {
 	ID         string `json:"id"`
@@ -312,6 +373,36 @@ func setCORSHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 }
 
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+func rateLimitMiddleware(limiter *clientRateLimiter, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		allowed, retryAfter := limiter.allow(clientIP(r))
+		if !allowed {
+			if retryAfter < time.Second {
+				retryAfter = time.Second
+			}
+			w.Header().Set("Retry-After", strconv.FormatInt(int64(retryAfter.Seconds()), 10))
+			http.Error(w, "429 Too Many Requests: rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+
+		next(w, r)
+	}
+}
+
 // autoRenamePath returns a non-colliding file path by appending (1), (2), …
 func autoRenamePath(dir, filename string) string {
 	dst := filepath.Join(dir, filename)
@@ -408,9 +499,13 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}
 
 	mux := http.NewServeMux()
+	pageLimiter := newClientRateLimiter(60, time.Minute)
+	heartbeatLimiter := newClientRateLimiter(120, time.Minute)
+	transferLimiter := newClientRateLimiter(30, time.Minute)
+	uploadLimiter := newClientRateLimiter(12, time.Minute)
 
 	// ── Heartbeat ────────────────────────────────────────────────────────────
-	mux.HandleFunc("/heartbeat", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/heartbeat", rateLimitMiddleware(heartbeatLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -422,10 +517,10 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			fmt.Println("💚 Device Connected!")
 		}
 		w.WriteHeader(http.StatusOK)
-	}))
+	})))
 
 	// ── Serve UI (no token required — this IS the page that shows the token) ─
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", rateLimitMiddleware(pageLimiter, func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		if r.Method != http.MethodGet || r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -449,9 +544,9 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			fmt.Println("💚 Device Connected (page load)!")
 			emit("device_connected", "Android Device")
 		}
-	})
+	}))
 
-	mux.HandleFunc("/logo.png", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/logo.png", rateLimitMiddleware(pageLimiter, func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 		w.Header().Set("Content-Type", "image/png")
@@ -461,10 +556,10 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			return
 		}
 		w.Write(content)
-	})
+	}))
 
 	// ── Request Transfer (ask before accepting) ──────────────────────────────
-	mux.HandleFunc("/request-transfer", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/request-transfer", rateLimitMiddleware(transferLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -580,10 +675,10 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			emit("transfer_request_timeout", id)
 			http.Error(w, "408 Request Timeout: no response from user", http.StatusRequestTimeout)
 		}
-	}))
+	})))
 
 	// ── Upload ────────────────────────────────────────────────────────────────
-	mux.HandleFunc("/upload", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/upload", rateLimitMiddleware(uploadLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("📤 POST /upload - Upload started")
 
 		defer func() {
@@ -779,7 +874,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		fmt.Println("✅ Upload handler completed")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("✅ Upload Complete"))
-	}))
+	})))
 
 	portInt, listener, err := FindAvailablePort(startPort, 2, 50)
 	if err != nil {
@@ -840,9 +935,12 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	startWatchdog(ctx, state, emit)
 
 	mux := http.NewServeMux()
+	pageLimiter := newClientRateLimiter(60, time.Minute)
+	heartbeatLimiter := newClientRateLimiter(120, time.Minute)
+	downloadLimiter := newClientRateLimiter(30, time.Minute)
 
 	// ── Heartbeat ─────────────────────────────────────────────────────────────
-	mux.HandleFunc("/heartbeat", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/heartbeat", rateLimitMiddleware(heartbeatLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -855,7 +953,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			fmt.Println("💚 Device Connected to Sender!")
 		}
 		w.WriteHeader(http.StatusOK)
-	}))
+	})))
 
 	// ── Serve files (no token on / — mobile opens the download page directly) ─
 	// The generated download URL embedded in the QR already carries the token.
@@ -915,7 +1013,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		return b.String()
 	}
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", rateLimitMiddleware(pageLimiter, func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		w.Header().Set("Content-Type", "text/html")
@@ -927,9 +1025,9 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		html := strings.Replace(string(content), "{{FILES}}", buildFileBlock(filePaths), 1)
 		html = strings.Replace(html, "{{TOKEN}}", token, 1)
 		w.Write([]byte(html))
-	})
+	}))
 
-	mux.HandleFunc("/logo.png", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/logo.png", rateLimitMiddleware(pageLimiter, func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 		w.Header().Set("Content-Type", "image/png")
@@ -939,12 +1037,12 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			return
 		}
 		w.Write(content)
-	})
+	}))
 
 	if len(filePaths) == 1 {
 		filePath := filePaths[0]
 		filename := filepath.Base(filePath)
-		mux.HandleFunc("/download", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/download", rateLimitMiddleware(downloadLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 			setCORSHeaders(w)
 			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
@@ -987,12 +1085,12 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 				minInterval: 500 * time.Millisecond,
 			}
 			copyChunked(progressWriter, bufReader, 8*1024*1024)
-		}))
+		})))
 	} else {
 		for i, path := range filePaths {
 			idx := i
 			filePath := path
-			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), rateLimitMiddleware(downloadLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 				setCORSHeaders(w)
 				realName := filepath.Base(filePath)
 				w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
@@ -1036,7 +1134,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 					minInterval: 500 * time.Millisecond,
 				}
 				copyChunked(progressWriter, bufReader, 8*1024*1024)
-			}))
+			})))
 		}
 	}
 
