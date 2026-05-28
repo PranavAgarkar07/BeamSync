@@ -93,6 +93,7 @@ type HTTPServer struct {
 	pendingTransfers map[string]*PendingTransfer
 	settings         *TransferSettings
 	history          *TransferHistory
+	stats            *transferStatsTracker
 }
 
 // RespondToTransfer approves or rejects a pending transfer by ID.
@@ -118,6 +119,14 @@ func (s *HTTPServer) TransferHistory() []TransferRecord {
 		return nil
 	}
 	return s.history.List()
+}
+
+// Stats returns the current receiver transfer statistics snapshot.
+func (s *HTTPServer) Stats() TransferStats {
+	if s.stats == nil {
+		return TransferStats{}
+	}
+	return s.stats.snapshot(0)
 }
 
 func (s *HTTPServer) Shutdown() error {
@@ -229,6 +238,7 @@ const largeFileThreshold = 64 * 1024 * 1024 // 64 MB
 func startWriteWorkers(
 	jobs <-chan writeJob,
 	state *serverState,
+	stats *transferStatsTracker,
 	emit func(string, string),
 	history *TransferHistory,
 ) *sync.WaitGroup {
@@ -238,7 +248,7 @@ func startWriteWorkers(
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
-				writeFileToDisk(job, state, emit, history)
+				writeFileToDisk(job, state, stats, emit, history)
 			}
 		}()
 	}
@@ -247,7 +257,7 @@ func startWriteWorkers(
 
 // writeFileToDisk performs the actual file write for one job and emits events.
 // Only small files (fully buffered in buf) are dispatched here.
-func writeFileToDisk(job writeJob, state *serverState, emit func(string, string), history *TransferHistory) {
+func writeFileToDisk(job writeJob, state *serverState, stats *transferStatsTracker, emit func(string, string), history *TransferHistory) {
 	startedAt := time.Now()
 	state.beginUpload()
 	defer state.endUpload()
@@ -311,6 +321,10 @@ func writeFileToDisk(job writeJob, state *serverState, emit func(string, string)
 	})
 	if status != TransferStatusCompleted {
 		return
+	}
+	if stats != nil {
+		snapshot := stats.recordReceived(job.savedName, written, atomic.LoadInt32(&state.uploadingCount))
+		emit("transfer_stats", transferStatsJSON(snapshot))
 	}
 
 	fmt.Printf("✅ File saved: %s (%d bytes)\n", job.savedName, written)
@@ -461,6 +475,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		pendingTransfers: make(map[string]*PendingTransfer),
 		settings:         &settingsCopy,
 		history:          NewTransferHistory(defaultTransferHistoryLimit),
+		stats:            newTransferStatsTracker(),
 	}
 
 	mux := http.NewServeMux()
@@ -518,6 +533,18 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		}
 		w.Write(content)
 	})
+
+	mux.HandleFunc("/stats", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("Content-Type", "application/json")
+		snapshot := httpServer.stats.snapshot(atomic.LoadInt32(&state.uploadingCount))
+		w.Write([]byte(transferStatsJSON(snapshot)))
+	}))
 
 	// ── Request Transfer (ask before accepting) ──────────────────────────────
 	mux.HandleFunc("/request-transfer", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
@@ -676,7 +703,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 		// ── Concurrent write pipeline ─────────────────────────────────────────
 		jobs := make(chan writeJob, writeWorkerCount)
-		wg := startWriteWorkers(jobs, state, emit, httpServer.history)
+		wg := startWriteWorkers(jobs, state, httpServer.stats, emit, httpServer.history)
 
 		fileCount := 0
 		var parseErr error
@@ -829,6 +856,8 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 					continue
 				}
 				emit("upload_progress", fmt.Sprintf("%s|%d|%d", savedName, lWritten, lWritten))
+				snapshot := httpServer.stats.recordReceived(savedName, lWritten, atomic.LoadInt32(&state.uploadingCount))
+				emit("transfer_stats", transferStatsJSON(snapshot))
 				fmt.Printf("✅ Large file saved: %s (%d bytes)\n", savedName, lWritten)
 				logTransfer(httpServer.history, emit, TransferRecord{
 					Filename:  savedName,
