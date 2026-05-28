@@ -34,6 +34,7 @@
     TransferProgressBar,
     TransferComplete,
     ConnectedDevicesPanel,
+    ActivityPanel,
   } from "./design-system/index.js";
 
   // Logo asset
@@ -47,6 +48,8 @@
   let serverUrl = "";
   let senderUrl = "";
   let senderFiles = []; // [{name, sizeBytes}] — populated from sender_files event
+  let transferHistory = [];
+  let sessionLog = [];
 
   let receivedFiles = [];
   let progress = {
@@ -118,6 +121,34 @@
     }, 3200);
   }
 
+  function addSessionEntry(title, detail = "", type = "info") {
+    const now = new Date();
+    sessionLog = [
+      {
+        id: `${now.getTime()}-${sessionLog.length}`,
+        title,
+        detail,
+        type,
+        time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      },
+      ...sessionLog,
+    ].slice(0, 12);
+  }
+
+  function formatDuration(ms = 0) {
+    if (!ms || ms < 1000) return "<1s";
+    const seconds = Math.round(ms / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  }
+
+  function formatTransferTime(value) {
+    if (!value) return "Now";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "Now";
+    return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
   // ── Cursor glow ─────────────────────────────────────────────────────────
   function handleMouseMove(e) {
     // legacy mouse glow removed
@@ -135,16 +166,19 @@
     EventsOn("device_connected", () => {
       connectionState = "CONNECTED";
       playSound("connect");
+      addSessionEntry("Device connected", "Ready for local transfer", "success");
       toast("⚡ Device linked to network", "success");
     });
     EventsOn("device_disconnected", () => {
       connectionState = "DISCONNECTED";
       playSound("click");
+      addSessionEntry("Device disconnected", "Session link was lost", "warn");
       toast("💔 Signal lost — device disconnected", "warn");
     });
     EventsOn("transfer_request", (dataStr) => {
       playSound("connect");
       transferRequest = JSON.parse(dataStr);
+      addSessionEntry("Transfer request", transferRequest.filename, "info");
     });
     EventsOn("file_received", (filename) => {
       refreshFileList();
@@ -177,6 +211,17 @@
       }, 2500);
 
       toast(`✅ Received: ${filename}`, "success");
+    });
+    EventsOn("transfer_logged", (dataStr) => {
+      try {
+        const record = JSON.parse(dataStr);
+        transferHistory = [record, ...transferHistory.filter((item) => item.id !== record.id)].slice(0, 20);
+        const verb = record.direction === "send" ? "Sent" : "Received";
+        const status = record.status === "failed" ? "failed" : "completed";
+        addSessionEntry(`${verb} ${status}`, record.filename, record.status === "failed" ? "error" : "success");
+      } catch {
+        addSessionEntry("Transfer logged", dataStr, "info");
+      }
     });
 
     const formatTime = (seconds) => {
@@ -438,6 +483,8 @@
     senderUrl = "";
     showSenderDialog = false;
     senderFiles = [];
+    transferHistory = [];
+    sessionLog = [];
     progress = {
       active: false,
       filename: "",
@@ -775,6 +822,8 @@
                 {/each}
               </div>
             </div>
+
+            <ActivityPanel {transferHistory} {sessionLog} {formatSize} {formatDuration} {formatTransferTime} />
           </div>
         {/if}
         </div>
@@ -816,6 +865,8 @@
               >
             </div>
           {/if}
+
+          <ActivityPanel {transferHistory} {sessionLog} {formatSize} {formatDuration} {formatTransferTime} />
         </div>
       {:else if mode === "SETTINGS"}
         <div class="mode-wrapper" in:fly={{ y: 15, duration: 250 }}>
