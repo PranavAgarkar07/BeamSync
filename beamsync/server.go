@@ -180,6 +180,7 @@ type HTTPServer struct {
 	pendingMu        sync.Mutex
 	pendingTransfers map[string]*PendingTransfer
 	settings         *TransferSettings
+	history          *TransferHistory
 }
 
 // RespondToTransfer approves or rejects a pending transfer by ID.
@@ -198,6 +199,13 @@ func (s *HTTPServer) RespondToTransfer(id string, approved bool) {
 // Settings returns a pointer to the live TransferSettings for in-place updates.
 func (s *HTTPServer) Settings() *TransferSettings {
 	return s.settings
+}
+
+func (s *HTTPServer) TransferHistory() []TransferRecord {
+	if s == nil || s.history == nil {
+		return nil
+	}
+	return s.history.List()
 }
 
 func (s *HTTPServer) Shutdown() error {
@@ -310,6 +318,7 @@ func startWriteWorkers(
 	jobs <-chan writeJob,
 	state *serverState,
 	emit func(string, string),
+	history *TransferHistory,
 ) *sync.WaitGroup {
 	var wg sync.WaitGroup
 	for i := 0; i < writeWorkerCount; i++ {
@@ -317,7 +326,7 @@ func startWriteWorkers(
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
-				writeFileToDisk(job, state, emit)
+				writeFileToDisk(job, state, emit, history)
 			}
 		}()
 	}
@@ -326,13 +335,22 @@ func startWriteWorkers(
 
 // writeFileToDisk performs the actual file write for one job and emits events.
 // Only small files (fully buffered in buf) are dispatched here.
-func writeFileToDisk(job writeJob, state *serverState, emit func(string, string)) {
+func writeFileToDisk(job writeJob, state *serverState, emit func(string, string), history *TransferHistory) {
+	startedAt := time.Now()
 	state.beginUpload()
 	defer state.endUpload()
 
 	dst, err := os.Create(job.dstPath)
 	if err != nil {
 		fmt.Println("❌ File creation error:", err)
+		logTransfer(history, emit, TransferRecord{
+			Filename:  job.savedName,
+			Direction: TransferDirectionReceive,
+			Status:    TransferStatusFailed,
+			SizeBytes: job.totalSize,
+			StartedAt: startedAt,
+			Error:     err.Error(),
+		})
 		return
 	}
 	defer dst.Close()
@@ -350,17 +368,40 @@ func writeFileToDisk(job writeJob, state *serverState, emit func(string, string)
 	}
 	n, werr := pw.Write(job.buf)
 	written := int64(n)
+	var transferErr error
 	if werr != nil {
 		fmt.Println("❌ Write error:", werr)
+		transferErr = werr
 	}
 
 	if flushErr := diskBuf.Flush(); flushErr != nil {
 		fmt.Println("❌ Disk flush error:", flushErr)
+		if transferErr == nil {
+			transferErr = flushErr
+		}
+	}
+
+	status := TransferStatusCompleted
+	errMsg := ""
+	if transferErr != nil {
+		status = TransferStatusFailed
+		errMsg = transferErr.Error()
 	}
 
 	emit("upload_progress", fmt.Sprintf("%s|%d|%d", job.savedName, written, written))
-	fmt.Printf("✅ File saved: %s (%d bytes)\n", job.savedName, written)
+	logTransfer(history, emit, TransferRecord{
+		Filename:  job.savedName,
+		Direction: TransferDirectionReceive,
+		Status:    status,
+		SizeBytes: written,
+		StartedAt: startedAt,
+		Error:     errMsg,
+	})
+	if status != TransferStatusCompleted {
+		return
+	}
 
+	fmt.Printf("✅ File saved: %s (%d bytes)\n", job.savedName, written)
 	go func(fname string) {
 		time.Sleep(100 * time.Millisecond)
 		emit("file_received", fname)
@@ -494,6 +535,20 @@ func safeEmit(emit EventCallback, event, data string) {
 	}(event, data)
 }
 
+func logTransfer(history *TransferHistory, emit func(string, string), record TransferRecord) {
+	if history == nil {
+		return
+	}
+
+	saved := history.Add(record)
+	data, err := json.Marshal(saved)
+	if err != nil {
+		fmt.Println("⚠️ Failed to marshal transfer history record:", err)
+		return
+	}
+	emit("transfer_logged", string(data))
+}
+
 // StartServer starts the file-receiver HTTP server.
 // Returns (server handle, port string, session token).
 func StartServer(uploadDir string, startPort int, settings TransferSettings, callback EventCallback) (*HTTPServer, string, string) {
@@ -524,6 +579,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		cancel:           cancel,
 		pendingTransfers: make(map[string]*PendingTransfer),
 		settings:         &settingsCopy,
+		history:          NewTransferHistory(defaultTransferHistoryLimit),
 	}
 
 	mux := http.NewServeMux()
@@ -743,7 +799,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 		// ── Concurrent write pipeline ─────────────────────────────────────────
 		jobs := make(chan writeJob, writeWorkerCount)
-		wg := startWriteWorkers(jobs, state, emit)
+		wg := startWriteWorkers(jobs, state, emit, httpServer.history)
 
 		fileCount := 0
 		var parseErr error
@@ -811,6 +867,8 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 				// Large file — write synchronously on main goroutine to avoid
 				// racing on the shared bufio.Reader (netReader).
 				fmt.Printf("📦 Large file — writing synchronously: %s\n", savedName)
+				startedAt := time.Now()
+				prefixSize := n
 				state.beginUpload()
 
 				dst, createErr := os.Create(dstPath)
@@ -819,6 +877,18 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 					io.Copy(io.Discard, part) // must drain before NextPart()
 					part.Close()
 					state.endUpload()
+					size := fileSizes[filename]
+					if size == 0 {
+						size = prefixSize
+					}
+					logTransfer(httpServer.history, emit, TransferRecord{
+						Filename:  savedName,
+						Direction: TransferDirectionReceive,
+						Status:    TransferStatusFailed,
+						SizeBytes: size,
+						StartedAt: startedAt,
+						Error:     createErr.Error(),
+					})
 					continue
 				}
 
@@ -850,21 +920,46 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 				}
 				// Write the already-buffered prefix first.
 				prefixBytes := buf.Bytes()
-				lpw.Write(prefixBytes)
+				prefixWritten, prefixErr := lpw.Write(prefixBytes)
 				// Stream the remainder from the network.
 				lWritten, lErr := copyChunked(lpw, part, 8*1024*1024)
-				lWritten += int64(len(prefixBytes))
-				diskBuf.Flush()
+				lWritten += int64(prefixWritten)
+				flushErr := diskBuf.Flush()
 				dst.Close()
 				part.Close()
 				state.endUpload()
 
-				if lErr != nil {
-					fmt.Println("❌ Large file copy error:", lErr)
+				var transferErr error
+				switch {
+				case prefixErr != nil:
+					transferErr = prefixErr
+				case lErr != nil:
+					transferErr = lErr
+				case flushErr != nil:
+					transferErr = flushErr
+				}
+
+				if transferErr != nil {
+					fmt.Println("❌ Large file copy error:", transferErr)
+					logTransfer(httpServer.history, emit, TransferRecord{
+						Filename:  savedName,
+						Direction: TransferDirectionReceive,
+						Status:    TransferStatusFailed,
+						SizeBytes: lWritten,
+						StartedAt: startedAt,
+						Error:     transferErr.Error(),
+					})
 					continue
 				}
 				emit("upload_progress", fmt.Sprintf("%s|%d|%d", savedName, lWritten, lWritten))
 				fmt.Printf("✅ Large file saved: %s (%d bytes)\n", savedName, lWritten)
+				logTransfer(httpServer.history, emit, TransferRecord{
+					Filename:  savedName,
+					Direction: TransferDirectionReceive,
+					Status:    TransferStatusCompleted,
+					SizeBytes: lWritten,
+					StartedAt: startedAt,
+				})
 				go func(fname string) {
 					time.Sleep(100 * time.Millisecond)
 					emit("file_received", fname)
@@ -958,6 +1053,10 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 
 	state := &serverState{}
 	ctx, cancel := context.WithCancel(context.Background())
+	httpServer := &HTTPServer{
+		cancel:  cancel,
+		history: NewTransferHistory(defaultTransferHistoryLimit),
+	}
 
 	// Sender also gets a watchdog
 	startWatchdog(ctx, state, emit)
@@ -1101,6 +1200,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			}
 			w.Header().Set("Content-Type", mimeType)
 
+			startedAt := time.Now()
 			// 8 MB read buffer — avoids many small read syscalls when streaming large files.
 			bufReader := bufio.NewReaderSize(file, 8*1024*1024)
 			progressWriter := &downloadProgressWriter{
@@ -1112,7 +1212,21 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 				lastEmit:    time.Now(),
 				minInterval: 500 * time.Millisecond,
 			}
-			copyChunked(progressWriter, bufReader, 8*1024*1024)
+			written, copyErr := copyChunked(progressWriter, bufReader, 8*1024*1024)
+			status := TransferStatusCompleted
+			errMsg := ""
+			if copyErr != nil {
+				status = TransferStatusFailed
+				errMsg = copyErr.Error()
+			}
+			logTransfer(httpServer.history, emit, TransferRecord{
+				Filename:  filename,
+				Direction: TransferDirectionSend,
+				Status:    status,
+				SizeBytes: written,
+				StartedAt: startedAt,
+				Error:     errMsg,
+			})
 		})))
 	} else {
 		for i, path := range filePaths {
@@ -1150,6 +1264,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 				}
 				w.Header().Set("Content-Type", mimeType)
 
+				startedAt := time.Now()
 				// 8 MB read buffer — avoids many small read syscalls when streaming large files.
 				bufReader := bufio.NewReaderSize(file, 8*1024*1024)
 				progressWriter := &downloadProgressWriter{
@@ -1161,7 +1276,21 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 					lastEmit:    time.Now(),
 					minInterval: 500 * time.Millisecond,
 				}
-				copyChunked(progressWriter, bufReader, 8*1024*1024)
+				written, copyErr := copyChunked(progressWriter, bufReader, 8*1024*1024)
+				status := TransferStatusCompleted
+				errMsg := ""
+				if copyErr != nil {
+					status = TransferStatusFailed
+					errMsg = copyErr.Error()
+				}
+				logTransfer(httpServer.history, emit, TransferRecord{
+					Filename:  realName,
+					Direction: TransferDirectionSend,
+					Status:    status,
+					SizeBytes: written,
+					StartedAt: startedAt,
+					Error:     errMsg,
+				})
 			})))
 		}
 	}
@@ -1194,7 +1323,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		WriteTimeout: 4 * time.Hour,
 		IdleTimeout:  60 * time.Second,
 	}
-	httpServer := &HTTPServer{server: srv, cancel: cancel}
+	httpServer.server = srv
 
 	go func() {
 		fmt.Printf("🚀 Starting sender on :%s...\n", portStr)

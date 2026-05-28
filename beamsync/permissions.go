@@ -21,7 +21,7 @@ type DeviceRule struct {
 // TransferSettings holds the user-configured transfer permission preferences.
 type TransferSettings struct {
 	Mode              TransferMode `json:"mode"`
-	MaxFileSizeMB     int64        `json:"maxFileSizeMB"`    // 0 = unlimited
+	MaxFileSizeMB     int64        `json:"maxFileSizeMB"`     // 0 = unlimited
 	BlockedExtensions []string     `json:"blockedExtensions"` // e.g. [".exe", ".bat"]
 	TrustedDevices    []DeviceRule `json:"trustedDevices"`
 	BlockedDevices    []DeviceRule `json:"blockedDevices"`
