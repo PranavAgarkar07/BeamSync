@@ -16,3 +16,4 @@ export { default as TransferProgressBar  } from './TransferProgressBar.svelte';
 export { default as ConnectedDevicesPanel} from './ConnectedDevicesPanel.svelte';
 export { default as TopNavBar            } from './TopNavBar.svelte';
 export { default as TransferComplete     } from './TransferComplete.svelte';
+export { default as ActivityPanel        } from './ActivityPanel.svelte';

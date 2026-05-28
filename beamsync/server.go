@@ -288,7 +288,9 @@ func writeFileToDisk(job writeJob, state *serverState, emit func(string, string)
 
 	if flushErr := diskBuf.Flush(); flushErr != nil {
 		fmt.Println("❌ Disk flush error:", flushErr)
-		transferErr = flushErr
+		if transferErr == nil {
+			transferErr = flushErr
+		}
 	}
 
 	status := TransferStatusCompleted
@@ -743,6 +745,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 				// racing on the shared bufio.Reader (netReader).
 				fmt.Printf("📦 Large file — writing synchronously: %s\n", savedName)
 				startedAt := time.Now()
+				prefixSize := n
 				state.beginUpload()
 
 				dst, createErr := os.Create(dstPath)
@@ -751,11 +754,15 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 					io.Copy(io.Discard, part) // must drain before NextPart()
 					part.Close()
 					state.endUpload()
+					size := fileSizes[filename]
+					if size == 0 {
+						size = prefixSize
+					}
 					logTransfer(httpServer.history, emit, TransferRecord{
 						Filename:  savedName,
 						Direction: TransferDirectionReceive,
 						Status:    TransferStatusFailed,
-						SizeBytes: fileSizes[filename],
+						SizeBytes: size,
 						StartedAt: startedAt,
 						Error:     createErr.Error(),
 					})
