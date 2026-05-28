@@ -1,6 +1,7 @@
 package beamsync
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -120,5 +121,23 @@ func TestRateLimitMiddlewareRoundsRetryAfterUp(t *testing.T) {
 	}
 	if got := second.Header().Get("Retry-After"); got != "2" {
 		t.Fatalf("Retry-After = %q, want %q", got, "2")
+	}
+
+	var body struct {
+		Error      string `json:"error"`
+		Message    string `json:"message"`
+		RetryAfter int64  `json:"retryAfter"`
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &body); err != nil {
+		t.Fatalf("invalid JSON body: %v", err)
+	}
+	if body.Error != "rate_limit_exceeded" {
+		t.Fatalf("error = %q, want %q", body.Error, "rate_limit_exceeded")
+	}
+	if body.Message != "429 Too Many Requests: rate limit exceeded" {
+		t.Fatalf("message = %q, want %q", body.Message, "429 Too Many Requests: rate limit exceeded")
+	}
+	if body.RetryAfter != 2 {
+		t.Fatalf("retryAfter = %d, want %d", body.RetryAfter, 2)
 	}
 }

@@ -464,7 +464,13 @@ func rateLimitMiddleware(limiter *clientRateLimiter, next http.HandlerFunc) http
 			}
 			seconds := int64(math.Ceil(retryAfter.Seconds()))
 			w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
-			http.Error(w, "429 Too Many Requests: rate limit exceeded", http.StatusTooManyRequests)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error":      "rate_limit_exceeded",
+				"message":    "429 Too Many Requests: rate limit exceeded",
+				"retryAfter": seconds,
+			})
 			return
 		}
 
