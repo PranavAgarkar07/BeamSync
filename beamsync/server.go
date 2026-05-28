@@ -464,6 +464,8 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}
 
 	mux := http.NewServeMux()
+	transferRequestLimiter := newClientRateLimiter(30, time.Minute)
+	uploadLimiter := newClientRateLimiter(12, time.Minute)
 
 	// ── Heartbeat ────────────────────────────────────────────────────────────
 	mux.HandleFunc("/heartbeat", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
@@ -520,7 +522,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	})
 
 	// ── Request Transfer (ask before accepting) ──────────────────────────────
-	mux.HandleFunc("/request-transfer", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/request-transfer", rateLimitMiddleware(transferRequestLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -636,10 +638,10 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			emit("transfer_request_timeout", id)
 			http.Error(w, "408 Request Timeout: no response from user", http.StatusRequestTimeout)
 		}
-	}))
+	})))
 
 	// ── Upload ────────────────────────────────────────────────────────────────
-	mux.HandleFunc("/upload", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/upload", rateLimitMiddleware(uploadLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("📤 POST /upload - Upload started")
 
 		defer func() {
@@ -874,7 +876,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		fmt.Println("✅ Upload handler completed")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("✅ Upload Complete"))
-	}))
+	})))
 
 	portInt, listener, err := FindAvailablePort(startPort, 2, 50)
 	if err != nil {
@@ -939,6 +941,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	startWatchdog(ctx, state, emit)
 
 	mux := http.NewServeMux()
+	downloadLimiter := newClientRateLimiter(60, time.Minute)
 
 	// ── Heartbeat ─────────────────────────────────────────────────────────────
 	mux.HandleFunc("/heartbeat", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
@@ -1043,7 +1046,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	if len(filePaths) == 1 {
 		filePath := filePaths[0]
 		filename := filepath.Base(filePath)
-		mux.HandleFunc("/download", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/download", rateLimitMiddleware(downloadLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 			setCORSHeaders(w)
 			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
@@ -1101,12 +1104,12 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 				StartedAt: startedAt,
 				Error:     errMsg,
 			})
-		}))
+		})))
 	} else {
 		for i, path := range filePaths {
 			idx := i
 			filePath := path
-			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), rateLimitMiddleware(downloadLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 				setCORSHeaders(w)
 				realName := filepath.Base(filePath)
 				w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
@@ -1165,7 +1168,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 					StartedAt: startedAt,
 					Error:     errMsg,
 				})
-			}))
+			})))
 		}
 	}
 
