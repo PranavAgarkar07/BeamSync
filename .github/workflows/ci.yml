@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Go and frontend checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libasound2-dev
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.5'
+          cache-dependency-path: |
+            beamsync/go.sum
+            desktop/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: desktop/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: desktop/frontend
+        run: npm ci
+
+      - name: Run frontend lint if configured
+        working-directory: desktop/frontend
+        run: npm run lint --if-present
+
+      - name: Build frontend assets
+        working-directory: desktop/frontend
+        run: npm run build
+
+      - name: Check formatting (beamsync)
+        working-directory: beamsync
+        run: test -z "$(gofmt -l .)"
+
+      - name: Test core Go module
+        working-directory: beamsync
+        run: go test ./...
+
+      - name: Vet core Go module
+        working-directory: beamsync
+        run: go vet ./...
+
+      - name: Build core Go module
+        working-directory: beamsync
+        run: go build ./...
+
+      - name: Check formatting (desktop)
+        working-directory: desktop
+        run: test -z "$(gofmt -l .)"
+
+      - name: Test desktop Go module
+        working-directory: desktop
+        run: go test ./...
+
+      - name: Vet desktop Go module
+        working-directory: desktop
+        run: go vet ./...
+
+      - name: Build desktop Go module
+        working-directory: desktop
+        run: go build ./...
