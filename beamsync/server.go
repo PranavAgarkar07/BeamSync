@@ -781,6 +781,8 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		w.Write([]byte("✅ Upload Complete"))
 	}))
 
+	mux.HandleFunc("/upload/resumable", tokenMiddleware(token, handleResumableUpload(uploadDir, state, emit)))
+
 	portInt, listener, err := FindAvailablePort(startPort, 2, 50)
 	if err != nil {
 		fmt.Println("❌ Failed to find available port for Receiver:", err)
