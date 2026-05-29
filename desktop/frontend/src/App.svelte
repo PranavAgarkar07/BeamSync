@@ -35,6 +35,7 @@
     TransferComplete,
     ConnectedDevicesPanel,
     ActivityPanel,
+    TransferStatsDashboard,
   } from "./design-system/index.js";
 
   // Logo asset
@@ -50,6 +51,15 @@
   let senderFiles = []; // [{name, sizeBytes}] — populated from sender_files event
   let transferHistory = [];
   let sessionLog = [];
+  let transferStats = {
+    startedAt: new Date().toISOString(),
+    filesReceived: 0,
+    bytesReceived: 0,
+    activeUploads: 0,
+    lastFilename: "",
+  };
+  let transferStatsNow = Date.now();
+  let transferStatsTimer;
 
   let receivedFiles = [];
   let progress = {
@@ -149,6 +159,17 @@
     return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
+  function resetTransferStats() {
+    transferStats = {
+      startedAt: new Date().toISOString(),
+      filesReceived: 0,
+      bytesReceived: 0,
+      activeUploads: 0,
+      lastFilename: "",
+    };
+    transferStatsNow = Date.now();
+  }
+
   // ── Cursor glow ─────────────────────────────────────────────────────────
   function handleMouseMove(e) {
     // legacy mouse glow removed
@@ -157,6 +178,9 @@
   // ── Mount / Unmount ─────────────────────────────────────────────────────
   onMount(async () => {
     EventsOffAll();
+    transferStatsTimer = setInterval(() => {
+      transferStatsNow = Date.now();
+    }, 1000);
 
     // Load settings
     try {
@@ -221,6 +245,21 @@
         addSessionEntry(`${verb} ${status}`, record.filename, record.status === "failed" ? "error" : "success");
       } catch {
         addSessionEntry("Transfer logged", dataStr, "info");
+      }
+    });
+    EventsOn("transfer_stats", (dataStr) => {
+      try {
+        const nextStats = JSON.parse(dataStr);
+        transferStats = {
+          startedAt: nextStats.startedAt || transferStats.startedAt,
+          filesReceived: Number(nextStats.filesReceived) || 0,
+          bytesReceived: Number(nextStats.bytesReceived) || 0,
+          activeUploads: Number(nextStats.activeUploads) || 0,
+          lastFilename: nextStats.lastFilename || "",
+        };
+        transferStatsNow = Date.now();
+      } catch {
+        addSessionEntry("Stats update failed", "Unable to read transfer stats", "warn");
       }
     });
 
@@ -361,6 +400,7 @@
     EventsOffAll();
     clearTimeout(batchTimer);
     clearTimeout(_progressTimeout);
+    clearInterval(transferStatsTimer);
   });
 
   async function initReceiver() {
@@ -485,6 +525,7 @@
     senderFiles = [];
     transferHistory = [];
     sessionLog = [];
+    resetTransferStats();
     progress = {
       active: false,
       filename: "",
@@ -797,6 +838,11 @@
                 <span class="status-text">WAITING FOR FILES...</span>
               </div>
             </div>
+
+            <TransferStatsDashboard
+              stats={transferStats}
+              now={transferStatsNow}
+            />
 
             <div class="files-panel">
               <div class="files-header">
