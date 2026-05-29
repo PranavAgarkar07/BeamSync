@@ -80,6 +80,14 @@ type rateLimitState struct {
 	lastSeen    time.Time
 }
 
+type rateLimitDecision struct {
+	allowed    bool
+	retryAfter time.Duration
+	limit      int
+	remaining  int
+	resetAt    time.Time
+}
+
 type clientRateLimiter struct {
 	mu         sync.Mutex
 	limit      int
@@ -99,12 +107,13 @@ func newClientRateLimiter(limit int, window time.Duration) *clientRateLimiter {
 	}
 }
 
-func (l *clientRateLimiter) allow(client string) (bool, time.Duration) {
+func (l *clientRateLimiter) allow(client string) rateLimitDecision {
 	if l == nil || l.limit <= 0 || l.window <= 0 {
-		return true, 0
+		return rateLimitDecision{allowed: true}
 	}
 
 	now := l.now()
+	resetAt := now.Add(l.window)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -120,16 +129,33 @@ func (l *clientRateLimiter) allow(client string) (bool, time.Duration) {
 			count:       1,
 			lastSeen:    now,
 		}
-		return true, 0
+		return rateLimitDecision{
+			allowed:   true,
+			limit:     l.limit,
+			remaining: l.limit - 1,
+			resetAt:   now.Add(l.window),
+		}
 	}
 
 	state.lastSeen = now
+	resetAt = state.windowStart.Add(l.window)
 	if state.count >= l.limit {
-		return false, l.window - now.Sub(state.windowStart)
+		return rateLimitDecision{
+			allowed:    false,
+			retryAfter: l.window - now.Sub(state.windowStart),
+			limit:      l.limit,
+			remaining:  0,
+			resetAt:    resetAt,
+		}
 	}
 
 	state.count++
-	return true, 0
+	return rateLimitDecision{
+		allowed:   true,
+		limit:     l.limit,
+		remaining: l.limit - state.count,
+		resetAt:   resetAt,
+	}
 }
 
 func (l *clientRateLimiter) prune(now time.Time) {
@@ -442,6 +468,22 @@ func setCORSHeaders(w http.ResponseWriter) {
 }
 
 func clientIP(r *http.Request) string {
+	forwardedFor := r.Header.Get("X-Forwarded-For")
+	for _, part := range strings.Split(forwardedFor, ",") {
+		ip := strings.TrimSpace(part)
+		if ip == "" {
+			continue
+		}
+		if parsed := net.ParseIP(ip); parsed != nil {
+			return parsed.String()
+		}
+		if host, _, err := net.SplitHostPort(ip); err == nil {
+			if parsed := net.ParseIP(host); parsed != nil {
+				return parsed.String()
+			}
+		}
+	}
+
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil && host != "" {
 		return host
@@ -449,7 +491,16 @@ func clientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-func rateLimitMiddleware(limiter *clientRateLimiter, next http.HandlerFunc) http.HandlerFunc {
+func setRateLimitHeaders(w http.ResponseWriter, decision rateLimitDecision) {
+	if decision.limit <= 0 {
+		return
+	}
+	w.Header().Set("X-RateLimit-Limit", strconv.Itoa(decision.limit))
+	w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(decision.remaining))
+	w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(decision.resetAt.Unix(), 10))
+}
+
+func rateLimitMiddleware(limiter *clientRateLimiter, settings *TransferSettings, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		if r.Method == http.MethodOptions {
@@ -457,8 +508,16 @@ func rateLimitMiddleware(limiter *clientRateLimiter, next http.HandlerFunc) http
 			return
 		}
 
-		allowed, retryAfter := limiter.allow(clientIP(r))
-		if !allowed {
+		ip := clientIP(r)
+		if settings != nil && settings.isDeviceTrusted(ip) {
+			next(w, r)
+			return
+		}
+
+		decision := limiter.allow(ip)
+		setRateLimitHeaders(w, decision)
+		if !decision.allowed {
+			retryAfter := decision.retryAfter
 			if retryAfter < time.Second {
 				retryAfter = time.Second
 			}
@@ -595,7 +654,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	uploadLimiter := newClientRateLimiter(12, time.Minute)
 
 	// ── Heartbeat ────────────────────────────────────────────────────────────
-	mux.HandleFunc("/heartbeat", rateLimitMiddleware(heartbeatLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/heartbeat", rateLimitMiddleware(heartbeatLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -610,7 +669,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	})))
 
 	// ── Serve UI (no token required — this IS the page that shows the token) ─
-	mux.HandleFunc("/", rateLimitMiddleware(pageLimiter, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		if r.Method != http.MethodGet || r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -636,7 +695,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		}
 	}))
 
-	mux.HandleFunc("/logo.png", rateLimitMiddleware(pageLimiter, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/logo.png", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 		w.Header().Set("Content-Type", "image/png")
@@ -649,18 +708,15 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}))
 
 	// ── Request Transfer (ask before accepting) ──────────────────────────────
-	mux.HandleFunc("/request-transfer", rateLimitMiddleware(transferLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/request-transfer", rateLimitMiddleware(transferLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		// Extract sender IP
-		senderIP, _, _ := net.SplitHostPort(r.RemoteAddr)
-		if senderIP == "" {
-			senderIP = r.RemoteAddr
-		}
+		// Extract sender IP, honoring proxy headers when present.
+		senderIP := clientIP(r)
 
 		var req struct {
 			Filename  string `json:"filename"`
@@ -768,7 +824,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	})))
 
 	// ── Upload ────────────────────────────────────────────────────────────────
-	mux.HandleFunc("/upload", rateLimitMiddleware(uploadLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/upload", rateLimitMiddleware(uploadLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("📤 POST /upload - Upload started")
 
 		defer func() {
@@ -1073,7 +1129,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	downloadLimiter := newClientRateLimiter(30, time.Minute)
 
 	// ── Heartbeat ─────────────────────────────────────────────────────────────
-	mux.HandleFunc("/heartbeat", rateLimitMiddleware(heartbeatLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/heartbeat", rateLimitMiddleware(heartbeatLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -1146,7 +1202,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		return b.String()
 	}
 
-	mux.HandleFunc("/", rateLimitMiddleware(pageLimiter, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		w.Header().Set("Content-Type", "text/html")
@@ -1160,7 +1216,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		w.Write([]byte(html))
 	}))
 
-	mux.HandleFunc("/logo.png", rateLimitMiddleware(pageLimiter, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/logo.png", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 		w.Header().Set("Content-Type", "image/png")
@@ -1175,7 +1231,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	if len(filePaths) == 1 {
 		filePath := filePaths[0]
 		filename := filepath.Base(filePath)
-		mux.HandleFunc("/download", rateLimitMiddleware(downloadLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/download", rateLimitMiddleware(downloadLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 			setCORSHeaders(w)
 			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
@@ -1238,7 +1294,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		for i, path := range filePaths {
 			idx := i
 			filePath := path
-			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), rateLimitMiddleware(downloadLimiter, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), rateLimitMiddleware(downloadLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 				setCORSHeaders(w)
 				realName := filepath.Base(filePath)
 				w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
