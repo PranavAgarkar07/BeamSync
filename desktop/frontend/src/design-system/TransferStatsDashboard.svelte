@@ -3,16 +3,29 @@
     startedAt: "",
     filesReceived: 0,
     bytesReceived: 0,
+    filesSent: 0,
+    bytesSent: 0,
     activeUploads: 0,
+    activeDownloads: 0,
     lastFilename: "",
+    lastDirection: "",
   };
   export let now = Date.now();
+  export let direction = "receive";
+  export let currentSpeed = "Idle";
+  export let speedActive = false;
 
   $: startedAtMs = stats.startedAt ? new Date(stats.startedAt).getTime() : now;
   $: elapsedMs = Number.isNaN(startedAtMs) ? 0 : Math.max(0, now - startedAtMs);
   $: sessionDuration = formatSessionDuration(elapsedMs);
-  $: filesLabel = `${stats.filesReceived || 0} ${(stats.filesReceived || 0) === 1 ? "file" : "files"}`;
-  $: activeLabel = stats.activeUploads > 0 ? `${stats.activeUploads} uploading` : "Idle";
+  $: isSend = direction === "send";
+  $: filesCount = isSend ? stats.filesSent || 0 : stats.filesReceived || 0;
+  $: bytesCount = isSend ? stats.bytesSent || 0 : stats.bytesReceived || 0;
+  $: activeCount = isSend ? stats.activeDownloads || 0 : stats.activeUploads || 0;
+  $: filesLabel = `${filesCount} ${filesCount === 1 ? "file" : "files"}`;
+  $: activeLabel = activeCount > 0 ? `${activeCount} ${isSend ? "downloading" : "uploading"}` : "Idle";
+  $: fileLabel = isSend ? "Files sent" : "Files received";
+  $: dataLabel = isSend ? "Data sent" : "Data received";
 
   function formatSessionDuration(ms) {
     const seconds = Math.floor(ms / 1000);
@@ -35,21 +48,25 @@
 <section class="stats-dashboard" aria-label="Transfer statistics">
   <div class="stats-header">
     <h3>TRANSFER STATS</h3>
-    <span class:active={stats.activeUploads > 0}>{activeLabel}</span>
+    <span class:active={activeCount > 0 || speedActive}>{activeLabel}</span>
   </div>
 
   <div class="stats-grid">
     <div class="stat-cell">
-      <span class="stat-label">Files received</span>
+      <span class="stat-label">{fileLabel}</span>
       <strong>{filesLabel}</strong>
     </div>
     <div class="stat-cell">
-      <span class="stat-label">Data transferred</span>
-      <strong>{formatBytes(stats.bytesReceived || 0)}</strong>
+      <span class="stat-label">{dataLabel}</span>
+      <strong>{formatBytes(bytesCount)}</strong>
     </div>
     <div class="stat-cell">
       <span class="stat-label">Session duration</span>
       <strong>{sessionDuration}</strong>
+    </div>
+    <div class="stat-cell stat-cell--speed" class:flowing={speedActive}>
+      <span class="stat-label">Live speed</span>
+      <strong>{currentSpeed}</strong>
     </div>
     <div class="stat-cell stat-cell--wide">
       <span class="stat-label">Last file</span>
@@ -100,7 +117,7 @@
 
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .stat-cell {
@@ -134,6 +151,19 @@
     font-weight: 800;
   }
 
+  .stat-cell--speed {
+    background: var(--nb-bg);
+  }
+
+  .stat-cell--speed strong {
+    transition: color 0.2s ease, transform 0.2s ease;
+  }
+
+  .stat-cell--speed.flowing strong {
+    color: var(--nb-primary);
+    transform: translateY(-1px);
+  }
+
   @media (max-width: 760px) {
     .stats-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -150,6 +180,7 @@
     .stat-cell--wide {
       grid-column: 1 / -1;
       border-top: 1px solid var(--nb-border-color);
+      border-right: 0;
     }
   }
 </style>

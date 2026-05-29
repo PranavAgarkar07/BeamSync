@@ -55,11 +55,20 @@
     startedAt: new Date().toISOString(),
     filesReceived: 0,
     bytesReceived: 0,
+    filesSent: 0,
+    bytesSent: 0,
     activeUploads: 0,
+    activeDownloads: 0,
     lastFilename: "",
+    lastDirection: "",
   };
   let transferStatsNow = Date.now();
   let transferStatsTimer;
+  let transferSpeeds = {
+    receive: "Idle",
+    send: "Idle",
+  };
+  let activeSpeedDirection = "";
 
   let receivedFiles = [];
   let progress = {
@@ -164,9 +173,15 @@
       startedAt: new Date().toISOString(),
       filesReceived: 0,
       bytesReceived: 0,
+      filesSent: 0,
+      bytesSent: 0,
       activeUploads: 0,
+      activeDownloads: 0,
       lastFilename: "",
+      lastDirection: "",
     };
+    transferSpeeds = { receive: "Idle", send: "Idle" };
+    activeSpeedDirection = "";
     transferStatsNow = Date.now();
   }
 
@@ -222,6 +237,8 @@
       lastProgressTime = 0;
       progressStartTime = 0;
       speedHistory = [];
+      transferSpeeds = { ...transferSpeeds, receive: "Idle" };
+      activeSpeedDirection = "";
 
       batchCount += 1;
       clearTimeout(batchTimer);
@@ -242,6 +259,10 @@
         transferHistory = [record, ...transferHistory.filter((item) => item.id !== record.id)].slice(0, 20);
         const verb = record.direction === "send" ? "Sent" : "Received";
         const status = record.status === "failed" ? "failed" : "completed";
+        if (record.direction === "send") {
+          transferSpeeds = { ...transferSpeeds, send: "Idle" };
+          if (activeSpeedDirection === "send") activeSpeedDirection = "";
+        }
         addSessionEntry(`${verb} ${status}`, record.filename, record.status === "failed" ? "error" : "success");
       } catch {
         addSessionEntry("Transfer logged", dataStr, "info");
@@ -254,8 +275,12 @@
           startedAt: nextStats.startedAt || transferStats.startedAt,
           filesReceived: Number(nextStats.filesReceived) || 0,
           bytesReceived: Number(nextStats.bytesReceived) || 0,
+          filesSent: Number(nextStats.filesSent) || 0,
+          bytesSent: Number(nextStats.bytesSent) || 0,
           activeUploads: Number(nextStats.activeUploads) || 0,
+          activeDownloads: Number(nextStats.activeDownloads) || 0,
           lastFilename: nextStats.lastFilename || "",
+          lastDirection: nextStats.lastDirection || "",
         };
         transferStatsNow = Date.now();
       } catch {
@@ -288,7 +313,7 @@
       return avg;
     };
 
-    const handleProgressUpdate = (data) => {
+    const handleProgressUpdate = (data, direction) => {
       const parts = data.split("|");
       if (parts.length < 3) return;
       const [filename, wStr, tStr] = parts;
@@ -309,6 +334,8 @@
       const smoothedSpeed = calculateSmoothedSpeed(Math.max(0, instantSpeed));
       const speedStr = `${Math.max(0, smoothedSpeed).toFixed(2)} MB/s`;
       const speedColor = getSpeedColor(smoothedSpeed);
+      transferSpeeds = { ...transferSpeeds, [direction]: speedStr };
+      activeSpeedDirection = direction;
 
       let timeRemaining = "—";
       if (smoothedSpeed > 0) {
@@ -356,11 +383,13 @@
         lastProgressTime = 0;
         progressStartTime = 0;
         speedHistory = [];
+        transferSpeeds = { ...transferSpeeds, [direction]: "Idle" };
+        activeSpeedDirection = "";
       }, 30000);
     };
 
-    EventsOn("upload_progress", handleProgressUpdate);
-    EventsOn("download_progress", handleProgressUpdate);
+    EventsOn("upload_progress", (data) => handleProgressUpdate(data, "receive"));
+    EventsOn("download_progress", (data) => handleProgressUpdate(data, "send"));
     EventsOn("url_changed", (newURL) => {
       serverUrl = newURL;
       generateQR(newURL);
@@ -842,6 +871,9 @@
             <TransferStatsDashboard
               stats={transferStats}
               now={transferStatsNow}
+              direction="receive"
+              currentSpeed={transferSpeeds.receive}
+              speedActive={activeSpeedDirection === "receive"}
             />
 
             <div class="files-panel">
@@ -904,6 +936,14 @@
                   >
                 </div>
               </div>
+
+              <TransferStatsDashboard
+                stats={transferStats}
+                now={transferStatsNow}
+                direction="send"
+                currentSpeed={transferSpeeds.send}
+                speedActive={activeSpeedDirection === "send"}
+              />
               
               <button
                 class="nb-btn nb-btn--danger close-btn"

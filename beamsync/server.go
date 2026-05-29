@@ -962,6 +962,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	httpServer := &HTTPServer{
 		cancel:  cancel,
 		history: NewTransferHistory(defaultTransferHistoryLimit),
+		stats:   newTransferStatsTracker(),
 	}
 
 	// Sender also gets a watchdog
@@ -1074,6 +1075,12 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		filename := filepath.Base(filePath)
 		mux.HandleFunc("/download", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 			setCORSHeaders(w)
+			activeDownloads := atomic.AddInt32(&state.uploadingCount, 1)
+			emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
+			defer func() {
+				activeDownloads := atomic.AddInt32(&state.uploadingCount, -1)
+				emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
+			}()
 			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 			// Expose the real filename so the mobile JS can use it for link.download
@@ -1121,6 +1128,9 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			if copyErr != nil {
 				status = TransferStatusFailed
 				errMsg = copyErr.Error()
+			} else {
+				snapshot := httpServer.stats.recordSent(filename, written, atomic.LoadInt32(&state.uploadingCount))
+				emit("transfer_stats", transferStatsJSON(snapshot))
 			}
 			logTransfer(httpServer.history, emit, TransferRecord{
 				Filename:  filename,
@@ -1138,6 +1148,12 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
 				setCORSHeaders(w)
 				realName := filepath.Base(filePath)
+				activeDownloads := atomic.AddInt32(&state.uploadingCount, 1)
+				emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
+				defer func() {
+					activeDownloads := atomic.AddInt32(&state.uploadingCount, -1)
+					emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
+				}()
 				w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 				w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, realName))
 				// Expose the real filename so the mobile JS can use it for link.download
@@ -1185,6 +1201,9 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 				if copyErr != nil {
 					status = TransferStatusFailed
 					errMsg = copyErr.Error()
+				} else {
+					snapshot := httpServer.stats.recordSent(realName, written, atomic.LoadInt32(&state.uploadingCount))
+					emit("transfer_stats", transferStatsJSON(snapshot))
 				}
 				logTransfer(httpServer.history, emit, TransferRecord{
 					Filename:  realName,
