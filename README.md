@@ -155,6 +155,38 @@ Download the latest release from the [Releases](https://github.com/PranavAgarkar
 3. A unique URL and QR code are generated.
 4. Open the URL or scan the QR on the receiving device to start the download.
 
+## Network Requirements & Connectivity Notes
+
+BeamSync works by creating direct peer-to-peer connections over your Local Area Network (LAN). In some network environments, device discovery or file transfers may not work as expected.
+
+### Important Requirements
+
+- All devices must be connected to the **same local network / subnet**
+- Both devices should be able to communicate with each other over LAN
+- Devices must allow local network access permissions (especially on macOS/mobile hotspots)
+
+### Common Network Restrictions
+
+The following network types may block or limit BeamSync functionality:
+
+- **Guest WiFi networks** often isolate devices from each other
+- **Public networks (cafes, airports, offices)** may block peer-to-peer traffic
+- **Enterprise or school networks** may restrict local device communication
+- Some routers may have **AP isolation / client isolation enabled**
+
+### Firewall & Router Considerations
+
+- Firewalls on Linux, Windows, or macOS may block incoming connections
+- Router settings like **AP isolation** or **client isolation** can prevent device discovery
+- Ensure BeamSync is allowed through system firewall if prompted
+
+### Troubleshooting Tip
+
+If devices cannot connect:
+- Confirm both devices are on the same WiFi network
+- Try disabling VPNs or proxies
+- Switch to a mobile hotspot or home network for testing
+
 ## Developer API
 
 For developers, contributors, and security auditors who want to understand the underlying peer-to-peer file transfer protocol or build custom scripts/clients, the complete HTTP API and authentication specifications are available in the **[API Documentation (API.md)](API.md)**.
