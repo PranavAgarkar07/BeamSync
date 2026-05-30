@@ -17,7 +17,7 @@ To prevent unauthorized devices on the local network from sending or downloading
    ?token=your_32_character_hex_session_token
    ```
 4. **Validation:** If the token is missing or incorrect, the server immediately rejects the request with a `403 Forbidden` response.
-5. **Inactivity Timeout:** Valid token-protected activity refreshes the session. If a token sits idle for 10 minutes, the server rejects it with a `401 Unauthorized` response and the user must restart the sender/receiver session to get a fresh token.
+5. **Inactivity Timeout:** Valid token-protected activity refreshes the session. The timeout is configurable through the session timeout setting, defaults to 30 minutes, and can be disabled by setting it to `0`. If a token sits idle past the configured timeout, the server rejects it with a `410 Gone` response and the user must restart the sender/receiver session to get a fresh token.
 
 ---
 
@@ -53,7 +53,7 @@ curl -X GET "http://192.168.1.50:3000/"
 *   **Status Codes:**
     *   `200 OK` — Heartbeat successfully registered.
     *   `403 Forbidden` — Missing or invalid token.
-    *   `401 Unauthorized` — Session token expired after inactivity.
+    *   `410 Gone` — Session token expired after inactivity.
     *   `405 Method Not Allowed` — HTTP method was not `POST`.
 *   **Description:** Keeps the connection alive. The mobile browser pings this endpoint every 5 seconds. If the server's watchdog goroutine does not detect a heartbeat or active file transfer write within 15 seconds, it emits a `device_disconnected` event to the desktop app.
 
@@ -83,6 +83,7 @@ curl -X POST "http://192.168.1.50:3000/heartbeat?token=8a3ef2e987c654ab23f0de1a8
     *   `200 OK` — Approved (Response body: `"approved"`).
     *   `400 Bad Request` — Invalid or corrupt JSON request body.
     *   `403 Forbidden` — Transfer rejected (invalid token, device blocked, file type blocked, size limit exceeded, or manually rejected by the desktop user).
+    *   `410 Gone` — Session token expired after inactivity.
     *   `405 Method Not Allowed` — HTTP method was not `POST`.
     *   `408 Request Timeout` — The desktop user did not respond to the transfer prompt within 60 seconds.
 *   **Description:** Requests permission to transfer files.
@@ -122,6 +123,7 @@ curl -X POST "http://192.168.1.50:3000/request-transfer?token=8a3ef2e987c654ab23
     *   `200 OK` — Upload completed and files saved (Response body: `"✅ Upload Complete"`).
     *   `400 Bad Request` — Missing multipart boundary, invalid manifest, or corrupt data.
     *   `403 Forbidden` — Missing or invalid token.
+    *   `410 Gone` — Session token expired after inactivity.
     *   `405 Method Not Allowed` — HTTP method was not `POST`.
     *   `500 Internal Server Error` — Server ran out of disk space, write permission failed, or panicked.
 *   **Description:** Uploads one or more files to the desktop.
@@ -159,6 +161,7 @@ curl -X POST "http://192.168.1.50:3000/upload?token=8a3ef2e987c654ab23f0de1a87e5
 *   **Status Codes:**
     *   `200 OK` — Success, streaming binary data.
     *   `403 Forbidden` — Missing or invalid token.
+    *   `410 Gone` — Session token expired after inactivity.
     *   `404 Not Found` — File not found or index out of range.
     *   `500 Internal Server Error` — Failed to open or read file on disk.
 *   **Description:** Streams files from the desktop sender to a remote receiver. Emits progressive `download_progress` events to the desktop UI.

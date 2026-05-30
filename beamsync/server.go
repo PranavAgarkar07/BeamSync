@@ -261,6 +261,7 @@ type progressWriter struct {
 	written     int64
 	filename    string
 	emit        func(string, string)
+	touch       func() bool
 	lastEmit    time.Time
 	minInterval time.Duration
 }
@@ -268,6 +269,9 @@ type progressWriter struct {
 func (pw *progressWriter) Write(p []byte) (int, error) {
 	n, err := pw.w.Write(p)
 	pw.written += int64(n)
+	if n > 0 && pw.touch != nil {
+		pw.touch()
+	}
 	now := time.Now()
 	if now.Sub(pw.lastEmit) >= pw.minInterval {
 		data := fmt.Sprintf("%s|%d|%d", pw.filename, pw.written, pw.total)
@@ -285,6 +289,7 @@ type downloadProgressWriter struct {
 	written     int64
 	filename    string
 	emit        func(string, string)
+	touch       func() bool
 	lastEmit    time.Time
 	minInterval time.Duration
 }
@@ -292,6 +297,9 @@ type downloadProgressWriter struct {
 func (dw *downloadProgressWriter) Write(p []byte) (int, error) {
 	n, err := dw.w.Write(p)
 	dw.written += int64(n)
+	if n > 0 && dw.touch != nil {
+		dw.touch()
+	}
 	now := time.Now()
 	if now.Sub(dw.lastEmit) >= dw.minInterval {
 		data := fmt.Sprintf("%s|%d|%d", dw.filename, dw.written, dw.total)
@@ -352,6 +360,7 @@ const largeFileThreshold = 64 * 1024 * 1024 // 64 MB
 func startWriteWorkers(
 	jobs <-chan writeJob,
 	state *serverState,
+	session *sessionToken,
 	stats *transferStatsTracker,
 	emit func(string, string),
 	history *TransferHistory,
@@ -362,7 +371,7 @@ func startWriteWorkers(
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
-				writeFileToDisk(job, state, stats, emit, history)
+				writeFileToDisk(job, state, session, stats, emit, history)
 			}
 		}()
 	}
@@ -371,7 +380,7 @@ func startWriteWorkers(
 
 // writeFileToDisk performs the actual file write for one job and emits events.
 // Only small files (fully buffered in buf) are dispatched here.
-func writeFileToDisk(job writeJob, state *serverState, stats *transferStatsTracker, emit func(string, string), history *TransferHistory) {
+func writeFileToDisk(job writeJob, state *serverState, session *sessionToken, stats *transferStatsTracker, emit func(string, string), history *TransferHistory) {
 	startedAt := time.Now()
 	state.beginUpload()
 	defer state.endUpload()
@@ -400,6 +409,7 @@ func writeFileToDisk(job writeJob, state *serverState, stats *transferStatsTrack
 		total:       int64(len(job.buf)),
 		filename:    job.savedName,
 		emit:        emit,
+		touch:       session.Touch,
 		minInterval: 200 * time.Millisecond,
 	}
 	n, werr := pw.Write(job.buf)
@@ -458,7 +468,7 @@ func generateToken() string {
 	return hex.EncodeToString(b)
 }
 
-// validateToken middleware returns 403 for invalid tokens and 401 for expired sessions.
+// validateToken middleware returns 403 for invalid tokens and 410 for expired sessions.
 // Exempt routes: "/" (serves UI page).
 func tokenMiddleware(session *sessionToken, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -469,7 +479,7 @@ func tokenMiddleware(session *sessionToken, next http.HandlerFunc) http.HandlerF
 		}
 		valid, expired := session.Validate(r.URL.Query().Get("token"))
 		if expired {
-			http.Error(w, "401 Unauthorized: session token expired", http.StatusUnauthorized)
+			http.Error(w, "410 Gone: session token expired", http.StatusGone)
 			return
 		}
 		if !valid {
@@ -895,7 +905,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 		// ── Concurrent write pipeline ─────────────────────────────────────────
 		jobs := make(chan writeJob, writeWorkerCount)
-		wg := startWriteWorkers(jobs, state, httpServer.stats, emit, httpServer.history)
+		wg := startWriteWorkers(jobs, state, session, httpServer.stats, emit, httpServer.history)
 
 		fileCount := 0
 		var parseErr error
@@ -1012,6 +1022,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 					total:       estTotal,
 					filename:    savedName,
 					emit:        emit,
+					touch:       session.Touch,
 					minInterval: 500 * time.Millisecond,
 				}
 				// Write the already-buffered prefix first.
@@ -1316,6 +1327,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 				written:     0,
 				filename:    filename,
 				emit:        emit,
+				touch:       session.Touch,
 				lastEmit:    time.Now(),
 				minInterval: 500 * time.Millisecond,
 			}
@@ -1389,6 +1401,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 					written:     0,
 					filename:    realName,
 					emit:        emit,
+					touch:       session.Touch,
 					lastEmit:    time.Now(),
 					minInterval: 500 * time.Millisecond,
 				}

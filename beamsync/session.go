@@ -5,20 +5,39 @@ import (
 	"time"
 )
 
-const defaultSessionTokenTimeout = 10 * time.Minute
+const defaultSessionTokenTimeout = 30 * time.Minute
+
+type sessionClock interface {
+	Now() time.Time
+}
+
+type realSessionClock struct{}
+
+func (realSessionClock) Now() time.Time {
+	return time.Now()
+}
 
 type sessionToken struct {
 	value        string
 	timeout      time.Duration
+	clock        sessionClock
 	mu           sync.Mutex
 	lastActivity time.Time
 }
 
 func newSessionToken(value string, timeout time.Duration) *sessionToken {
+	return newSessionTokenWithClock(value, timeout, realSessionClock{})
+}
+
+func newSessionTokenWithClock(value string, timeout time.Duration, clock sessionClock) *sessionToken {
+	if clock == nil {
+		clock = realSessionClock{}
+	}
 	return &sessionToken{
 		value:        value,
 		timeout:      timeout,
-		lastActivity: time.Now(),
+		clock:        clock,
+		lastActivity: clock.Now(),
 	}
 }
 
@@ -29,10 +48,11 @@ func (s *sessionToken) Value() string {
 func (s *sessionToken) Touch() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.isExpiredLocked(time.Now()) {
+	now := s.clock.Now()
+	if s.isExpiredLocked(now) {
 		return false
 	}
-	s.lastActivity = time.Now()
+	s.lastActivity = now
 	return true
 }
 
@@ -43,7 +63,7 @@ func (s *sessionToken) Validate(value string) (valid bool, expired bool) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	now := time.Now()
+	now := s.clock.Now()
 	if s.isExpiredLocked(now) {
 		return false, true
 	}
@@ -58,7 +78,7 @@ func (s *sessionToken) IsExpired() bool {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.isExpiredLocked(time.Now())
+	return s.isExpiredLocked(s.clock.Now())
 }
 
 func (s *sessionToken) isExpiredLocked(now time.Time) bool {

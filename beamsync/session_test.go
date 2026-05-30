@@ -1,29 +1,53 @@
 package beamsync
 
 import (
+	"sync"
 	"testing"
 	"time"
 )
 
-func TestSessionTokenValidateRefreshesActivity(t *testing.T) {
-	session := newSessionToken("secret", 40*time.Millisecond)
+type fakeSessionClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
 
-	time.Sleep(20 * time.Millisecond)
+func newFakeSessionClock() *fakeSessionClock {
+	return &fakeSessionClock{now: time.Unix(0, 0)}
+}
+
+func (c *fakeSessionClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *fakeSessionClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
+func TestSessionTokenValidateRefreshesActivity(t *testing.T) {
+	clock := newFakeSessionClock()
+	session := newSessionTokenWithClock("secret", time.Minute, clock)
+
+	clock.Advance(30 * time.Second)
 	valid, expired := session.Validate("secret")
 	if !valid || expired {
 		t.Fatalf("Validate() = valid %v expired %v, want valid true expired false", valid, expired)
 	}
 
-	time.Sleep(25 * time.Millisecond)
+	clock.Advance(45 * time.Second)
 	if session.IsExpired() {
 		t.Fatal("validated session should refresh the inactivity window")
 	}
 }
 
 func TestSessionTokenExpiresAfterInactivity(t *testing.T) {
-	session := newSessionToken("secret", 10*time.Millisecond)
+	clock := newFakeSessionClock()
+	session := newSessionTokenWithClock("secret", time.Minute, clock)
 
-	time.Sleep(20 * time.Millisecond)
+	clock.Advance(time.Minute + time.Second)
 	valid, expired := session.Validate("secret")
 	if valid || !expired {
 		t.Fatalf("Validate() = valid %v expired %v, want valid false expired true", valid, expired)
@@ -40,18 +64,20 @@ func TestSessionTokenRejectsWrongTokenWithoutExpiring(t *testing.T) {
 }
 
 func TestSessionTokenCanDisableTimeout(t *testing.T) {
-	session := newSessionToken("secret", 0)
+	clock := newFakeSessionClock()
+	session := newSessionTokenWithClock("secret", 0, clock)
 
-	session.lastActivity = time.Now().Add(-time.Hour)
+	clock.Advance(time.Hour)
 	if session.IsExpired() {
 		t.Fatal("zero timeout should disable inactivity expiry")
 	}
 }
 
 func TestSessionTokenTouchDoesNotReviveExpiredSession(t *testing.T) {
-	session := newSessionToken("secret", 10*time.Millisecond)
+	clock := newFakeSessionClock()
+	session := newSessionTokenWithClock("secret", time.Minute, clock)
 
-	time.Sleep(20 * time.Millisecond)
+	clock.Advance(time.Minute + time.Second)
 	if session.Touch() {
 		t.Fatal("Touch() should not revive an expired session")
 	}
