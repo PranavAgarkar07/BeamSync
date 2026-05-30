@@ -597,6 +597,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		w.Header().Set("Accept-Ranges", "bytes")
 
 		// Update heartbeat on upload activity
 		state.markHeartbeat()
@@ -782,6 +783,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}))
 
 	mux.HandleFunc("/upload/resumable", tokenMiddleware(token, handleResumableUpload(uploadDir, state, emit)))
+	mux.HandleFunc("/upload-status/", tokenMiddleware(token, handleResumableUploadStatus(uploadDir)))
 
 	portInt, listener, err := FindAvailablePort(startPort, 2, 50)
 	if err != nil {
