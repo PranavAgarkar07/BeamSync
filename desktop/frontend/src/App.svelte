@@ -34,6 +34,8 @@
     TransferProgressBar,
     TransferComplete,
     ConnectedDevicesPanel,
+    ActivityPanel,
+    TransferStatsDashboard,
   } from "./design-system/index.js";
 
   // Logo asset
@@ -47,6 +49,26 @@
   let serverUrl = "";
   let senderUrl = "";
   let senderFiles = []; // [{name, sizeBytes}] — populated from sender_files event
+  let transferHistory = [];
+  let sessionLog = [];
+  let transferStats = {
+    startedAt: new Date().toISOString(),
+    filesReceived: 0,
+    bytesReceived: 0,
+    filesSent: 0,
+    bytesSent: 0,
+    activeUploads: 0,
+    activeDownloads: 0,
+    lastFilename: "",
+    lastDirection: "",
+  };
+  let transferStatsNow = Date.now();
+  let transferStatsTimer;
+  let transferSpeeds = {
+    receive: "Idle",
+    send: "Idle",
+  };
+  let activeSpeedDirection = "";
 
   let receivedFiles = [];
   let progress = {
@@ -118,6 +140,51 @@
     }, 3200);
   }
 
+  function addSessionEntry(title, detail = "", type = "info") {
+    const now = new Date();
+    sessionLog = [
+      {
+        id: `${now.getTime()}-${sessionLog.length}`,
+        title,
+        detail,
+        type,
+        time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      },
+      ...sessionLog,
+    ].slice(0, 12);
+  }
+
+  function formatDuration(ms = 0) {
+    if (!ms || ms < 1000) return "<1s";
+    const seconds = Math.round(ms / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  }
+
+  function formatTransferTime(value) {
+    if (!value) return "Now";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "Now";
+    return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function resetTransferStats() {
+    transferStats = {
+      startedAt: new Date().toISOString(),
+      filesReceived: 0,
+      bytesReceived: 0,
+      filesSent: 0,
+      bytesSent: 0,
+      activeUploads: 0,
+      activeDownloads: 0,
+      lastFilename: "",
+      lastDirection: "",
+    };
+    transferSpeeds = { receive: "Idle", send: "Idle" };
+    activeSpeedDirection = "";
+    transferStatsNow = Date.now();
+  }
+
   // ── Cursor glow ─────────────────────────────────────────────────────────
   function handleMouseMove(e) {
     // legacy mouse glow removed
@@ -126,6 +193,9 @@
   // ── Mount / Unmount ─────────────────────────────────────────────────────
   onMount(async () => {
     EventsOffAll();
+    transferStatsTimer = setInterval(() => {
+      transferStatsNow = Date.now();
+    }, 1000);
 
     // Load settings
     try {
@@ -135,16 +205,19 @@
     EventsOn("device_connected", () => {
       connectionState = "CONNECTED";
       playSound("connect");
+      addSessionEntry("Device connected", "Ready for local transfer", "success");
       toast("⚡ Device linked to network", "success");
     });
     EventsOn("device_disconnected", () => {
       connectionState = "DISCONNECTED";
       playSound("click");
+      addSessionEntry("Device disconnected", "Session link was lost", "warn");
       toast("💔 Signal lost — device disconnected", "warn");
     });
     EventsOn("transfer_request", (dataStr) => {
       playSound("connect");
       transferRequest = JSON.parse(dataStr);
+      addSessionEntry("Transfer request", transferRequest.filename, "info");
     });
     EventsOn("file_received", (filename) => {
       refreshFileList();
@@ -164,6 +237,8 @@
       lastProgressTime = 0;
       progressStartTime = 0;
       speedHistory = [];
+      transferSpeeds = { ...transferSpeeds, receive: "Idle" };
+      activeSpeedDirection = "";
 
       batchCount += 1;
       clearTimeout(batchTimer);
@@ -177,6 +252,40 @@
       }, 2500);
 
       toast(`✅ Received: ${filename}`, "success");
+    });
+    EventsOn("transfer_logged", (dataStr) => {
+      try {
+        const record = JSON.parse(dataStr);
+        transferHistory = [record, ...transferHistory.filter((item) => item.id !== record.id)].slice(0, 20);
+        const verb = record.direction === "send" ? "Sent" : "Received";
+        const status = record.status === "failed" ? "failed" : "completed";
+        if (record.direction === "send") {
+          transferSpeeds = { ...transferSpeeds, send: "Idle" };
+          if (activeSpeedDirection === "send") activeSpeedDirection = "";
+        }
+        addSessionEntry(`${verb} ${status}`, record.filename, record.status === "failed" ? "error" : "success");
+      } catch {
+        addSessionEntry("Transfer logged", dataStr, "info");
+      }
+    });
+    EventsOn("transfer_stats", (dataStr) => {
+      try {
+        const nextStats = JSON.parse(dataStr);
+        transferStats = {
+          startedAt: nextStats.startedAt || transferStats.startedAt,
+          filesReceived: Number(nextStats.filesReceived) || 0,
+          bytesReceived: Number(nextStats.bytesReceived) || 0,
+          filesSent: Number(nextStats.filesSent) || 0,
+          bytesSent: Number(nextStats.bytesSent) || 0,
+          activeUploads: Number(nextStats.activeUploads) || 0,
+          activeDownloads: Number(nextStats.activeDownloads) || 0,
+          lastFilename: nextStats.lastFilename || "",
+          lastDirection: nextStats.lastDirection || "",
+        };
+        transferStatsNow = Date.now();
+      } catch {
+        addSessionEntry("Stats update failed", "Unable to read transfer stats", "warn");
+      }
     });
 
     const formatTime = (seconds) => {
@@ -204,7 +313,7 @@
       return avg;
     };
 
-    const handleProgressUpdate = (data) => {
+    const handleProgressUpdate = (data, direction) => {
       const parts = data.split("|");
       if (parts.length < 3) return;
       const [filename, wStr, tStr] = parts;
@@ -225,6 +334,8 @@
       const smoothedSpeed = calculateSmoothedSpeed(Math.max(0, instantSpeed));
       const speedStr = `${Math.max(0, smoothedSpeed).toFixed(2)} MB/s`;
       const speedColor = getSpeedColor(smoothedSpeed);
+      transferSpeeds = { ...transferSpeeds, [direction]: speedStr };
+      activeSpeedDirection = direction;
 
       let timeRemaining = "—";
       if (smoothedSpeed > 0) {
@@ -272,11 +383,13 @@
         lastProgressTime = 0;
         progressStartTime = 0;
         speedHistory = [];
+        transferSpeeds = { ...transferSpeeds, [direction]: "Idle" };
+        activeSpeedDirection = "";
       }, 30000);
     };
 
-    EventsOn("upload_progress", handleProgressUpdate);
-    EventsOn("download_progress", handleProgressUpdate);
+    EventsOn("upload_progress", (data) => handleProgressUpdate(data, "receive"));
+    EventsOn("download_progress", (data) => handleProgressUpdate(data, "send"));
     EventsOn("url_changed", (newURL) => {
       serverUrl = newURL;
       generateQR(newURL);
@@ -316,6 +429,7 @@
     EventsOffAll();
     clearTimeout(batchTimer);
     clearTimeout(_progressTimeout);
+    clearInterval(transferStatsTimer);
   });
 
   async function initReceiver() {
@@ -438,6 +552,9 @@
     senderUrl = "";
     showSenderDialog = false;
     senderFiles = [];
+    transferHistory = [];
+    sessionLog = [];
+    resetTransferStats();
     progress = {
       active: false,
       filename: "",
@@ -751,6 +868,14 @@
               </div>
             </div>
 
+            <TransferStatsDashboard
+              stats={transferStats}
+              now={transferStatsNow}
+              direction="receive"
+              currentSpeed={transferSpeeds.receive}
+              speedActive={activeSpeedDirection === "receive"}
+            />
+
             <div class="files-panel">
               <div class="files-header">
                 <h3>RECEIVED FILES ({receivedFiles.length})</h3>
@@ -775,6 +900,8 @@
                 {/each}
               </div>
             </div>
+
+            <ActivityPanel {transferHistory} {sessionLog} {formatSize} {formatDuration} {formatTransferTime} />
           </div>
         {/if}
         </div>
@@ -809,6 +936,14 @@
                   >
                 </div>
               </div>
+
+              <TransferStatsDashboard
+                stats={transferStats}
+                now={transferStatsNow}
+                direction="send"
+                currentSpeed={transferSpeeds.send}
+                speedActive={activeSpeedDirection === "send"}
+              />
               
               <button
                 class="nb-btn nb-btn--danger close-btn"
@@ -816,6 +951,8 @@
               >
             </div>
           {/if}
+
+          <ActivityPanel {transferHistory} {sessionLog} {formatSize} {formatDuration} {formatTransferTime} />
         </div>
       {:else if mode === "SETTINGS"}
         <div class="mode-wrapper" in:fly={{ y: 15, duration: 250 }}>
