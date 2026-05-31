@@ -2,6 +2,7 @@ package beamsync
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -169,6 +170,8 @@ func TestProcessManifestCases(t *testing.T) {
 func TestWriteFileToDiskWritesFileAndEmitsProgress(t *testing.T) {
 	dir := t.TempDir()
 	state := &serverState{}
+	stats := newTransferStatsTracker()
+	history := NewTransferHistory(10)
 	var mu sync.Mutex
 	var events []string
 	emit := func(name, data string) {
@@ -180,8 +183,9 @@ func TestWriteFileToDiskWritesFileAndEmitsProgress(t *testing.T) {
 	writeFileToDisk(writeJob{
 		dstPath:   filepath.Join(dir, "hello.txt"),
 		savedName: "hello.txt",
+		totalSize: 11,
 		buf:       []byte("hello world"),
-	}, state, emit)
+	}, state, stats, emit, history)
 
 	got, err := os.ReadFile(filepath.Join(dir, "hello.txt"))
 	if err != nil {
@@ -196,16 +200,24 @@ func TestWriteFileToDiskWritesFileAndEmitsProgress(t *testing.T) {
 	if !eventSeen(&mu, &events, "upload_progress|hello.txt|11|11") {
 		t.Fatalf("upload_progress event missing: %#v", events)
 	}
+	if snapshot := stats.snapshot(0); snapshot.FilesReceived != 1 || snapshot.BytesReceived != 11 {
+		t.Fatalf("stats snapshot = %#v", snapshot)
+	}
+	if records := history.List(); len(records) != 1 || records[0].Status != TransferStatusCompleted {
+		t.Fatalf("history records = %#v", records)
+	}
 }
 
 func TestStartWriteWorkersProcessesJobsAndIgnoresCreateErrors(t *testing.T) {
 	dir := t.TempDir()
 	state := &serverState{}
+	stats := newTransferStatsTracker()
+	history := NewTransferHistory(10)
 	jobs := make(chan writeJob, 2)
-	wg := startWriteWorkers(jobs, state, func(string, string) {})
+	wg := startWriteWorkers(jobs, state, stats, func(string, string) {}, history)
 
-	jobs <- writeJob{dstPath: filepath.Join(dir, "one.txt"), savedName: "one.txt", buf: []byte("one")}
-	jobs <- writeJob{dstPath: filepath.Join(dir, "missing", "bad.txt"), savedName: "bad.txt", buf: []byte("bad")}
+	jobs <- writeJob{dstPath: filepath.Join(dir, "one.txt"), savedName: "one.txt", totalSize: 3, buf: []byte("one")}
+	jobs <- writeJob{dstPath: filepath.Join(dir, "missing", "bad.txt"), savedName: "bad.txt", totalSize: 3, buf: []byte("bad")}
 	close(jobs)
 	wg.Wait()
 
@@ -214,6 +226,9 @@ func TestStartWriteWorkersProcessesJobsAndIgnoresCreateErrors(t *testing.T) {
 	}
 	if state.uploadingCount != 0 {
 		t.Fatalf("uploadingCount = %d, want 0", state.uploadingCount)
+	}
+	if records := history.List(); len(records) != 2 {
+		t.Fatalf("history len = %d, want 2: %#v", len(records), records)
 	}
 }
 
@@ -321,6 +336,22 @@ func TestUploadWithFileSavesToDiskAndEmitsEvents(t *testing.T) {
 	}
 	if !waitForEvent(events, "file_received", time.Second) {
 		t.Fatal("file_received event was not emitted")
+	}
+
+	statsResp, err := http.Get(baseURL + "/stats?token=" + token)
+	if err != nil {
+		t.Fatalf("GET /stats: %v", err)
+	}
+	defer statsResp.Body.Close()
+	if statsResp.StatusCode != http.StatusOK {
+		t.Fatalf("stats status = %d, want %d", statsResp.StatusCode, http.StatusOK)
+	}
+	var stats TransferStats
+	if err := json.NewDecoder(statsResp.Body).Decode(&stats); err != nil {
+		t.Fatalf("decode stats: %v", err)
+	}
+	if stats.FilesReceived != 1 || stats.BytesReceived != 11 {
+		t.Fatalf("stats = %#v, want one 11-byte received file", stats)
 	}
 }
 
