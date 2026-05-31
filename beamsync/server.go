@@ -340,6 +340,11 @@ type writeJob struct {
 	buf       []byte // file data fully buffered in RAM
 }
 
+type manifestEntry struct {
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+}
+
 // writeWorkerCount is the number of goroutines writing files to disk in parallel.
 const writeWorkerCount = 3
 
@@ -446,6 +451,19 @@ func writeFileToDisk(job writeJob, state *serverState, stats *transferStatsTrack
 		time.Sleep(100 * time.Millisecond)
 		emit("file_received", fname)
 	}(job.savedName)
+}
+
+func processManifest(r io.Reader) (map[string]int64, error) {
+	var manifest []manifestEntry
+	if err := json.NewDecoder(r).Decode(&manifest); err != nil {
+		return nil, err
+	}
+
+	fileSizes := make(map[string]int64, len(manifest))
+	for _, f := range manifest {
+		fileSizes[f.Name] = f.Size
+	}
+	return fileSizes, nil
 }
 
 // generateToken creates a 16-byte (32 hex char) crypto-random session token.

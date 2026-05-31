@@ -1,11 +1,19 @@
 package beamsync
 
 import (
+	"bytes"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestTokenMiddlewareRejectsMissingOrInvalidToken(t *testing.T) {
@@ -69,4 +77,305 @@ func TestGenerateTokenReturnsHexToken(t *testing.T) {
 			t.Fatalf("token contains non-hex character %q", ch)
 		}
 	}
+}
+
+func TestGenerateTokenDoesNotCollideInSmallSample(t *testing.T) {
+	seen := make(map[string]bool)
+	for i := 0; i < 100; i++ {
+		token := generateToken()
+		if seen[token] {
+			t.Fatalf("generateToken collision at token %q", token)
+		}
+		seen[token] = true
+	}
+}
+
+func TestSetCORSHeaders(t *testing.T) {
+	rec := httptest.NewRecorder()
+
+	setCORSHeaders(rec)
+
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("Allow-Origin = %q, want *", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); got != "GET, POST, OPTIONS" {
+		t.Fatalf("Allow-Methods = %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Headers"); got != "Content-Type" {
+		t.Fatalf("Allow-Headers = %q", got)
+	}
+}
+
+func TestCopyChunkedCopiesDataAndReportsCount(t *testing.T) {
+	payload := strings.Repeat("beam-sync", 1024)
+	var dst bytes.Buffer
+
+	n, err := copyChunked(&dst, strings.NewReader(payload), 17)
+	if err != nil {
+		t.Fatalf("copyChunked returned error: %v", err)
+	}
+	if n != int64(len(payload)) {
+		t.Fatalf("copyChunked bytes = %d, want %d", n, len(payload))
+	}
+	if dst.String() != payload {
+		t.Fatal("copyChunked did not preserve payload")
+	}
+}
+
+func TestSafeEmitHandlesNilCallbackAndCallbackPanic(t *testing.T) {
+	safeEmit(nil, "noop", "")
+
+	done := make(chan struct{})
+	safeEmit(func(string, string) {
+		defer close(done)
+		panic("boom")
+	}, "panic", "payload")
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("safeEmit did not invoke callback")
+	}
+}
+
+func TestProcessManifestCases(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		got, err := processManifest(strings.NewReader(`[{"name":"a.txt","size":12},{"name":"b.bin","size":34}]`))
+		if err != nil {
+			t.Fatalf("processManifest returned error: %v", err)
+		}
+		if got["a.txt"] != 12 || got["b.bin"] != 34 {
+			t.Fatalf("processManifest = %#v", got)
+		}
+	})
+
+	t.Run("empty manifest", func(t *testing.T) {
+		got, err := processManifest(strings.NewReader(`[]`))
+		if err != nil {
+			t.Fatalf("processManifest returned error: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("processManifest len = %d, want 0", len(got))
+		}
+	})
+
+	t.Run("malformed json", func(t *testing.T) {
+		if _, err := processManifest(strings.NewReader(`{`)); err == nil {
+			t.Fatal("processManifest returned nil error for malformed JSON")
+		}
+	})
+}
+
+func TestWriteFileToDiskWritesFileAndEmitsProgress(t *testing.T) {
+	dir := t.TempDir()
+	state := &serverState{}
+	var mu sync.Mutex
+	var events []string
+	emit := func(name, data string) {
+		mu.Lock()
+		defer mu.Unlock()
+		events = append(events, name+"|"+data)
+	}
+
+	writeFileToDisk(writeJob{
+		dstPath:   filepath.Join(dir, "hello.txt"),
+		savedName: "hello.txt",
+		buf:       []byte("hello world"),
+	}, state, emit)
+
+	got, err := os.ReadFile(filepath.Join(dir, "hello.txt"))
+	if err != nil {
+		t.Fatalf("read written file: %v", err)
+	}
+	if string(got) != "hello world" {
+		t.Fatalf("written file = %q", got)
+	}
+	if state.uploadingCount != 0 {
+		t.Fatalf("uploadingCount = %d, want 0", state.uploadingCount)
+	}
+	if !eventSeen(&mu, &events, "upload_progress|hello.txt|11|11") {
+		t.Fatalf("upload_progress event missing: %#v", events)
+	}
+}
+
+func TestStartWriteWorkersProcessesJobsAndIgnoresCreateErrors(t *testing.T) {
+	dir := t.TempDir()
+	state := &serverState{}
+	jobs := make(chan writeJob, 2)
+	wg := startWriteWorkers(jobs, state, func(string, string) {})
+
+	jobs <- writeJob{dstPath: filepath.Join(dir, "one.txt"), savedName: "one.txt", buf: []byte("one")}
+	jobs <- writeJob{dstPath: filepath.Join(dir, "missing", "bad.txt"), savedName: "bad.txt", buf: []byte("bad")}
+	close(jobs)
+	wg.Wait()
+
+	if got, err := os.ReadFile(filepath.Join(dir, "one.txt")); err != nil || string(got) != "one" {
+		t.Fatalf("worker did not write good job: data=%q err=%v", got, err)
+	}
+	if state.uploadingCount != 0 {
+		t.Fatalf("uploadingCount = %d, want 0", state.uploadingCount)
+	}
+}
+
+func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
+	server, baseURL, token, events, _ := startServerForTest(t)
+	defer server.Shutdown()
+
+	resp, err := http.Get(baseURL + "/")
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET / status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		t.Fatalf("Content-Type = %q, want text/html", resp.Header.Get("Content-Type"))
+	}
+	if !strings.Contains(string(body), token) {
+		t.Fatal("root page did not include session token")
+	}
+
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/heartbeat?token="+token, nil)
+	if err != nil {
+		t.Fatalf("create heartbeat request: %v", err)
+	}
+	heartbeatResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /heartbeat: %v", err)
+	}
+	heartbeatResp.Body.Close()
+	if heartbeatResp.StatusCode != http.StatusOK {
+		t.Fatalf("heartbeat status = %d, want %d", heartbeatResp.StatusCode, http.StatusOK)
+	}
+
+	if !waitForEvent(events, "device_connected", time.Second) {
+		t.Fatal("device_connected event was not emitted")
+	}
+	if err := server.Shutdown(); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+}
+
+func TestUploadWithoutFileReturnsBadRequest(t *testing.T) {
+	server, baseURL, token, _, _ := startServerForTest(t)
+	defer server.Shutdown()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	resp, err := http.Post(baseURL+"/upload?token="+token, writer.FormDataContentType(), &body)
+	if err != nil {
+		t.Fatalf("POST /upload: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("upload status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestUploadWithFileSavesToDiskAndEmitsEvents(t *testing.T) {
+	server, baseURL, token, events, uploadDir := startServerForTest(t)
+	defer server.Shutdown()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	manifest, err := writer.CreateFormField("beam_manifest")
+	if err != nil {
+		t.Fatalf("create manifest field: %v", err)
+	}
+	if _, err := manifest.Write([]byte(`[{"name":"note.txt","size":11}]`)); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	file, err := writer.CreateFormFile("files", "note.txt")
+	if err != nil {
+		t.Fatalf("create file field: %v", err)
+	}
+	if _, err := file.Write([]byte("hello world")); err != nil {
+		t.Fatalf("write file field: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	resp, err := http.Post(baseURL+"/upload?token="+token, writer.FormDataContentType(), &body)
+	if err != nil {
+		t.Fatalf("POST /upload: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		responseBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("upload status = %d, want %d: %s", resp.StatusCode, http.StatusOK, responseBody)
+	}
+
+	got, err := os.ReadFile(filepath.Join(uploadDir, "note.txt"))
+	if err != nil {
+		t.Fatalf("read uploaded file: %v", err)
+	}
+	if string(got) != "hello world" {
+		t.Fatalf("uploaded file = %q", got)
+	}
+	if !waitForEvent(events, "file_received", time.Second) {
+		t.Fatal("file_received event was not emitted")
+	}
+}
+
+func eventSeen(mu *sync.Mutex, events *[]string, want string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	for _, event := range *events {
+		if event == want {
+			return true
+		}
+	}
+	return false
+}
+
+func waitForEvent(events <-chan string, want string, timeout time.Duration) bool {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		select {
+		case event := <-events:
+			if strings.HasPrefix(event, want+"|") {
+				return true
+			}
+		case <-timer.C:
+			return false
+		}
+	}
+}
+
+func startServerForTest(t *testing.T) (*HTTPServer, string, string, <-chan string, string) {
+	t.Helper()
+	uploadDir := t.TempDir()
+	startPort := freePort(t)
+	events := make(chan string, 20)
+	server, port, token := StartServer(uploadDir, startPort, DefaultTransferSettings(), func(eventName, data string) {
+		events <- eventName + "|" + data
+	})
+	if server == nil {
+		t.Fatal("StartServer returned nil server")
+	}
+	if token == "" {
+		t.Fatal("StartServer returned empty token")
+	}
+	if port != fmt.Sprint(startPort) {
+		t.Fatalf("StartServer port = %q, want %d", port, startPort)
+	}
+	return server, "http://127.0.0.1:" + port, token, events, uploadDir
+}
+
+func freePort(t *testing.T) int {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("find free port: %v", err)
+	}
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port
 }
