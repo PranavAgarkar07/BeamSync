@@ -161,7 +161,7 @@ BeamSync works by creating direct peer-to-peer connections over your Local Area 
 
 ### Important Requirements
 
-- All devices must be connected to the **same local network / subnet**
+- All devices must be connected to the **same local network / subnet**. Devices on different VLANs or isolated network segments may not be able to discover each other.
 - Both devices should be able to communicate with each other over LAN
 - Devices must allow local network access permissions (especially on macOS/mobile hotspots)
 
@@ -170,13 +170,15 @@ BeamSync works by creating direct peer-to-peer connections over your Local Area 
 The following network types may block or limit BeamSync functionality:
 
 - **Guest WiFi networks** often isolate devices from each other
-- **Public networks (cafes, airports, offices)** may block peer-to-peer traffic
-- **Enterprise or school networks** may restrict local device communication
+- **Public WiFi networks (cafes, airports, hotels)** often restrict peer-to-peer traffic
+- **Enterprise, office, or school networks** may use client isolation or VLAN segmentation that prevents devices from discovering each other
 - Some routers may have **AP isolation / client isolation enabled**
+- Some mobile hotspots may use NAT or client isolation, which can interfere with device discovery and peer-to-peer communication.
 
 ### Firewall & Router Considerations
 
 - Firewalls on Linux, Windows, or macOS may block incoming connections
+- BeamSync uses TCP ports **3000–3100** for local transfers. Ensure these ports are allowed through your firewall when necessary.
 - Router settings like **AP isolation** or **client isolation** can prevent device discovery
 - Ensure BeamSync is allowed through system firewall if prompted
 
