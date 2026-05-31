@@ -1,9 +1,14 @@
 package beamsync
 
 import (
+	"crypto/ecdsa"
 	"crypto/x509"
+	"encoding/pem"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestTLSEnabledReadsEnvironment(t *testing.T) {
@@ -44,6 +49,67 @@ func TestGenerateSelfSignedCertificateIncludesHosts(t *testing.T) {
 	if err := parsed.VerifyHostname("127.0.0.1"); err != nil {
 		t.Fatalf("certificate does not verify for 127.0.0.1: %v", err)
 	}
+	if _, ok := parsed.PublicKey.(*ecdsa.PublicKey); !ok {
+		t.Fatalf("certificate public key type = %T, want *ecdsa.PublicKey", parsed.PublicKey)
+	}
+	if validity := parsed.NotAfter.Sub(parsed.NotBefore); validity < 9*365*24*time.Hour {
+		t.Fatalf("certificate validity = %s, want about 10 years", validity)
+	}
+}
+
+func TestLoadOrCreateLocalCertificatePersistsSecureECDSAFiles(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	cert, err := loadOrCreateLocalCertificate([]string{"localhost"})
+	if err != nil {
+		t.Fatalf("loadOrCreateLocalCertificate returned error: %v", err)
+	}
+	if len(cert.Certificate) == 0 {
+		t.Fatal("persisted certificate has no DER chain")
+	}
+
+	certPath := filepath.Join(homeDir, ".config", "beamsync", "cert.pem")
+	keyPath := filepath.Join(homeDir, ".config", "beamsync", "key.pem")
+	assertFileMode(t, certPath, tlsCertificateFileMode)
+	assertFileMode(t, keyPath, tlsCertificateFileMode)
+
+	keyPEM, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("failed to read persisted key: %v", err)
+	}
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil || keyBlock.Type != "EC PRIVATE KEY" {
+		t.Fatalf("key PEM type = %v, want EC PRIVATE KEY", keyBlock)
+	}
+	if _, err := x509.ParseECPrivateKey(keyBlock.Bytes); err != nil {
+		t.Fatalf("persisted key is not a valid ECDSA key: %v", err)
+	}
+
+	certPEMBefore, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatalf("failed to read persisted cert: %v", err)
+	}
+	keyPEMBefore := append([]byte(nil), keyPEM...)
+
+	if _, err := loadOrCreateLocalCertificate([]string{"localhost"}); err != nil {
+		t.Fatalf("second loadOrCreateLocalCertificate returned error: %v", err)
+	}
+
+	certPEMAfter, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatalf("failed to read persisted cert after reload: %v", err)
+	}
+	keyPEMAfter, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("failed to read persisted key after reload: %v", err)
+	}
+	if string(certPEMBefore) != string(certPEMAfter) {
+		t.Fatal("certificate was regenerated instead of reused")
+	}
+	if string(keyPEMBefore) != string(keyPEMAfter) {
+		t.Fatal("private key was regenerated instead of reused")
+	}
 }
 
 func TestMaybeTLSListenerWrapsOnlyWhenEnabled(t *testing.T) {
@@ -78,5 +144,17 @@ func TestMaybeTLSListenerWrapsOnlyWhenEnabled(t *testing.T) {
 	}
 	if tlsWrapped == secure {
 		t.Fatal("enabled TLS should wrap the listener")
+	}
+}
+
+func assertFileMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("failed to stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("%s mode = %o, want %o", path, got, want)
 	}
 }
