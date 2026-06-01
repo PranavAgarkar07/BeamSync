@@ -1141,6 +1141,13 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		IdleTimeout:  60 * time.Second,
 	}
 	httpServer.server = srv
+	serveListener, tlsEnabled, tlsErr := maybeTLSListener(listener)
+	if tlsErr != nil {
+		fmt.Printf("❌ Failed to configure TLS receiver: %v\n", tlsErr)
+		cancel()
+		listener.Close()
+		return nil, "", ""
+	}
 
 	go func() {
 		defer func() {
@@ -1148,8 +1155,12 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 				fmt.Printf("❌ Server panic: %v\n", r)
 			}
 		}()
-		fmt.Printf("🚀 Starting HTTP receiver on :%s...\n", portStr)
-		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+		protocol := "HTTP"
+		if tlsEnabled {
+			protocol = "HTTPS"
+		}
+		fmt.Printf("🚀 Starting %s receiver on :%s...\n", protocol, portStr)
+		if err := srv.Serve(serveListener); err != nil && err != http.ErrServerClosed {
 			fmt.Printf("❌ Server error: %v\n", err)
 		}
 	}()
@@ -1456,10 +1467,21 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		IdleTimeout:  60 * time.Second,
 	}
 	httpServer.server = srv
+	serveListener, tlsEnabled, tlsErr := maybeTLSListener(listener)
+	if tlsErr != nil {
+		fmt.Printf("❌ Failed to configure TLS sender: %v\n", tlsErr)
+		cancel()
+		listener.Close()
+		return nil, "", ""
+	}
 
 	go func() {
-		fmt.Printf("🚀 Starting sender on :%s...\n", portStr)
-		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+		protocol := "HTTP"
+		if tlsEnabled {
+			protocol = "HTTPS"
+		}
+		fmt.Printf("🚀 Starting %s sender on :%s...\n", protocol, portStr)
+		if err := srv.Serve(serveListener); err != nil && err != http.ErrServerClosed {
 			fmt.Println("❌ Sender error:", err)
 		}
 	}()

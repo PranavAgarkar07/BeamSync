@@ -162,6 +162,7 @@ For developers, contributors, and security auditors who want to understand the u
 ## Security & Privacy
 
 - **Local-only** — All transfers happen over your LAN. No external servers are contacted.
+- **Optional HTTPS** — Set `BEAMSYNC_ENABLE_TLS=true` before launching BeamSync to serve receiver and sender pages over HTTPS with a persisted ECDSA local certificate in `~/.config/beamsync/`.
 - **Zero data collection** — BeamSync does not store, transmit, or analyze your files beyond the direct peer-to-peer transfer.
 - **Open source** — The entire codebase is available for audit.
 

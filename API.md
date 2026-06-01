@@ -4,6 +4,8 @@ This document describes the internal peer-to-peer HTTP API for **BeamSync**.
 
 When you launch BeamSync in either **Receiver (default)** or **Sender** mode, it starts a local HTTP server on a dynamically assigned port. Devices connect to this server over the local area network (LAN) to transfer files.
 
+Set `BEAMSYNC_ENABLE_TLS=true` before launching BeamSync to serve the same endpoints over HTTPS. BeamSync stores a self-signed ECDSA certificate and private key at `~/.config/beamsync/cert.pem` and `~/.config/beamsync/key.pem`, generating them only when they do not already exist; clients may need to accept the browser warning for that local certificate.
+
 ---
 
 ## 🔒 Authentication & Token Scheme
@@ -37,6 +39,8 @@ To prevent unauthorized devices on the local network from sending or downloading
 #### Example Curl:
 ```bash
 curl -X GET "http://192.168.1.50:3000/"
+# With BEAMSYNC_ENABLE_TLS=true:
+curl -k -X GET "https://192.168.1.50:3000/"
 ```
 
 ---

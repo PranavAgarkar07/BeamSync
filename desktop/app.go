@@ -159,7 +159,7 @@ func (a *App) processEvents() {
 			if a.currentIP != "" && a.currentIP != currentRealIP {
 				fmt.Printf("🔄 IP Change Detected! Old: %s, New: %s\n", a.currentIP, currentRealIP)
 				a.currentIP = currentRealIP
-				newURL := fmt.Sprintf("http://%s:%s", a.currentIP, a.currentPort)
+				newURL := fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), a.currentIP, a.currentPort)
 				a.safeEmit("url_changed", newURL)
 			}
 		}
@@ -267,7 +267,7 @@ func (a *App) SetSavePath() string {
 	a.currentIP = localIP
 	a.currentPort = port
 
-	url := fmt.Sprintf("http://%s:%s/?token=%s", localIP, port, token)
+	url := fmt.Sprintf("%s://%s:%s/?token=%s", beamsync.ServerScheme(), localIP, port, token)
 	fmt.Println("📡 Receiver restarted on new path:", url)
 	return url
 }
@@ -298,7 +298,7 @@ func (a *App) StartReceiverDefault() string {
 	a.currentPort = port
 
 	// Embed token in the URL so the mobile page's JS can attach it to requests.
-	url := fmt.Sprintf("http://%s:%s/?token=%s", localIP, port, token)
+	url := fmt.Sprintf("%s://%s:%s/?token=%s", beamsync.ServerScheme(), localIP, port, token)
 	fmt.Println("📡 Receiver started:", url)
 	return url
 }
@@ -328,7 +328,7 @@ func (a *App) StartReceiver() string {
 	a.currentIP = localIP
 	a.currentPort = port
 
-	url := fmt.Sprintf("http://%s:%s/?token=%s", localIP, port, token)
+	url := fmt.Sprintf("%s://%s:%s/?token=%s", beamsync.ServerScheme(), localIP, port, token)
 	fmt.Println("📡 Receiver started:", url)
 	return url
 }
@@ -358,7 +358,7 @@ func (a *App) StartSender() string {
 	a.currentPort = port
 
 	// Root page loads without token (acts as the landing), downloads require token.
-	url := fmt.Sprintf("http://%s:%s/", localIP, port)
+	url := fmt.Sprintf("%s://%s:%s/", beamsync.ServerScheme(), localIP, port)
 
 	fmt.Println("========================================")
 	fmt.Println("📤 SENDER STARTED:", url)
@@ -644,7 +644,7 @@ func (a *App) startIPMonitor() {
 				fmt.Printf("🔄 Network Change! IP: %s → %s\n", a.currentIP, newIP)
 				a.currentIP = newIP
 				if a.currentPort != "" {
-					newURL := fmt.Sprintf("http://%s:%s", a.currentIP, a.currentPort)
+					newURL := fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), a.currentIP, a.currentPort)
 					fmt.Println("📡 Updating URL to:", newURL)
 					a.safeEmit("url_changed", newURL)
 				}
