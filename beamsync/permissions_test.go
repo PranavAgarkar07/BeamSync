@@ -14,6 +14,12 @@ func TestDefaultTransferSettings(t *testing.T) {
 	if len(settings.BlockedExtensions) != 0 {
 		t.Fatalf("default blocked extensions = %v, want empty", settings.BlockedExtensions)
 	}
+	if len(settings.TrustedDevices) != 0 {
+		t.Fatalf("default trusted devices = %v, want empty", settings.TrustedDevices)
+	}
+	if len(settings.BlockedDevices) != 0 {
+		t.Fatalf("default blocked devices = %v, want empty", settings.BlockedDevices)
+	}
 }
 
 func TestTransferSettingsDeviceRules(t *testing.T) {
