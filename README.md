@@ -157,38 +157,57 @@ Download the latest release from the [Releases](https://github.com/PranavAgarkar
 
 ## Network Requirements & Connectivity Notes
 
-BeamSync works by creating direct peer-to-peer connections over your Local Area Network (LAN). In some network environments, device discovery or file transfers may not work as expected.
+BeamSync works by starting a local HTTP server that other devices on your LAN connect to (via browser or curl). In some network environments, the connection may not work as expected.
 
 ### Important Requirements
 
-- All devices must be connected to the **same local network / subnet**. Devices on different VLANs or isolated network segments may not be able to discover each other.
-- Both devices should be able to communicate with each other over LAN
-- Devices must allow local network access permissions (especially on macOS/mobile hotspots)
+- All devices must be connected to the **same local network / subnet**. Devices on different VLANs or isolated network segments may not be able to reach each other.
+- Both devices must be able to communicate over LAN (HTTP reachability, not automatic discovery)
+- **macOS (14+ Sonoma/Sequoia):** Grant Local Network permission — go to **System Settings → Privacy & Security → Local Network → enable BeamSync**. The app will prompt on first launch.
+- **Mobile hotspots:** Some enforce client isolation; tethered devices may not reach the host
 
 ### Common Network Restrictions
 
 The following network types may block or limit BeamSync functionality:
 
 - **Guest WiFi networks** often isolate devices from each other
-- **Public WiFi networks (cafes, airports, hotels)** often restrict peer-to-peer traffic
-- **Enterprise, office, or school networks** may use client isolation or VLAN segmentation that prevents devices from discovering each other
-- Some routers may have **AP isolation / client isolation enabled**
-- Some mobile hotspots may use NAT or client isolation, which can interfere with device discovery and peer-to-peer communication.
+- **Public WiFi networks (cafes, airports, hotels)** often restrict device-to-device traffic
+- **Enterprise, office, or school networks** may use client isolation or VLAN segmentation that prevents devices from reaching each other
+- Routers with **AP isolation / client isolation enabled** block all LAN device communication
+- **NAT hairpinning:** On single-router home networks, some routers cannot route traffic back to a device on the same LAN when using the external IP or hostname. Use the local IP (e.g. `192.168.x.x`) directly.
+- **Third-party antivirus software** (Norton, McAfee, Kaspersky, etc.) may silently block LAN HTTP servers. Temporarily disable or add an exclusion for BeamSync.
 
 ### Firewall & Router Considerations
 
 - Firewalls on Linux, Windows, or macOS may block incoming connections
 - BeamSync uses TCP ports **3000–3098** for local transfers. Ensure these ports are allowed through your firewall when necessary.
-- On Linux, BeamSync can automatically configure firewall rules when required through its built-in firewall setup mechanism.
-- Router settings like **AP isolation** or **client isolation** can prevent device discovery
-- Ensure BeamSync is allowed through system firewall if prompted
+- On Linux, BeamSync can automatically configure firewall rules when required through its built-in firewall setup mechanism (`ufw`, `firewalld`, or `iptables`).
+- Ensure BeamSync is allowed through your system firewall if prompted
 
-### Troubleshooting Tip
+### Troubleshooting
 
-If devices cannot connect:
+If devices cannot connect, try these diagnostics:
+
+```
+# Check basic network reachability
+ping <receiver-ip>
+
+# Verify BeamSync's HTTP server is responding
+curl -v http://<receiver-ip>:<port>/
+
+# Check if the port is listening (from the receiver)
+netstat -an | grep <port>
+
+# Confirm both devices are on the same subnet
+ip addr show | grep "inet "
+```
+
+Quick steps:
 - Confirm both devices are on the same WiFi network
-- Try disabling VPNs or proxies
-- Switch to a mobile hotspot or home network for testing
+- Disable VPNs or proxies temporarily
+- Try connecting via the device's local IP address instead of hostname
+- Test with a mobile hotspot or a different home network
+- Temporarily disable third-party antivirus to isolate the cause
 
 ## Developer API
 
@@ -198,7 +217,7 @@ For developers, contributors, and security auditors who want to understand the u
 
 - **Local-only** — All transfers happen over your LAN. No external servers are contacted.
 - **Optional HTTPS** — Set `BEAMSYNC_ENABLE_TLS=true` before launching BeamSync to serve receiver and sender pages over HTTPS with a persisted ECDSA local certificate in `~/.config/beamsync/`.
-- **Zero data collection** — BeamSync does not store, transmit, or analyze your files beyond the direct peer-to-peer transfer.
+- **Zero data collection** — BeamSync does not store, transmit, or analyze your files beyond the direct LAN transfer.
 - **Open source** — The entire codebase is available for audit.
 
 ## License
