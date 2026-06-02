@@ -933,10 +933,15 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			// The mobile UI sends a JSON manifest of all files in this batch
 			// as the first field. We use this to get accurate 'total' sizes.
 			if formName == "beam_manifest" && filename == "" {
-				manifestSizes, err := processManifest(part)
-				if err == nil {
-					fileSizes = manifestSizes
-					fmt.Printf("📦 Manifest received: %d files registered\n", len(fileSizes))
+				var manifest []struct {
+					Name string `json:"name"`
+					Size int64  `json:"size"`
+				}
+				if err := json.NewDecoder(part).Decode(&manifest); err == nil {
+					for _, f := range manifest {
+						fileSizes[f.Name] = f.Size
+					}
+					fmt.Printf("📦 Manifest received: %d files registered\n", len(manifest))
 				}
 				part.Close()
 				continue
