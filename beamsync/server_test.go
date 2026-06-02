@@ -234,7 +234,6 @@ func TestStartWriteWorkersProcessesJobsAndIgnoresCreateErrors(t *testing.T) {
 
 func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
 	server, baseURL, token, events, _ := startServerForTest(t)
-	defer server.Shutdown()
 
 	resp, err := http.Get(baseURL + "/")
 	if err != nil {
