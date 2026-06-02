@@ -534,10 +534,13 @@ func setRateLimitHeaders(w http.ResponseWriter, decision rateLimitDecision) {
 
 func rateLimitMiddleware(limiter *clientRateLimiter, settings *TransferSettings, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
+		isUI := r.URL.Path == "/" || r.URL.Path == "/logo.png"
+		if !isUI {
+			setCORSHeaders(w)
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
 		}
 
 		ip := clientIP(r)
@@ -703,7 +706,6 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 	// ── Serve UI (no token required — this IS the page that shows the token) ─
 	mux.HandleFunc("/", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
 		if r.Method != http.MethodGet || r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
@@ -729,7 +731,6 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}))
 
 	mux.HandleFunc("/logo.png", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 		w.Header().Set("Content-Type", "image/png")
 		content, err := uiFS.ReadFile("ui/logo.png")
@@ -1266,7 +1267,6 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	}
 
 	mux.HandleFunc("/", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		w.Header().Set("Content-Type", "text/html")
 		content, err := uiFS.ReadFile("ui/download.html")
@@ -1280,7 +1280,6 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	}))
 
 	mux.HandleFunc("/logo.png", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 		w.Header().Set("Content-Type", "image/png")
 		content, err := uiFS.ReadFile("ui/logo.png")
