@@ -23,6 +23,8 @@ export function ResetApp():Promise<void>;
 
 export function SaveTransferSettings(arg1:beamsync.TransferSettings):Promise<string>;
 
+export function SendFiles(arg1:Array<string>):Promise<string>;
+
 export function SetSavePath():Promise<string>;
 
 export function StartReceiver():Promise<string>;

@@ -42,6 +42,10 @@ export function SaveTransferSettings(arg1) {
   return window['go']['main']['App']['SaveTransferSettings'](arg1);
 }
 
+export function SendFiles(arg1) {
+  return window['go']['main']['App']['SendFiles'](arg1);
+}
+
 export function SetSavePath() {
   return window['go']['main']['App']['SetSavePath']();
 }

@@ -3,6 +3,7 @@
   import {
     StartReceiverDefault,
     StartSender,
+    SendFiles,
     PlaySound,
     OpenFile,
     ResetApp,
@@ -18,6 +19,8 @@
     EventsOn,
     EventsOffAll,
     BrowserOpenURL,
+    OnFileDrop,
+    OnFileDropOff,
   } from "../wailsjs/runtime/runtime.js";
   import QRCode from "qrcode";
   import { onMount, onDestroy } from "svelte";
@@ -88,7 +91,9 @@
   let speedHistory = []; // Rolling average for smooth speed display
 
   let showSenderDialog = false;
+  let dragCounter = 0;
   let isDragOver = false;
+  let dropGuard = false;
   let savePath = ""; // persisted save directory
 
   // ── Transfer Settings ──────────────────────────────────────────────────
@@ -423,10 +428,15 @@
     } catch {
       savePath = "";
     }
+
+    OnFileDrop((_x, _y, filePaths) => {
+      handleNativeDrop(filePaths);
+    }, false);
   });
 
   onDestroy(() => {
     EventsOffAll();
+    OnFileDropOff();
     clearTimeout(batchTimer);
     clearTimeout(_progressTimeout);
     clearInterval(transferStatsTimer);
@@ -474,6 +484,19 @@
   async function startSend() {
     playSound("click");
     const result = await StartSender();
+    if (result === "Cancelled") {
+      toast("Sender cancelled", "info");
+      return;
+    }
+    senderUrl = result;
+    showSenderDialog = true;
+    generateQR(result);
+  }
+
+  async function sendSelectedFiles(filePaths) {
+    if (!filePaths || filePaths.length === 0) return;
+    playSound("click");
+    const result = await SendFiles(filePaths);
     if (result === "Cancelled") {
       toast("Sender cancelled", "info");
       return;
@@ -585,7 +608,7 @@
     generateQR(result);
     savePath = await GetSavePath();
     connectionState = "WAITING";
-    toast(`📁 Save path updated`, "success");
+    toast("📁 Save path updated", "success");
   }
 
   async function handleDisconnectReset() {
@@ -594,7 +617,7 @@
     await initReceiver();
   }
 
-  // ── Settings Logic ──────────────────────────────────────────────────
+  // ── Settings Logic ─────────────────────────────────
   async function saveSettings() {
     playSound("click");
     settings.maxFileSizeMB = Number(settings.maxFileSizeMB) || 0;
@@ -672,19 +695,63 @@
   }
 
   // Drag & drop
+  function handleDragEnter(e) {
+    e.preventDefault();
+    dragCounter += 1;
+    isDragOver = true;
+  }
   function handleDragOver(e) {
     e.preventDefault();
-    isDragOver = true;
   }
   function handleDragLeave(e) {
     e.preventDefault();
-    if (e.clientX === 0 && e.clientY === 0) isDragOver = false;
+    dragCounter -= 1;
+    if (dragCounter <= 0) {
+      dragCounter = 0;
+      isDragOver = false;
+    }
   }
+  function extractDropPaths(fileList) {
+    if (!fileList) return [];
+    const paths = [];
+    for (let i = 0; i < fileList.length; i++) {
+      const f = fileList[i];
+      if (f.path) paths.push(f.path);
+    }
+    return paths;
+  }
+
   function handleDrop(e) {
     e.preventDefault();
+    dragCounter = 0;
     isDragOver = false;
+    if (dropGuard) return;
+
+    // HTML5 dataTransfer may or may not expose the non-standard .path property.
+    // If it does, take it and lock the guard so the native handler skips.
+    // If it doesn't, release the guard — the Wails native OnFileDrop is authoritative.
+    const paths = extractDropPaths(e.dataTransfer?.files);
+    if (paths.length === 0) return; // defer to native handler
+
+    dropGuard = true;
+    setTimeout(() => { dropGuard = false; }, 500);
     mode = "SEND";
-    startSend();
+    sendSelectedFiles(paths);
+  }
+
+  function handleDropZoneFiles(fileList) {
+    const paths = extractDropPaths(fileList);
+    if (paths.length === 0) return;
+    mode = "SEND";
+    sendSelectedFiles(paths);
+  }
+
+  function handleNativeDrop(filePaths) {
+    if (!filePaths || filePaths.length === 0 || dropGuard) return;
+    dropGuard = true;
+    setTimeout(() => { dropGuard = false; }, 500);
+    mode = "SEND";
+    sendSelectedFiles(filePaths);
   }
 
   $: displayUrl = serverUrl.replace(/\/\?token=.*$/, "");
@@ -699,7 +766,7 @@
       <h2 style="margin: 0; font-size: 1.5rem; font-weight: bold; letter-spacing: -0.01em;">Incoming Transfer</h2>
       <span class="nb-badge nb-badge--primary" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; animation: nb-pulse 2s infinite;">PENDING</span>
     </div>
-    
+
     <div style="background: var(--nb-bg); border: 2px solid var(--nb-border-color); padding: 1.25rem; margin-bottom: 1.5rem;">
       <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; border-bottom: 2px dashed var(--nb-border-color); padding-bottom: 0.75rem;">
         <span style="color: var(--nb-text-muted); font-weight: 600;">From Device</span>
@@ -714,12 +781,12 @@
         <strong style="font-size: 1rem;">{transferRequest.sizeMB}</strong>
       </div>
     </div>
-    
+
     <label style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1.75rem; cursor: pointer; font-size: 1rem; font-weight: 600;">
-      <input type="checkbox" bind:checked={rememberDevice} style="width: 20px; height: 20px; accent-color: var(--nb-primary); border: 2px solid var(--nb-border-color);"> 
+      <input type="checkbox" bind:checked={rememberDevice} style="width: 20px; height: 20px; accent-color: var(--nb-primary); border: 2px solid var(--nb-border-color);">
       Always accept transfers from this device
     </label>
-    
+
     <div style="display: flex; gap: 1.5rem;">
       <button class="nb-btn nb-btn--danger" style="flex: 1; padding: 0.75rem; font-size: 1rem;" on:click={() => handleConsent(false)}>Decline</button>
       <button class="nb-btn nb-btn--primary" style="flex: 1; padding: 0.75rem; font-size: 1rem;" on:click={() => handleConsent(true)}>Accept Transfer</button>
@@ -734,15 +801,21 @@
 
 <div
   class="app-dropzone"
+  on:dragenter={handleDragEnter}
   on:dragover={handleDragOver}
   on:drop={handleDrop}
   on:dragleave={handleDragLeave}
 >
-  {#if isDragOver}
-    <div class="drop-overlay">
-      <div class="drop-message">[ DROP → INITIATE_SEND ]</div>
-    </div>
-  {/if}
+  <div
+    class="drop-overlay"
+    class:drop-overlay--visible={isDragOver}
+    on:dragenter|stopPropagation
+    on:dragover|stopPropagation
+    on:dragleave|stopPropagation
+    on:drop|stopPropagation
+  >
+    <div class="drop-message">[ DROP → INITIATE_SEND ]</div>
+  </div>
 
   <div class="toast-rack" aria-live="polite">
     {#each toasts as t (t.id)}
@@ -907,7 +980,12 @@
         </div>
       {:else if mode === "SEND"}
         <div class="mode-wrapper send-layout" in:fly={{ y: 15, duration: 250 }}>
-          <FileDropZone files={senderFiles} on:selectFiles={startSend} on:requestPicker={startSend} />
+          <FileDropZone
+            files={senderFiles}
+            on:dropped={({ detail }) => handleDropZoneFiles(detail.files)}
+            on:filesSelected={({ detail }) => handleDropZoneFiles(detail.files)}
+            on:requestPicker={startSend}
+          />
 
           {#if showSenderDialog}
             <div class="sender-dialog">
@@ -916,13 +994,13 @@
                 <h3>READY TO SEND</h3>
               </div>
               <p class="sender-desc">Scan the QR code on the receiving device to download</p>
-              
+
               {#if qrImage}
                 <div class="qr-frame">
                   <img src={qrImage} alt="Sender QR" class="sender-qr" />
                 </div>
               {/if}
-              
+
               <div class="url-action-bar">
                 <span class="url-label">Or share this link:</span>
                 <div class="url-box">
@@ -944,7 +1022,7 @@
                 currentSpeed={transferSpeeds.send}
                 speedActive={activeSpeedDirection === "send"}
               />
-              
+
               <button
                 class="nb-btn nb-btn--danger close-btn"
                 on:click={() => (showSenderDialog = false)}>CLOSE SESSION</button
@@ -958,7 +1036,7 @@
         <div class="mode-wrapper" in:fly={{ y: 15, duration: 250 }}>
           <div class="nb-card" style="padding: 2rem;">
             <h2 style="margin-top: 0;">Transfer Settings</h2>
-            
+
             <div style="margin-bottom: 2rem;">
               <h3>Save Location</h3>
               <div style="display: flex; gap: 0.5rem; align-items: center; border: 2px solid var(--nb-border-color); padding: 0.5rem; background: var(--nb-bg);">
@@ -994,7 +1072,7 @@
             <div style="margin-bottom: 2rem;">
               <h3>Application Sounds</h3>
               <label style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1.75rem; cursor: pointer; font-size: 1rem; font-weight: 600;">
-                <input type="checkbox" bind:checked={soundEnabled} on:change={() => { localStorage.setItem("beamsync_sound", soundEnabled.toString()); playSound("click"); }} style="width: 20px; height: 20px; accent-color: var(--nb-primary); border: 2px solid var(--nb-border-color);"> 
+                <input type="checkbox" bind:checked={soundEnabled} on:change={() => { localStorage.setItem("beamsync_sound", soundEnabled.toString()); playSound("click"); }} style="width: 20px; height: 20px; accent-color: var(--nb-primary); border: 2px solid var(--nb-border-color);">
                 Enable application sound effects
               </label>
             </div>
@@ -1016,12 +1094,12 @@
                 <span class="version-badge">v2.2</span>
               </div>
             </div>
-            
+
             <p class="about-desc">
               Fast, token-secured file transfers over your local network. No
               cloud. No accounts.
             </p>
-            
+
             <div class="about-tags">
               <span class="nb-badge nb-badge--info">LAN ONLY</span>
               <span class="nb-badge nb-badge--success">ZERO CLOUD</span>
@@ -1091,8 +1169,8 @@
 </div>
 
 <style>
-  /* 
-   * Local App.svelte styles for new layout composition 
+  /*
+   * Local App.svelte styles for new layout composition
    * All design systems tokens are global and handled by app.css/tokens.css
    */
   .app-dropzone {
@@ -1110,6 +1188,14 @@
     align-items: center;
     justify-content: center;
     border: 4px dashed var(--nb-primary);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.12s ease, visibility 0.12s ease;
+    pointer-events: none;
+  }
+  .drop-overlay--visible {
+    opacity: 1;
+    visibility: visible;
   }
 
   /* ── Global floating transfer progress card ─────────────────────────── */
