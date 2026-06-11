@@ -67,11 +67,16 @@
   };
   let transferStatsNow = Date.now();
   let transferStatsTimer;
+  let transferStatsThrottleTimer;
+  let pendingTransferStats = null;
+  let lastTransferStatsUpdateAt = 0;
   let transferSpeeds = {
     receive: "Idle",
     send: "Idle",
   };
   let activeSpeedDirection = "";
+
+  const TRANSFER_STATS_THROTTLE_MS = 1000;
 
   let receivedFiles = [];
   let progress = {
@@ -157,6 +162,54 @@
       },
       ...sessionLog,
     ].slice(0, 12);
+  }
+
+  function normalizeTransferStats(nextStats) {
+    return {
+      startedAt: nextStats.startedAt || transferStats.startedAt,
+      filesReceived: Number(nextStats.filesReceived) || 0,
+      bytesReceived: Number(nextStats.bytesReceived) || 0,
+      filesSent: Number(nextStats.filesSent) || 0,
+      bytesSent: Number(nextStats.bytesSent) || 0,
+      activeUploads: Number(nextStats.activeUploads) || 0,
+      activeDownloads: Number(nextStats.activeDownloads) || 0,
+      lastFilename: nextStats.lastFilename || "",
+      lastDirection: nextStats.lastDirection || "",
+    };
+  }
+
+  function transferStatsChanged(nextStats) {
+    return Object.keys(nextStats).some((key) => nextStats[key] !== transferStats[key]);
+  }
+
+  function applyTransferStats(nextStats) {
+    transferStats = nextStats;
+    transferStatsNow = Date.now();
+    lastTransferStatsUpdateAt = transferStatsNow;
+  }
+
+  function scheduleTransferStatsUpdate(nextStats) {
+    if (!transferStatsChanged(nextStats)) return;
+
+    const now = Date.now();
+    const elapsed = now - lastTransferStatsUpdateAt;
+    if (elapsed >= TRANSFER_STATS_THROTTLE_MS) {
+      clearTimeout(transferStatsThrottleTimer);
+      pendingTransferStats = null;
+      applyTransferStats(nextStats);
+      return;
+    }
+
+    pendingTransferStats = nextStats;
+    if (transferStatsThrottleTimer) return;
+
+    transferStatsThrottleTimer = setTimeout(() => {
+      transferStatsThrottleTimer = null;
+      if (!pendingTransferStats) return;
+      const latestStats = pendingTransferStats;
+      pendingTransferStats = null;
+      applyTransferStats(latestStats);
+    }, TRANSFER_STATS_THROTTLE_MS - elapsed);
   }
 
   function formatDuration(ms = 0) {
@@ -276,18 +329,7 @@
     EventsOn("transfer_stats", (dataStr) => {
       try {
         const nextStats = JSON.parse(dataStr);
-        transferStats = {
-          startedAt: nextStats.startedAt || transferStats.startedAt,
-          filesReceived: Number(nextStats.filesReceived) || 0,
-          bytesReceived: Number(nextStats.bytesReceived) || 0,
-          filesSent: Number(nextStats.filesSent) || 0,
-          bytesSent: Number(nextStats.bytesSent) || 0,
-          activeUploads: Number(nextStats.activeUploads) || 0,
-          activeDownloads: Number(nextStats.activeDownloads) || 0,
-          lastFilename: nextStats.lastFilename || "",
-          lastDirection: nextStats.lastDirection || "",
-        };
-        transferStatsNow = Date.now();
+        scheduleTransferStatsUpdate(normalizeTransferStats(nextStats));
       } catch {
         addSessionEntry("Stats update failed", "Unable to read transfer stats", "warn");
       }
@@ -439,6 +481,7 @@
     OnFileDropOff();
     clearTimeout(batchTimer);
     clearTimeout(_progressTimeout);
+    clearTimeout(transferStatsThrottleTimer);
     clearInterval(transferStatsTimer);
   });
 
