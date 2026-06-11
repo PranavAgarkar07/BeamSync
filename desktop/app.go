@@ -501,6 +501,7 @@ func (a *App) GetReceivedFiles() []ReceivedFile {
 	}
 	return result
 }
+
 // ---------------------------------------------------------
 // TRANSFER PERMISSION METHODS
 // ---------------------------------------------------------
