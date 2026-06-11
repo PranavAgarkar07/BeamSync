@@ -485,7 +485,7 @@ func (a *App) GetReceivedFiles() []ReceivedFile {
 			file: ReceivedFile{
 				Name:      e.Name(),
 				SizeBytes: info.Size(),
-				ModTime:   info.ModTime().Format("02 Jan · 15:04"),
+				ModTime:   info.ModTime().Format("02 Jan - 15:04"),
 			},
 			modTime: info.ModTime(),
 		})
