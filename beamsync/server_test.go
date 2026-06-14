@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -136,6 +137,36 @@ func TestSafeEmitHandlesNilCallbackAndCallbackPanic(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("safeEmit did not invoke callback")
+	}
+}
+
+func TestSafeEmitDoesNotSpawnPerEventGoroutines(t *testing.T) {
+	block := make(chan struct{})
+	started := make(chan struct{}, 1)
+	callback := func(string, string) {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-block
+	}
+
+	before := runtime.NumGoroutine()
+	for i := 0; i < 50; i++ {
+		safeEmit(callback, "upload_progress", "file.txt|1|50")
+	}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("dispatcher did not start processing events")
+	}
+
+	after := runtime.NumGoroutine()
+	close(block)
+
+	if growth := after - before; growth > 5 {
+		t.Fatalf("goroutine count grew by %d; safeEmit should use one bounded dispatcher", growth)
 	}
 }
 
