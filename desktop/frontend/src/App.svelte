@@ -642,15 +642,48 @@
     settingsDirty = true;
   }
 
-  function addTrustedDevice() {
-    const ip = newTrustedIP.trim();
-    if (!ip) return;
-    if (!settings.trustedDevices.find(d => d.ip === ip)) {
-      settings.trustedDevices = [...settings.trustedDevices, { ip, friendlyName: newTrustedName.trim() || ip }];
-      settingsDirty = true;
+  function isValidIPv4(ip) {
+    const parts = ip.split(".");
+    return parts.length === 4 && parts.every((part) => {
+      if (!/^\d+$/.test(part)) return false;
+      const value = Number(part);
+      return value >= 0 && value <= 255 && String(value) === String(Number(part));
+    });
+  }
+
+  function upsertDevice(listName, ip, friendlyName) {
+    const trimmedIP = ip.trim();
+    const trimmedName = friendlyName.trim() || trimmedIP;
+    if (!trimmedIP) return false;
+    if (!isValidIPv4(trimmedIP)) {
+      toast("Enter a valid IPv4 address", "error");
+      return false;
     }
-    newTrustedIP = "";
-    newTrustedName = "";
+    if (settings[listName].length >= 50) {
+      toast("Device list limit reached", "warn");
+      return false;
+    }
+    if (settings[listName].find((device) => device.ip === trimmedIP)) {
+      toast("Device already exists", "warn");
+      return false;
+    }
+    settings[listName] = [...settings[listName], { ip: trimmedIP, friendlyName: trimmedName }];
+    settingsDirty = true;
+    return true;
+  }
+
+  function updateDeviceName(listName, ip, friendlyName) {
+    settings[listName] = settings[listName].map((device) =>
+      device.ip === ip ? { ...device, friendlyName: friendlyName.trim() || ip } : device
+    );
+    settingsDirty = true;
+  }
+
+  function addTrustedDevice() {
+    if (upsertDevice("trustedDevices", newTrustedIP, newTrustedName)) {
+      newTrustedIP = "";
+      newTrustedName = "";
+    }
   }
 
   function removeTrustedDevice(ip) {
@@ -659,14 +692,10 @@
   }
 
   function addBlockedDevice() {
-    const ip = newBlockedIP.trim();
-    if (!ip) return;
-    if (!settings.blockedDevices.find(d => d.ip === ip)) {
-      settings.blockedDevices = [...settings.blockedDevices, { ip, friendlyName: newBlockedName.trim() || ip }];
-      settingsDirty = true;
+    if (upsertDevice("blockedDevices", newBlockedIP, newBlockedName)) {
+      newBlockedIP = "";
+      newBlockedName = "";
     }
-    newBlockedIP = "";
-    newBlockedName = "";
   }
 
   function removeBlockedDevice(ip) {
@@ -1049,11 +1078,70 @@
 
             <div style="margin-bottom: 2rem;">
               <h3>Transfer Mode</h3>
-              {#each [{v: "ask_first", l: "Ask First"}, {v: "accept_all", l: "Accept All"}, {v: "block_all", l: "Block All"}] as opt}
+              {#each [{v: "ask_first", l: "Ask First"}, {v: "accept_all", l: "Accept All"}, {v: "trusted_only", l: "Trusted Only"}, {v: "block_all", l: "Block All"}] as opt}
                 <label style="display: block; margin: 0.5rem 0;">
                   <input type="radio" bind:group={settings.mode} value={opt.v} on:change={() => settingsDirty = true}> {opt.l}
                 </label>
               {/each}
+            </div>
+
+            <div style="margin-bottom: 2rem;">
+              <h3>Devices</h3>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem;">
+                <section style="border: 2px solid var(--nb-border-color); background: var(--nb-bg); padding: 1rem;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
+                    <h4 style="margin: 0;">Trusted Devices</h4>
+                    <span class="nb-badge">{settings.trustedDevices.length}/50</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 0.5rem; margin-bottom: 0.75rem;">
+                    <input class="nb-input" bind:value={newTrustedIP} placeholder="192.168.1.42">
+                    <input class="nb-input" bind:value={newTrustedName} placeholder="Phone">
+                    <button class="nb-btn nb-btn--secondary nb-btn--sm" on:click={addTrustedDevice}>ADD</button>
+                  </div>
+                  {#if settings.trustedDevices.length === 0}
+                    <p style="margin: 0; color: var(--nb-text-muted); font-size: 0.85rem;">No trusted devices yet. Devices you approve can appear here.</p>
+                  {:else}
+                    <div style="display: grid; gap: 0.5rem;">
+                      {#each settings.trustedDevices as device}
+                        <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; border: 2px solid var(--nb-border-color); background: var(--nb-surface); padding: 0.75rem;">
+                          <div style="min-width: 0;">
+                            <input class="nb-input" value={device.friendlyName || device.ip} on:change={(e) => updateDeviceName("trustedDevices", device.ip, e.currentTarget.value)} style="width: 100%; margin-bottom: 0.4rem;">
+                            <div style="font-family: monospace; color: var(--nb-text-muted); font-size: 0.8rem;">{device.ip}</div>
+                          </div>
+                          <button class="nb-btn nb-btn--ghost nb-btn--sm" on:click={() => removeTrustedDevice(device.ip)}>REMOVE</button>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </section>
+
+                <section style="border: 2px solid var(--nb-border-color); background: var(--nb-bg); padding: 1rem;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
+                    <h4 style="margin: 0;">Blocked Devices</h4>
+                    <span class="nb-badge">{settings.blockedDevices.length}/50</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 0.5rem; margin-bottom: 0.75rem;">
+                    <input class="nb-input" bind:value={newBlockedIP} placeholder="192.168.1.99">
+                    <input class="nb-input" bind:value={newBlockedName} placeholder="Unknown laptop">
+                    <button class="nb-btn nb-btn--secondary nb-btn--sm" on:click={addBlockedDevice}>ADD</button>
+                  </div>
+                  {#if settings.blockedDevices.length === 0}
+                    <p style="margin: 0; color: var(--nb-text-muted); font-size: 0.85rem;">No blocked devices yet. Rejected devices can be added here.</p>
+                  {:else}
+                    <div style="display: grid; gap: 0.5rem;">
+                      {#each settings.blockedDevices as device}
+                        <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; border: 2px solid var(--nb-border-color); background: var(--nb-surface); padding: 0.75rem;">
+                          <div style="min-width: 0;">
+                            <input class="nb-input" value={device.friendlyName || device.ip} on:change={(e) => updateDeviceName("blockedDevices", device.ip, e.currentTarget.value)} style="width: 100%; margin-bottom: 0.4rem;">
+                            <div style="font-family: monospace; color: var(--nb-text-muted); font-size: 0.8rem;">{device.ip}</div>
+                          </div>
+                          <button class="nb-btn nb-btn--ghost nb-btn--sm" on:click={() => removeBlockedDevice(device.ip)}>REMOVE</button>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </section>
+              </div>
             </div>
 
             <div style="margin-bottom: 2rem;">
