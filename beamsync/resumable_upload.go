@@ -41,7 +41,6 @@ type resumableManifest struct {
 
 func handleResumableUpload(uploadDir string, state *serverState, emit func(string, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
 		w.Header().Set("Accept-Ranges", "bytes")
 		if r.Method != http.MethodPut && r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -151,7 +150,6 @@ func handleResumableUpload(uploadDir string, state *serverState, emit func(strin
 
 func handleResumableUploadStatus(uploadDir string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
 		w.Header().Set("Accept-Ranges", "bytes")
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

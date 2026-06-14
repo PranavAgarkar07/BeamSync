@@ -494,7 +494,6 @@ func generateToken() string {
 // Exempt routes: "/" (serves UI page).
 func tokenMiddleware(token string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -550,7 +549,6 @@ func rateLimitMiddleware(limiter *clientRateLimiter, settings *TransferSettings,
 	return func(w http.ResponseWriter, r *http.Request) {
 		isUI := r.URL.Path == "/" || r.URL.Path == "/logo.png"
 		if !isUI {
-			setCORSHeaders(w)
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
 				return
@@ -725,6 +723,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			return
 		}
 		fmt.Println("🌐 GET / - Serving upload UI")
+		setCORSHeaders(w)
 		content, err := uiFS.ReadFile("ui/upload.html")
 		if err != nil {
 			http.Error(w, "UI Load Error", http.StatusInternalServerError)
@@ -745,6 +744,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}))
 
 	mux.HandleFunc("/logo.png", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 		w.Header().Set("Content-Type", "image/png")
 		content, err := uiFS.ReadFile("ui/logo.png")
@@ -756,7 +756,6 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}))
 
 	mux.HandleFunc("/stats", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -769,7 +768,6 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 	// ── Request Transfer (ask before accepting) ──────────────────────────────
 	mux.HandleFunc("/request-transfer", rateLimitMiddleware(transferLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -1281,6 +1279,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	}
 
 	mux.HandleFunc("/", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		w.Header().Set("Content-Type", "text/html")
 		content, err := uiFS.ReadFile("ui/download.html")
@@ -1294,6 +1293,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	}))
 
 	mux.HandleFunc("/logo.png", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 		w.Header().Set("Content-Type", "image/png")
 		content, err := uiFS.ReadFile("ui/logo.png")
@@ -1308,7 +1308,6 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		filePath := filePaths[0]
 		filename := filepath.Base(filePath)
 		mux.HandleFunc("/download", rateLimitMiddleware(downloadLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
-			setCORSHeaders(w)
 			activeDownloads := atomic.AddInt32(&state.uploadingCount, 1)
 			emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
 			defer func() {
@@ -1380,7 +1379,6 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			idx := i
 			filePath := path
 			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), rateLimitMiddleware(downloadLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
-				setCORSHeaders(w)
 				realName := filepath.Base(filePath)
 				activeDownloads := atomic.AddInt32(&state.uploadingCount, 1)
 				emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
