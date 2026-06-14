@@ -30,6 +30,13 @@ type EventCallback func(eventName string, data string)
 //go:embed ui/*.html ui/*.png
 var uiFS embed.FS
 
+var chunkBufferPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 8*1024*1024)
+		return &buf
+	},
+}
+
 // serverState holds per-instance connection tracking (no more package-level globals).
 type serverState struct {
 	mu             sync.Mutex
@@ -308,7 +315,14 @@ func (dw *downloadProgressWriter) Write(p []byte) (int, error) {
 // copyChunked accumulates those 4 KB reads into a single chunkSize Write(),
 // giving the OS large sequential disk I/O instead of random small writes.
 func copyChunked(dst io.Writer, src io.Reader, chunkSize int) (int64, error) {
-	buf := make([]byte, chunkSize)
+	var buf []byte
+	if chunkSize == 8*1024*1024 {
+		bufPtr := chunkBufferPool.Get().(*[]byte)
+		defer chunkBufferPool.Put(bufPtr)
+		buf = *bufPtr
+	} else {
+		buf = make([]byte, chunkSize)
+	}
 	var total int64
 	for {
 		n, err := io.ReadFull(src, buf)
