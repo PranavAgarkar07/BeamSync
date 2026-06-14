@@ -463,10 +463,16 @@ func (a *App) GetReceivedFiles() []ReceivedFile {
 	}
 	entries, err := os.ReadDir(a.lastSavePath)
 	if err != nil {
-		fmt.Println("⚠️ GetReceivedFiles: could not read dir:", err)
+		fmt.Println("GetReceivedFiles: could not read dir:", err)
 		return nil
 	}
-	var result []ReceivedFile
+
+	type receivedFileWithModTime struct {
+		file    ReceivedFile
+		modTime time.Time
+	}
+
+	var files []receivedFileWithModTime
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -475,21 +481,24 @@ func (a *App) GetReceivedFiles() []ReceivedFile {
 		if err != nil {
 			continue
 		}
-		result = append(result, ReceivedFile{
-			Name:      e.Name(),
-			SizeBytes: info.Size(),
-			ModTime:   info.ModTime().Format("02 Jan · 15:04"),
+		files = append(files, receivedFileWithModTime{
+			file: ReceivedFile{
+				Name:      e.Name(),
+				SizeBytes: info.Size(),
+				ModTime:   info.ModTime().Format("02 Jan - 15:04"),
+			},
+			modTime: info.ModTime(),
 		})
 	}
-	// Sort newest-first by filesystem mod time
-	sort.Slice(result, func(i, j int) bool {
-		ii, _ := os.Stat(filepath.Join(a.lastSavePath, result[i].Name))
-		jj, _ := os.Stat(filepath.Join(a.lastSavePath, result[j].Name))
-		if ii == nil || jj == nil {
-			return false
-		}
-		return ii.ModTime().After(jj.ModTime())
+	// Sort newest-first by the mod time already loaded from the directory scan.
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime.After(files[j].modTime)
 	})
+
+	result := make([]ReceivedFile, 0, len(files))
+	for _, file := range files {
+		result = append(result, file.file)
+	}
 	return result
 }
 
