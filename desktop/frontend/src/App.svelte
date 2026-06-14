@@ -726,14 +726,18 @@
   // Drag & drop
   function handleDragEnter(e) {
     e.preventDefault();
+    e.stopPropagation();
     dragCounter += 1;
     isDragOver = true;
   }
   function handleDragOver(e) {
     e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
   }
   function handleDragLeave(e) {
     e.preventDefault();
+    e.stopPropagation();
     dragCounter -= 1;
     if (dragCounter <= 0) {
       dragCounter = 0;
@@ -752,6 +756,7 @@
 
   function handleDrop(e) {
     e.preventDefault();
+    e.stopPropagation();
     dragCounter = 0;
     isDragOver = false;
     if (dropGuard) return;
@@ -787,7 +792,13 @@
   $: sortedFiles = [...receivedFiles];
 </script>
 
-<svelte:window on:mousemove={handleMouseMove} />
+<svelte:window
+  on:mousemove={handleMouseMove}
+  on:dragenter={handleDragEnter}
+  on:dragover={handleDragOver}
+  on:dragleave={handleDragLeave}
+  on:drop={handleDrop}
+/>
 
 {#if transferRequest}
   <div class="nb-card" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10000; width: 440px; padding: 2.5rem; border: 4px solid var(--nb-border-color); background: var(--nb-surface);">
