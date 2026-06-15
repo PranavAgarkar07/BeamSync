@@ -14,30 +14,43 @@ def save_wav(filename, samples, sample_rate=44100):
 
 SR = 44100
 
-# 1. Hover: Sharp, short, high-tech "Tick"
-# High frequency blip with fast decay
+# 1. Hover: Soft shimmer
 hover_samples = []
-for t in range(int(SR * 0.05)): # 0.05 seconds
-    env = 1.0 - (t / (SR * 0.05)) # Linear decay
-    # Frequency modulation for "chirp"
-    val = math.sin(2 * math.pi * (2000 - t/10) * t / SR) * env
-    hover_samples.append(val * 0.3)
+
+duration = 0.06
+
+for t in range(int(SR * duration)):
+    progress = t / (SR * duration)
+
+    env = math.exp(-4 * progress)
+
+    tone = math.sin(2 * math.pi * 1400 * t / SR)
+
+    noise = (random.random() * 2 - 1) * 0.15
+
+    val = (tone * 0.8 + noise * 0.2) * env
+
+    hover_samples.append(val * 0.15)
 
 save_wav("build/bin/sounds/hover.wav", hover_samples)
 
-# Separate click sound - softer UI pop
+# Click: soft tactile button press
 click_samples = []
-for t in range(int(SR * 0.05)):
-    progress = t / (SR * 0.05)
 
-    env = math.exp(-6 * progress)
+duration = 0.05
 
-    fundamental = math.sin(2 * math.pi * 1200 * t / SR)
-    harmonic = 0.4 * math.sin(2 * math.pi * 2400 * t / SR)
+for t in range(int(SR * duration)):
+    progress = t / (SR * duration)
 
-    val = (fundamental + harmonic) * env
+    env = math.exp(-8 * progress)
 
-    click_samples.append(val * 0.25)
+    body = math.sin(2 * math.pi * 600 * t / SR)
+
+    noise = (random.random() * 2 - 1) * 0.4
+
+    val = (body * 0.7 + noise * 0.3) * env
+
+    click_samples.append(val * 0.3)
 
 save_wav("build/bin/sounds/click.wav", click_samples)
 
