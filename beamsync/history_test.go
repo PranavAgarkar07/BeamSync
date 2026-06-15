@@ -1,6 +1,7 @@
 package beamsync
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -38,6 +39,30 @@ func TestTransferHistoryCopiesEntries(t *testing.T) {
 	}
 }
 
+func TestTransferHistoryRingBufferWrapsNewestFirst(t *testing.T) {
+	history := NewTransferHistory(3)
+
+	for i := 1; i <= 6; i++ {
+		history.Add(TransferRecord{
+			Filename:  fmt.Sprintf("file-%d.txt", i),
+			Direction: TransferDirectionReceive,
+			Status:    TransferStatusCompleted,
+		})
+	}
+
+	records := history.List()
+	if len(records) != 3 {
+		t.Fatalf("expected capped history length 3, got %d", len(records))
+	}
+
+	want := []string{"file-6.txt", "file-5.txt", "file-4.txt"}
+	for i, filename := range want {
+		if records[i].Filename != filename {
+			t.Fatalf("record %d filename = %q, want %q; records=%#v", i, records[i].Filename, filename, records)
+		}
+	}
+}
+
 func TestTransferHistoryFillsTimingMetadata(t *testing.T) {
 	history := NewTransferHistory(10)
 	startedAt := time.Now().Add(-2 * time.Second)
@@ -53,5 +78,25 @@ func TestTransferHistoryFillsTimingMetadata(t *testing.T) {
 	}
 	if record.DurationMillis <= 0 {
 		t.Fatalf("expected positive duration, got %d", record.DurationMillis)
+	}
+}
+
+func BenchmarkTransferHistoryAddAtCapacity(b *testing.B) {
+	history := NewTransferHistory(100)
+	for i := 0; i < 100; i++ {
+		history.Add(TransferRecord{
+			Filename:  fmt.Sprintf("warmup-%d.txt", i),
+			Direction: TransferDirectionReceive,
+			Status:    TransferStatusCompleted,
+		})
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		history.Add(TransferRecord{
+			Filename:  "file.txt",
+			Direction: TransferDirectionReceive,
+			Status:    TransferStatusCompleted,
+		})
 	}
 }
