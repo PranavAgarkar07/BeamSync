@@ -24,82 +24,98 @@ for t in range(int(SR * 0.05)): # 0.05 seconds
     hover_samples.append(val * 0.3)
 
 save_wav("build/bin/sounds/hover.wav", hover_samples)
-# Alias for click/blip
-save_wav("build/bin/sounds/click.wav", hover_samples)
 
+# Separate click sound - softer UI pop
+click_samples = []
+for t in range(int(SR * 0.05)):
+    progress = t / (SR * 0.05)
 
-# 2. Connect: "Data Uplink" (Two-tone digital handshake)
-# 800Hz -> 1600Hz
+    env = math.exp(-6 * progress)
+
+    fundamental = math.sin(2 * math.pi * 1200 * t / SR)
+    harmonic = 0.4 * math.sin(2 * math.pi * 2400 * t / SR)
+
+    val = (fundamental + harmonic) * env
+
+    click_samples.append(val * 0.25)
+
+save_wav("build/bin/sounds/click.wav", click_samples)
+
+# 2. Connect: Warm acknowledgment chime
 connect_samples = []
-duration = 0.2
-swap_point = int(SR * 0.1)
+duration = 0.22
+
 for t in range(int(SR * duration)):
-    freq = 800 if t < swap_point else 1600
-    val = math.sin(2 * math.pi * freq * t / SR)
-    # Add slight distortion (square-ish)
-    val = 1.0 if val > 0 else -1.0
-    connect_samples.append(val * 0.15)
+    progress = t / (SR * duration)
+
+    env = math.exp(-3 * progress)
+
+    base = math.sin(2 * math.pi * 880 * t / SR)
+    harmonic = 0.5 * math.sin(2 * math.pi * 1320 * t / SR)
+
+    val = (base + harmonic) * env
+
+    connect_samples.append(val * 0.25)
 
 save_wav("build/bin/sounds/connect.wav", connect_samples)
 
-
-# 3. Startup: "System Power Up" (Rising sweep with vibrato)
+# 3. Startup: Modern ascending startup chime
 startup_samples = []
-duration = 1.5
-for t in range(int(SR * duration)):
-    progress = t / (SR * duration)
-    # Pitch rises from 100Hz to 800Hz
-    base_freq = 100 + (700 * (progress**2)) # Exponential rise
-    # Add "Cyberpunk" Vibrato
-    vibrato = math.sin(2 * math.pi * 30 * t / SR) * 20 
-    
-    phase = 2 * math.pi * (base_freq + vibrato) * t / SR
-    
-    # Sawtooth-like synthesis (additive)
-    val = (math.sin(phase) + 0.5 * math.sin(phase * 2)) / 1.5
-    
-    # Envelope
-    env = 1.0
-    if progress > 0.8: # Fade out at end
-        env = 1.0 - ((progress - 0.8) / 0.2)
-    elif progress < 0.1: # Fade in
-        env = progress / 0.1
-        
-    startup_samples.append(val * env * 0.4)
+
+notes = [523.25, 659.25, 783.99]  # C5 E5 G5
+note_duration = 0.22
+total_duration = 0.9
+
+for t in range(int(SR * total_duration)):
+    current_time = t / SR
+
+    if current_time < note_duration:
+        freq = notes[0]
+    elif current_time < note_duration * 2:
+        freq = notes[1]
+    else:
+        freq = notes[2]
+
+    progress = current_time / total_duration
+
+    env = math.exp(-2.5 * progress)
+
+    base = math.sin(2 * math.pi * freq * t / SR)
+    harmonic = 0.2 * math.sin(2 * math.pi * freq * 2 * t / SR)
+
+    val = (base + harmonic) * env
+
+    startup_samples.append(val * 0.18)
 
 save_wav("build/bin/sounds/startup.wav", startup_samples)
 
-
-# 4. Success: "Task Complete" (Major Triad Arpeggio)
-# C5 (523.25), E5 (659.25), G5 (783.99)
-notes = [523.25, 659.25, 783.99, 1046.50] # C E G C(high)
-note_len = 0.08
-total_len = note_len * len(notes) + 0.5 # decay
+# 4. Success: Modern completion chime
 success_samples = []
 
-current_note_idx = 0
-time_in_note = 0
+notes = [523.25, 659.25, 783.99]
+note_duration = 0.18
+total_duration = 0.8
 
-for t in range(int(SR * total_len)):
-    if current_note_idx < len(notes):
-        freq = notes[current_note_idx]
-        val = math.sin(2 * math.pi * freq * t / SR)
-        # Square wave for "retro" feel
-        val = 0.5 if val > 0 else -0.5
-        
-        success_samples.append(val * 0.2)
-        
-        time_in_note += 1
-        if time_in_note > SR * note_len:
-            time_in_note = 0
-            current_note_idx += 1
+for t in range(int(SR * total_duration)):
+    current_time = t / SR
+
+    if current_time < note_duration:
+        freq = notes[0]
+    elif current_time < note_duration * 2:
+        freq = notes[1]
     else:
-        # Reverb/Decay tail
-        val = (math.sin(2 * math.pi * notes[-1] * t / SR) + math.sin(2 * math.pi * notes[0] * t / SR)) * 0.5
-        # Fade out
-        remaining = 1.0 - ((t - (SR * note_len * len(notes))) / (SR * 0.5))
-        if remaining < 0: remaining = 0
-        success_samples.append(val * 0.2 * remaining)
+        freq = notes[2]
+
+    progress = current_time / total_duration
+
+    env = math.exp(-2.5 * progress)
+
+    base = math.sin(2 * math.pi * freq * t / SR)
+    harmonic = 0.35 * math.sin(2 * math.pi * freq * 2 * t / SR)
+
+    val = (base + harmonic) * env
+
+    success_samples.append(val * 0.25)
 
 save_wav("build/bin/sounds/transfer_complete.wav", success_samples)
 
