@@ -16,6 +16,7 @@ import (
 	stdruntime "runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -34,6 +35,8 @@ type App struct {
 	serverApp    *beamsync.HTTPServer
 	senderApp    *beamsync.HTTPServer
 	eventChan    chan EventData
+	eventsClosed chan struct{}
+	shutdownOnce sync.Once
 	lastSavePath string
 	currentIP    string
 	currentPort  string
@@ -64,7 +67,8 @@ type ReceivedFile struct {
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
-		eventChan: make(chan EventData, 100),
+		eventChan:    make(chan EventData, 100),
+		eventsClosed: make(chan struct{}),
 	}
 }
 
@@ -153,17 +157,25 @@ func (a *App) startup(ctx context.Context) {
 
 // processEvents handles backend events on a safe goroutine before relaying to Wails.
 func (a *App) processEvents() {
-	for event := range a.eventChan {
-		if event.Name == "device_connected" {
-			currentRealIP := getLocalIP()
-			if a.currentIP != "" && a.currentIP != currentRealIP {
-				fmt.Printf("🔄 IP Change Detected! Old: %s, New: %s\n", a.currentIP, currentRealIP)
-				a.currentIP = currentRealIP
-				newURL := fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), a.currentIP, a.currentPort)
-				a.safeEmit("url_changed", newURL)
+	for {
+		select {
+		case event, ok := <-a.eventChan:
+			if !ok {
+				return
 			}
+			if event.Name == "device_connected" {
+				currentRealIP := getLocalIP()
+				if a.currentIP != "" && a.currentIP != currentRealIP {
+					fmt.Printf("🔄 IP Change Detected! Old: %s, New: %s\n", a.currentIP, currentRealIP)
+					a.currentIP = currentRealIP
+					newURL := fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), a.currentIP, a.currentPort)
+					a.safeEmit("url_changed", newURL)
+				}
+			}
+			a.safeEmit(event.Name, event.Data)
+		case <-a.eventsClosed:
+			return
 		}
-		a.safeEmit(event.Name, event.Data)
 	}
 }
 
@@ -184,19 +196,21 @@ func (a *App) safeEmit(eventName string, data interface{}) {
 
 // shutdown is called when the app is closing.
 func (a *App) shutdown(ctx context.Context) {
-	close(a.eventChan)
-	if a.serverApp != nil {
-		fmt.Println("🛑 Shutting down receiver server...")
-		if err := a.serverApp.Shutdown(); err != nil {
-			fmt.Println("⚠️ Server shutdown error:", err)
+	a.shutdownOnce.Do(func() {
+		if a.serverApp != nil {
+			fmt.Println("🛑 Shutting down receiver server...")
+			if err := a.serverApp.Shutdown(); err != nil {
+				fmt.Println("⚠️ Server shutdown error:", err)
+			}
 		}
-	}
-	if a.senderApp != nil {
-		fmt.Println("🛑 Shutting down sender server...")
-		if err := a.senderApp.Shutdown(); err != nil {
-			fmt.Println("⚠️ Sender shutdown error:", err)
+		if a.senderApp != nil {
+			fmt.Println("🛑 Shutting down sender server...")
+			if err := a.senderApp.Shutdown(); err != nil {
+				fmt.Println("⚠️ Sender shutdown error:", err)
+			}
 		}
-	}
+		close(a.eventsClosed)
+	})
 }
 
 // PlaySound is exposed to the frontend.
@@ -214,6 +228,8 @@ func (a *App) PlaySound(name string) {
 func (a *App) makeCallback() beamsync.EventCallback {
 	return func(name string, data string) {
 		select {
+		case <-a.eventsClosed:
+			return
 		case a.eventChan <- EventData{Name: name, Data: data}:
 		default:
 			fmt.Printf("Dropping frontend event because queue is full: %s\n", name)
