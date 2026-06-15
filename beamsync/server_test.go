@@ -31,6 +31,9 @@ func TestTokenMiddlewareRejectsMissingOrInvalidToken(t *testing.T) {
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%s returned %d, want %d", target, rec.Code, http.StatusForbidden)
 		}
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Fatalf("%s set Access-Control-Allow-Origin = %q, want empty", target, got)
+		}
 	}
 }
 
@@ -45,12 +48,18 @@ func TestTokenMiddlewareAllowsValidTokenAndOptions(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("valid token status = %d, want %d", rec.Code, http.StatusAccepted)
 	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("valid token response set Access-Control-Allow-Origin = %q, want empty", got)
+	}
 
 	optionsReq := httptest.NewRequest(http.MethodOptions, "/upload", nil)
 	optionsRec := httptest.NewRecorder()
 	handler(optionsRec, optionsReq)
 	if optionsRec.Code != http.StatusNoContent {
 		t.Fatalf("OPTIONS status = %d, want %d", optionsRec.Code, http.StatusNoContent)
+	}
+	if got := optionsRec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("OPTIONS response set Access-Control-Allow-Origin = %q, want empty", got)
 	}
 }
 
@@ -247,6 +256,9 @@ func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
 	if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
 		t.Fatalf("Content-Type = %q, want text/html", resp.Header.Get("Content-Type"))
 	}
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("root Access-Control-Allow-Origin = %q, want *", got)
+	}
 	if !strings.Contains(string(body), token) {
 		t.Fatal("root page did not include session token")
 	}
@@ -262,6 +274,9 @@ func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
 	heartbeatResp.Body.Close()
 	if heartbeatResp.StatusCode != http.StatusOK {
 		t.Fatalf("heartbeat status = %d, want %d", heartbeatResp.StatusCode, http.StatusOK)
+	}
+	if got := heartbeatResp.Header.Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("heartbeat Access-Control-Allow-Origin = %q, want empty", got)
 	}
 
 	if !waitForEvent(events, "device_connected", time.Second) {
@@ -289,6 +304,9 @@ func TestUploadWithoutFileReturnsBadRequest(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("upload status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("upload Access-Control-Allow-Origin = %q, want empty", got)
 	}
 }
 
@@ -344,6 +362,9 @@ func TestUploadWithFileSavesToDiskAndEmitsEvents(t *testing.T) {
 	defer statsResp.Body.Close()
 	if statsResp.StatusCode != http.StatusOK {
 		t.Fatalf("stats status = %d, want %d", statsResp.StatusCode, http.StatusOK)
+	}
+	if got := statsResp.Header.Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("stats Access-Control-Allow-Origin = %q, want empty", got)
 	}
 	var stats TransferStats
 	if err := json.NewDecoder(statsResp.Body).Decode(&stats); err != nil {
