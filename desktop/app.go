@@ -394,6 +394,58 @@ func (a *App) StartSender() string {
 	return url
 }
 
+// SendFiles starts a sender with the given file paths (used by drag-and-drop).
+func (a *App) SendFiles(filePaths []string) string {
+	if len(filePaths) == 0 {
+		return "Cancelled"
+	}
+
+	if a.senderApp != nil {
+		fmt.Println("🔄 Stopping previous sender server...")
+		if err := a.senderApp.Shutdown(); err != nil {
+			fmt.Println("⚠️ Failed to stop previous sender:", err)
+		}
+		a.senderApp = nil
+	}
+
+	app, port, token := beamsync.StartSender(filePaths, a.makeCallback())
+	a.senderApp = app
+
+	localIP := getLocalIP()
+	a.currentIP = localIP
+	a.currentPort = port
+
+	url := fmt.Sprintf("%s://%s:%s/", beamsync.ServerScheme(), localIP, port)
+
+	fmt.Println("========================================")
+	fmt.Println("📤 SENDER STARTED (from drag-drop):", url)
+	fmt.Printf("   token: %s\n", token)
+	fmt.Println("========================================")
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		a.safeEmit("sender_started", url)
+
+		type fileEntry struct {
+			Name      string `json:"name"`
+			SizeBytes int64  `json:"sizeBytes"`
+		}
+		entries := make([]fileEntry, 0, len(filePaths))
+		for _, p := range filePaths {
+			entry := fileEntry{Name: filepath.Base(p)}
+			if fi, err := os.Stat(p); err == nil {
+				entry.SizeBytes = fi.Size()
+			}
+			entries = append(entries, entry)
+		}
+		if b, err := json.Marshal(entries); err == nil {
+			a.safeEmit("sender_files", string(b))
+		}
+	}()
+
+	return url
+}
+
 // StopReceiver stops the receiver server.
 func (a *App) StopReceiver() string {
 	if a.serverApp != nil {
