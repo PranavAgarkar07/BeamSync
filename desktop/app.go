@@ -213,7 +213,11 @@ func (a *App) PlaySound(name string) {
 // makeCallback returns an EventCallback that queues events into the channel.
 func (a *App) makeCallback() beamsync.EventCallback {
 	return func(name string, data string) {
-		a.eventChan <- EventData{Name: name, Data: data}
+		select {
+		case a.eventChan <- EventData{Name: name, Data: data}:
+		default:
+			fmt.Printf("Dropping frontend event because queue is full: %s\n", name)
+		}
 	}
 }
 

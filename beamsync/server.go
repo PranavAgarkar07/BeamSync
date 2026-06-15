@@ -27,6 +27,58 @@ import (
 
 type EventCallback func(eventName string, data string)
 
+const eventDispatcherBufferSize = 256
+
+type eventDispatchJob struct {
+	emit  EventCallback
+	event string
+	data  string
+}
+
+type eventDispatcher struct {
+	queue chan eventDispatchJob
+}
+
+func newEventDispatcher(bufferSize int) *eventDispatcher {
+	if bufferSize <= 0 {
+		bufferSize = eventDispatcherBufferSize
+	}
+	dispatcher := &eventDispatcher{
+		queue: make(chan eventDispatchJob, bufferSize),
+	}
+	go dispatcher.run()
+	return dispatcher
+}
+
+func (d *eventDispatcher) run() {
+	for job := range d.queue {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Printf("Event callback panic: %v\n", r)
+				}
+			}()
+			if job.emit != nil {
+				job.emit(job.event, job.data)
+			}
+		}()
+	}
+}
+
+func (d *eventDispatcher) emit(job eventDispatchJob) bool {
+	if job.emit == nil {
+		return true
+	}
+	select {
+	case d.queue <- job:
+		return true
+	default:
+		return false
+	}
+}
+
+var defaultEventDispatcher = newEventDispatcher(eventDispatcherBufferSize)
+
 //go:embed ui/*.html ui/*.png
 var uiFS embed.FS
 
@@ -615,20 +667,14 @@ func startWatchdog(ctx context.Context, state *serverState, emit func(string, st
 	}()
 }
 
-// safeEmit dispatches an event in its own goroutine with panic recovery.
+// safeEmit queues an event without spawning a goroutine per notification.
 func safeEmit(emit EventCallback, event, data string) {
-	go func(evt, dt string) {
-		defer func() {
-			if r := recover(); r != nil {
-				fmt.Printf("⚠️ Event callback panic: %v\n", r)
-			}
-		}()
-		fmt.Printf("📡 Emitting event: %s | data: %s\n", evt, dt)
-		if emit != nil {
-			emit(evt, dt)
-			fmt.Printf("✅ Event emitted: %s\n", evt)
-		}
-	}(event, data)
+	if emit == nil {
+		return
+	}
+	if !defaultEventDispatcher.emit(eventDispatchJob{emit: emit, event: event, data: data}) {
+		fmt.Printf("Dropping event because dispatch queue is full: %s\n", event)
+	}
 }
 
 func logTransfer(history *TransferHistory, emit func(string, string), record TransferRecord) {
