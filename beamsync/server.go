@@ -759,7 +759,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			return
 		}
 
-		// Extract sender IP, honoring proxy headers when present.
+		// Extract sender IP from the actual TCP connection.
 		senderIP := clientIP(r)
 
 		var req struct {
