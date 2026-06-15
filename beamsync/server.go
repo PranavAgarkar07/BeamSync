@@ -514,22 +514,6 @@ func setCORSHeaders(w http.ResponseWriter) {
 }
 
 func clientIP(r *http.Request) string {
-	forwardedFor := r.Header.Get("X-Forwarded-For")
-	for _, part := range strings.Split(forwardedFor, ",") {
-		ip := strings.TrimSpace(part)
-		if ip == "" {
-			continue
-		}
-		if parsed := net.ParseIP(ip); parsed != nil {
-			return parsed.String()
-		}
-		if host, _, err := net.SplitHostPort(ip); err == nil {
-			if parsed := net.ParseIP(host); parsed != nil {
-				return parsed.String()
-			}
-		}
-	}
-
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil && host != "" {
 		return host

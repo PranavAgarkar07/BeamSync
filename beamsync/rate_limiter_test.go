@@ -111,7 +111,17 @@ func TestRateLimitMiddlewareReturns429(t *testing.T) {
 	}
 }
 
-func TestRateLimitMiddlewareUsesXForwardedFor(t *testing.T) {
+func TestClientIPIgnoresSpoofedXForwardedFor(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.1:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.10, 192.168.1.100")
+
+	if got := clientIP(req); got != "10.0.0.1" {
+		t.Fatalf("clientIP = %q, want real RemoteAddr IP", got)
+	}
+}
+
+func TestRateLimitMiddlewareIgnoresXForwardedFor(t *testing.T) {
 	now := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	limiter := newClientRateLimiter(1, time.Minute)
 	limiter.now = func() time.Time { return now }
@@ -135,7 +145,7 @@ func TestRateLimitMiddlewareUsesXForwardedFor(t *testing.T) {
 	secondRecorder := httptest.NewRecorder()
 	handler(secondRecorder, secondSameForwardedIP)
 	if secondRecorder.Code != http.StatusTooManyRequests {
-		t.Fatalf("second forwarded request status = %d, want %d", secondRecorder.Code, http.StatusTooManyRequests)
+		t.Fatalf("same real client status = %d, want %d", secondRecorder.Code, http.StatusTooManyRequests)
 	}
 
 	otherForwardedIP := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -143,8 +153,32 @@ func TestRateLimitMiddlewareUsesXForwardedFor(t *testing.T) {
 	otherForwardedIP.Header.Set("X-Forwarded-For", "203.0.113.11, 10.0.0.1")
 	otherRecorder := httptest.NewRecorder()
 	handler(otherRecorder, otherForwardedIP)
-	if otherRecorder.Code != http.StatusNoContent {
-		t.Fatalf("different forwarded client status = %d, want %d", otherRecorder.Code, http.StatusNoContent)
+	if otherRecorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("spoofed forwarded client status = %d, want %d", otherRecorder.Code, http.StatusTooManyRequests)
+	}
+}
+
+func TestTrustedDeviceChecksUseRemoteAddrInsteadOfForwardedFor(t *testing.T) {
+	limiter := newClientRateLimiter(1, time.Minute)
+	settings := &TransferSettings{
+		TrustedDevices: []DeviceRule{{IP: "203.0.113.10", FriendlyName: "Spoofed phone"}},
+	}
+
+	var calls int
+	handler := rateLimitMiddleware(limiter, settings, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.1:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+
+	handler(httptest.NewRecorder(), req)
+	handler(httptest.NewRecorder(), req)
+
+	if calls != 1 {
+		t.Fatalf("handler calls = %d, want 1 because spoofed trusted IP must not bypass rate limiting", calls)
 	}
 }
 
