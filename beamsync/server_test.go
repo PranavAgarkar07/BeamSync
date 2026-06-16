@@ -2,6 +2,8 @@ package beamsync
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -499,6 +501,81 @@ func TestUploadWithFileSavesToDiskAndEmitsEvents(t *testing.T) {
 	}
 }
 
+func TestUploadWithMatchingSHA256HeaderSucceeds(t *testing.T) {
+	server, baseURL, token, _, uploadDir := startServerForTest(t)
+	defer server.Shutdown()
+
+	payload := []byte("hello verified world")
+	body, contentType := multipartUploadBody(t, "verified.txt", payload)
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/upload?token="+token, &body)
+	if err != nil {
+		t.Fatalf("create upload request: %v", err)
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set(uploadIntegrityHeader, sha256String(payload))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /upload: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		responseBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("upload status = %d, want %d: %s", resp.StatusCode, http.StatusOK, responseBody)
+	}
+
+	got, err := os.ReadFile(filepath.Join(uploadDir, "verified.txt"))
+	if err != nil {
+		t.Fatalf("read uploaded file: %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("uploaded file = %q, want %q", got, payload)
+	}
+}
+
+func TestUploadWithMismatchedSHA256HeaderRejectsAndRecordsFailure(t *testing.T) {
+	server, baseURL, token, _, uploadDir := startServerForTest(t)
+	defer server.Shutdown()
+
+	payload := []byte("corrupted on the wire")
+	body, contentType := multipartUploadBody(t, "corrupt.txt", payload)
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/upload?token="+token, &body)
+	if err != nil {
+		t.Fatalf("create upload request: %v", err)
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set(uploadIntegrityHeader, strings.Repeat("0", 64))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /upload: %v", err)
+	}
+	defer resp.Body.Close()
+	responseBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("upload status = %d, want %d: %s", resp.StatusCode, http.StatusBadRequest, responseBody)
+	}
+	if !strings.Contains(string(responseBody), "integrity-mismatch") {
+		t.Fatalf("response body = %q, want integrity-mismatch", responseBody)
+	}
+	if _, err := os.Stat(filepath.Join(uploadDir, "corrupt.txt")); !os.IsNotExist(err) {
+		t.Fatalf("corrupt file should not be kept, stat err = %v", err)
+	}
+
+	statsResp, err := http.Get(baseURL + "/stats?token=" + token)
+	if err != nil {
+		t.Fatalf("GET /stats: %v", err)
+	}
+	defer statsResp.Body.Close()
+	var stats TransferStats
+	if err := json.NewDecoder(statsResp.Body).Decode(&stats); err != nil {
+		t.Fatalf("decode stats: %v", err)
+	}
+	if stats.IntegrityFailures != 1 {
+		t.Fatalf("integrity failures = %d, want 1", stats.IntegrityFailures)
+	}
+}
+
 func eventSeen(mu *sync.Mutex, events *[]string, want string) bool {
 	mu.Lock()
 	defer mu.Unlock()
@@ -543,6 +620,36 @@ func startServerForTest(t *testing.T) (*HTTPServer, string, string, <-chan strin
 		t.Fatalf("StartServer port = %q, want %d", port, startPort)
 	}
 	return server, "http://127.0.0.1:" + port, token, events, uploadDir
+}
+
+func multipartUploadBody(t *testing.T, filename string, payload []byte) (bytes.Buffer, string) {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	manifest, err := writer.CreateFormField("beam_manifest")
+	if err != nil {
+		t.Fatalf("create manifest field: %v", err)
+	}
+	if _, err := fmt.Fprintf(manifest, `[{"name":%q,"size":%d}]`, filename, len(payload)); err != nil {
+		t.Fatalf("write manifest field: %v", err)
+	}
+	file, err := writer.CreateFormFile("files", filename)
+	if err != nil {
+		t.Fatalf("create file field: %v", err)
+	}
+	if _, err := file.Write(payload); err != nil {
+		t.Fatalf("write file field: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	return body, writer.FormDataContentType()
+}
+
+func sha256String(payload []byte) string {
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
 }
 
 func freePort(t *testing.T) int {

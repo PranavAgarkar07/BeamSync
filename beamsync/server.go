@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -424,6 +425,18 @@ const writeWorkerCount = 3
 // largeFileThreshold is the maximum file size to buffer fully in RAM.
 // Files larger than this are streamed directly to disk.
 const largeFileThreshold = 64 * 1024 * 1024 // 64 MB
+
+const uploadIntegrityHeader = "X-BeamSync-File-SHA256"
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func hashMatches(expected string, actual string) bool {
+	expected = strings.TrimSpace(expected)
+	return expected == "" || strings.EqualFold(expected, actual)
+}
 
 // startWriteWorkers launches writeWorkerCount goroutines that drain jobs and
 // write files to disk. Returns a WaitGroup the caller can Wait() on.
@@ -950,6 +963,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			return
 		}
 		boundary := params["boundary"]
+		expectedFileSHA256 := strings.TrimSpace(r.Header.Get(uploadIntegrityHeader))
 
 		// 8 MB network read buffer — reduces TCP recv() syscalls dramatically.
 		netReader := bufio.NewReaderSize(r.Body, 8*1024*1024)
@@ -1076,11 +1090,16 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 					emit:        emit,
 					minInterval: 500 * time.Millisecond,
 				}
+				var writeTarget io.Writer = lpw
+				hash := sha256.New()
+				if expectedFileSHA256 != "" {
+					writeTarget = io.MultiWriter(lpw, hash)
+				}
 				// Write the already-buffered prefix first.
 				prefixBytes := buf.Bytes()
-				prefixWritten, prefixErr := lpw.Write(prefixBytes)
+				prefixWritten, prefixErr := writeTarget.Write(prefixBytes)
 				// Stream the remainder from the network.
-				lWritten, lErr := copyChunked(lpw, part, 8*1024*1024)
+				lWritten, lErr := copyChunked(writeTarget, part, 8*1024*1024)
 				lWritten += int64(prefixWritten)
 				flushErr := diskBuf.Flush()
 				dst.Close()
@@ -1109,6 +1128,20 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 					})
 					continue
 				}
+				if !hashMatches(expectedFileSHA256, hex.EncodeToString(hash.Sum(nil))) {
+					_ = os.Remove(dstPath)
+					httpServer.stats.recordIntegrityFailure()
+					logTransfer(httpServer.history, emit, TransferRecord{
+						Filename:  savedName,
+						Direction: TransferDirectionReceive,
+						Status:    TransferStatusFailed,
+						SizeBytes: lWritten,
+						StartedAt: startedAt,
+						Error:     "integrity-mismatch",
+					})
+					parseErr = fmt.Errorf("integrity-mismatch")
+					break
+				}
 				emit("upload_progress", fmt.Sprintf("%s|%d|%d", savedName, lWritten, lWritten))
 				snapshot := httpServer.stats.recordReceived(savedName, lWritten, atomic.LoadInt32(&state.uploadingCount))
 				emit("transfer_stats", transferStatsJSON(snapshot))
@@ -1131,6 +1164,19 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 					fmt.Println("❌ Part read error:", readErr)
 					continue
 				}
+				if !hashMatches(expectedFileSHA256, sha256Hex(buf.Bytes())) {
+					httpServer.stats.recordIntegrityFailure()
+					logTransfer(httpServer.history, emit, TransferRecord{
+						Filename:  savedName,
+						Direction: TransferDirectionReceive,
+						Status:    TransferStatusFailed,
+						SizeBytes: int64(buf.Len()),
+						StartedAt: time.Now(),
+						Error:     "integrity-mismatch",
+					})
+					parseErr = fmt.Errorf("integrity-mismatch")
+					break
+				}
 				jobs <- writeJob{
 					dstPath:   dstPath,
 					savedName: savedName,
@@ -1143,6 +1189,11 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		// Signal workers that no more jobs are coming, then wait for all writes.
 		close(jobs)
 		wg.Wait()
+
+		if parseErr != nil && parseErr.Error() == "integrity-mismatch" {
+			http.Error(w, "integrity-mismatch", http.StatusBadRequest)
+			return
+		}
 
 		if parseErr != nil {
 			http.Error(w, "Multipart read error", http.StatusBadRequest)
