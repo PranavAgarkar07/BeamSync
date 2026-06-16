@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -116,6 +117,48 @@ func TestSetCORSHeaders(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Headers"); got != "Content-Type" {
 		t.Fatalf("Allow-Headers = %q", got)
+	}
+}
+
+func TestUploadBufferInitialCapacityUsesSmallManifestSize(t *testing.T) {
+	got := uploadBufferInitialCapacity(
+		"tiny.txt",
+		map[string]int64{"tiny.txt": 1024},
+		textproto.MIMEHeader{},
+		largeFileThreshold+1024,
+	)
+
+	if got != 1024 {
+		t.Fatalf("initial capacity = %d, want manifest size 1024", got)
+	}
+}
+
+func TestUploadBufferInitialCapacityCapsLargeManifestAtThreshold(t *testing.T) {
+	got := uploadBufferInitialCapacity(
+		"movie.mp4",
+		map[string]int64{"movie.mp4": largeFileThreshold + 1},
+		textproto.MIMEHeader{},
+		0,
+	)
+
+	if got != largeFileThreshold {
+		t.Fatalf("initial capacity = %d, want largeFileThreshold", got)
+	}
+}
+
+func TestUploadBufferInitialCapacityFallsBackToRequestLength(t *testing.T) {
+	got := uploadBufferInitialCapacity("unknown.txt", nil, textproto.MIMEHeader{}, 4096)
+
+	if got != 4096 {
+		t.Fatalf("initial capacity = %d, want request content length 4096", got)
+	}
+}
+
+func TestUploadBufferInitialCapacityAvoidsUnknownLargePreallocation(t *testing.T) {
+	got := uploadBufferInitialCapacity("unknown.bin", nil, textproto.MIMEHeader{}, largeFileThreshold+1024)
+
+	if got != 0 {
+		t.Fatalf("initial capacity = %d, want 0 for unknown large upload", got)
 	}
 }
 
