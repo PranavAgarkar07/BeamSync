@@ -179,6 +179,99 @@ func TestSafeEmitDoesNotSpawnPerEventGoroutines(t *testing.T) {
 	}
 }
 
+func TestHTTPServerShutdownWaitsForActiveRequest(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	httpSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			close(started)
+			<-release
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	serveDone := make(chan error, 1)
+	go func() {
+		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			serveDone <- err
+			return
+		}
+		serveDone <- nil
+	}()
+
+	clientDone := make(chan error, 1)
+	go func() {
+		resp, err := http.Get("http://" + ln.Addr().String())
+		if err != nil {
+			clientDone <- err
+			return
+		}
+		defer resp.Body.Close()
+		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+			clientDone <- err
+			return
+		}
+		if resp.StatusCode != http.StatusNoContent {
+			clientDone <- fmt.Errorf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+			return
+		}
+		clientDone <- nil
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not receive request")
+	}
+
+	server := &HTTPServer{server: httpSrv}
+	shutdownDone := make(chan error, 1)
+	go func() {
+		shutdownDone <- server.Shutdown()
+	}()
+
+	select {
+	case err := <-shutdownDone:
+		t.Fatalf("Shutdown returned before active request finished: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+
+	select {
+	case err := <-clientDone:
+		if err != nil {
+			t.Fatalf("client request: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("client request did not complete")
+	}
+
+	select {
+	case err := <-shutdownDone:
+		if err != nil {
+			t.Fatalf("shutdown: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Shutdown did not complete after request finished")
+	}
+
+	select {
+	case err := <-serveDone:
+		if err != nil {
+			t.Fatalf("serve: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not exit after shutdown")
+	}
+}
+
 func TestProcessManifestCases(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		got, err := processManifest(strings.NewReader(`[{"name":"a.txt","size":12},{"name":"b.bin","size":34}]`))

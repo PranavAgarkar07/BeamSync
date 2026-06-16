@@ -307,7 +307,14 @@ func (s *HTTPServer) Shutdown() error {
 		s.cancel()
 	}
 	if s.server != nil {
-		return s.server.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := s.server.Shutdown(ctx); err != nil {
+			if closeErr := s.server.Close(); closeErr != nil {
+				return fmt.Errorf("graceful shutdown failed: %w; forced close failed: %v", err, closeErr)
+			}
+			return err
+		}
 	}
 	return nil
 }
