@@ -29,6 +29,8 @@
 - [Installation](#installation)
 - [Building from Source](#building-from-source)
 - [Usage Guide](#usage-guide)
+- [Network Requirements & Connectivity Notes](#network-requirements--connectivity-notes)
+- [Developer API](#developer-api)
 - [API Documentation](API.md)
 - [Security & Privacy](#security--privacy)
 - [License](#license)
