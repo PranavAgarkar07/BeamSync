@@ -16,6 +16,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -427,6 +428,25 @@ const writeWorkerCount = 3
 const largeFileThreshold = 64 * 1024 * 1024 // 64 MB
 
 const uploadIntegrityHeader = "X-BeamSync-File-SHA256"
+
+func uploadBufferInitialCapacity(filename string, fileSizes map[string]int64, partHeader textproto.MIMEHeader, requestContentLength int64) int {
+	if size, ok := fileSizes[filename]; ok && size > 0 {
+		if size < largeFileThreshold {
+			return int(size)
+		}
+		return largeFileThreshold
+	}
+	if cl, _ := strconv.ParseInt(partHeader.Get("Content-Length"), 10, 64); cl > 0 {
+		if cl < largeFileThreshold {
+			return int(cl)
+		}
+		return largeFileThreshold
+	}
+	if requestContentLength > 0 && requestContentLength < largeFileThreshold {
+		return int(requestContentLength)
+	}
+	return 0
+}
 
 func sha256Hex(data []byte) string {
 	sum := sha256.Sum256(data)
@@ -1031,7 +1051,9 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 			// Read up to largeFileThreshold bytes to determine dispatch strategy.
 			var buf bytes.Buffer
-			buf.Grow(largeFileThreshold)
+			if initialCapacity := uploadBufferInitialCapacity(filename, fileSizes, part.Header, r.ContentLength); initialCapacity > 0 {
+				buf.Grow(initialCapacity)
+			}
 			readLimit := int64(largeFileThreshold)
 			n, readErr := io.CopyN(&buf, part, readLimit)
 
