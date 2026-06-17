@@ -1232,8 +1232,8 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		w.Write([]byte("✅ Upload Complete"))
 	})))
 
-	mux.HandleFunc("/upload/resumable", tokenMiddleware(token, handleResumableUpload(uploadDir, state, emit)))
-	mux.HandleFunc("/upload-status/", tokenMiddleware(token, handleResumableUploadStatus(uploadDir)))
+	mux.HandleFunc("/upload/resumable", rateLimitMiddleware(uploadLimiter, httpServer.settings, tokenMiddleware(token, handleResumableUpload(uploadDir, state, emit))))
+	mux.HandleFunc("/upload-status/", rateLimitMiddleware(uploadLimiter, httpServer.settings, tokenMiddleware(token, handleResumableUploadStatus(uploadDir))))
 
 	portInt, listener, err := FindAvailablePort(startPort, 2, 50)
 	if err != nil {

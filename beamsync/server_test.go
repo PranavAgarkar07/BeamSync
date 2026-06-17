@@ -479,6 +479,67 @@ func TestUploadWithoutFileReturnsBadRequest(t *testing.T) {
 	}
 }
 
+func TestResumableEndpointsAreRateLimited(t *testing.T) {
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		wantBefore int
+	}{
+		{
+			name:       "resumable upload",
+			method:     http.MethodPut,
+			path:       "/upload/resumable",
+			wantBefore: http.StatusBadRequest,
+		},
+		{
+			name:       "upload status",
+			method:     http.MethodGet,
+			path:       "/upload-status/test-upload-id",
+			wantBefore: http.StatusNotFound,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, baseURL, token, _, _ := startServerForTest(t)
+			defer server.Shutdown()
+
+			target := baseURL + tc.path + "?token=" + token
+			for i := 0; i < 12; i++ {
+				req, err := http.NewRequest(tc.method, target, nil)
+				if err != nil {
+					t.Fatalf("create request %d: %v", i+1, err)
+				}
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					t.Fatalf("%s %s request %d: %v", tc.method, tc.path, i+1, err)
+				}
+				resp.Body.Close()
+				if resp.StatusCode != tc.wantBefore {
+					t.Fatalf("request %d status = %d, want %d before rate limit", i+1, resp.StatusCode, tc.wantBefore)
+				}
+			}
+
+			req, err := http.NewRequest(tc.method, target, nil)
+			if err != nil {
+				t.Fatalf("create rate-limited request: %v", err)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("%s %s rate-limited request: %v", tc.method, tc.path, err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusTooManyRequests {
+				t.Fatalf("rate-limited status = %d, want %d", resp.StatusCode, http.StatusTooManyRequests)
+			}
+			if got := resp.Header.Get("Retry-After"); got == "" {
+				t.Fatal("rate-limited response should include Retry-After")
+			}
+		})
+	}
+}
+
 func TestUploadWithFileSavesToDiskAndEmitsEvents(t *testing.T) {
 	server, baseURL, token, events, uploadDir := startServerForTest(t)
 	defer server.Shutdown()
