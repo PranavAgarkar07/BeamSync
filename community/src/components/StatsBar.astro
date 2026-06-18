@@ -1,8 +1,8 @@
 ---
 const stats = [
-  { target: 0, suffix: ' Cloud', label: 'No Cloud Involved' },
-  { target: 100, suffix: '% LAN', label: 'Fully Offline' },
-  { target: 0, suffix: ' Accounts', label: 'No Sign-Up' },
+  { target: 0, suffix: ' Cloud', label: 'Zero Cloud Infrastructure' },
+  { target: 100, suffix: '% LAN', label: 'Stay Fully Offline' },
+  { target: 0, suffix: ' Accounts', label: 'No Sign-Up Required' },
   { target: 1, suffix: ' QR', label: 'To Connect Any Device' },
 ];
 ---
@@ -28,7 +28,7 @@ const stats = [
   }
   .stat-item {
     text-align: center;
-    padding: 36px 20px;
+    padding: 24px 20px;
     border-right: 1px solid var(--border);
   }
   .stat-item:last-child { border-right: none; }
@@ -39,6 +39,11 @@ const stats = [
     font-weight: 800;
     color: var(--primary);
     margin-bottom: 6px;
+    transition: color 0.3s ease, transform 0.3s ease;
+  }
+  .stat-item.visible .stat-num {
+    transform: scale(1);
+    color: var(--green);
   }
   .stat-label {
     font-size: .78rem;
@@ -72,7 +77,7 @@ const stats = [
     const suffix = el.dataset.suffix || '';
     const target = parseInt(raw, 10);
 
-    if (prefersReducedMotion || target <= 1) {
+    if (prefersReducedMotion || target <= 0) {
       el.textContent = target + suffix;
       return;
     }

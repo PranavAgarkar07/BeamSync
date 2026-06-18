@@ -48,7 +48,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 32px;
+    padding: 10px 32px;
     max-width: 1280px;
     margin: 0 auto;
     gap: 16px;
@@ -122,9 +122,7 @@
   @media (max-width: 900px) {
     .nav-hamburger { display: flex; }
     .nav-links {
-      display: none;
       flex-direction: column;
-      gap: 0;
       position: fixed;
       top: auto;
       left: 0;
@@ -134,8 +132,17 @@
       border-bottom: 2px solid var(--border);
       box-shadow: 0 8px 24px rgba(0,0,0,.4);
       z-index: 98;
+      max-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      transform: translateY(-8px);
+      transition: max-height 0.35s cubic-bezier(.4,0,.2,1), opacity 0.25s ease, transform 0.3s ease;
     }
-    .nav-links.open { display: flex; }
+    .nav-links.open {
+      max-height: 100vh;
+      opacity: 1;
+      transform: translateY(0);
+    }
     .nav-links a {
       font-family: var(--fd);
       font-weight: 700;
@@ -159,7 +166,26 @@
   }
 
   @media (max-width: 540px) {
-    .nav-inner { padding: 12px 16px; }
+    .nav-inner { padding: 12px 16px; padding-left: calc(12px + env(safe-area-inset-left, 0px)); padding-right: calc(16px + env(safe-area-inset-right, 0px)); }
+    .nav-links { left: 0; right: 0; }
+    .nav-links.open { max-height: 100vh; }
+    .nav-links a { padding: 14px 28px; }
+  }
+  @media (max-width: 400px) {
+    .nav-inner { padding: 10px 12px; }
+    .nav-links a { padding: 12px 20px; font-size: .8rem; }
+    .nav-links .btn-dl { margin: 12px 20px; width: calc(100% - 40px); padding: 12px 20px; font-size: .82rem; }
+    .nav-hamburger { padding: 7px 9px; }
+    .nav-hamburger span { width: 18px; }
+    .nav-logo { font-size: .95rem; gap: 8px; }
+    .nav-logo img { width: 26px; height: 26px; }
+  }
+  @media (max-width: 360px) {
+    .nav-inner { padding: 8px 10px; gap: 8px; }
+    .nav-links a { padding: 10px 16px; font-size: .75rem; }
+    .nav-links .btn-dl { margin: 10px 16px; width: calc(100% - 32px); }
+    .nav-logo { font-size: .88rem; }
+    .nav-logo img { width: 24px; height: 24px; }
   }
 </style>
 
@@ -180,7 +206,6 @@
 
     function toggle(force) {
       const open = force !== undefined ? force : !links.classList.contains('open');
-      if (open) positionDropdown();
       links.classList.toggle('open', open);
       btn.classList.toggle('open', open);
       btn.setAttribute('aria-expanded', String(open));

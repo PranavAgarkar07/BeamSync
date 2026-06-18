@@ -8,16 +8,15 @@ import DownloadBtn from './DownloadBtn.astro';
     <div class="hero-left">
       <div class="hero-badge reveal">
         <img src="/BeamSync/icon.png" alt="" width="16" height="16" style="object-fit:contain" />
-        Open Source · MIT · LAN Only
+        Open Source · MIT · P2P Offline
       </div>
       <h1 class="hero-title reveal">
-        Transfer Files at<br />
+        Send Files at<br />
         <em>LAN Speed.</em><br />
-        <span>Zero Cloud.</span>
+        <span>No Cloud. No Accounts.</span>
       </h1>
       <p class="hero-sub reveal">
-        BeamSync is a cross-platform desktop file transfer app built with Go + Svelte + Wails. Scan a QR code. Drop
-        files. Done — with zero cloud, zero accounts, zero internet.
+        Cross-platform desktop file transfer built with Go + Svelte + Wails. Scan a QR code, drop files, done — zero cloud, zero accounts, zero internet.
       </p>
       <div class="hero-actions reveal">
         <DownloadBtn href="https://github.com/PranavAgarkar07/BeamSync/releases" size="lg" pulse>Download Free</DownloadBtn>
@@ -84,7 +83,7 @@ import DownloadBtn from './DownloadBtn.astro';
     pointer-events: none;
     z-index: 0;
   }
-  .hero-inner { max-width: 1140px; width: 100%; margin: 0 auto; display: grid; grid-template-columns: 1fr 420px; gap: 60px; align-items: center; position: relative; z-index: 1; padding-top: 70px; }
+  .hero-inner { max-width: 1140px; width: 100%; margin: 0 auto; display: grid; grid-template-columns: 1fr 420px; gap: 40px; align-items: center; position: relative; z-index: 1; padding-top: 70px; }
   .hero-badge {
     display: inline-flex;
     align-items: center;
@@ -106,7 +105,7 @@ import DownloadBtn from './DownloadBtn.astro';
   .hero-title em { font-style: normal; background: linear-gradient(135deg, var(--primary), #7BB3FF); color: #fff; padding: 2px 10px; display: inline-block; box-shadow: 0 2px 12px rgba(79,142,255,.25); }
   .hero-title span { display: inline-block; position: relative; color: var(--orange); }
   .hero-title span::after { content: ''; position: absolute; bottom: 4px; left: 0; right: 0; height: 5px; background: var(--orange); opacity: .6; }
-  .hero-sub { font-size: 1.05rem; line-height: 1.75; margin-bottom: 36px; max-width: 520px; color: var(--muted); }
+  .hero-sub { font-size: 1.05rem; line-height: 1.75; margin-bottom: 28px; max-width: 520px; color: var(--muted); }
   .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
   .btn-secondary {
     font-family: var(--fd);
@@ -166,11 +165,12 @@ import DownloadBtn from './DownloadBtn.astro';
   }
   @media (max-width: 900px) {
     .hero-inner { grid-template-columns: 1fr; }
-    .hero-right { display: none; }
+    .hero-right { display: block; margin-top: 40px; }
+    .terminal { max-width: 100%; }
   }
   @media (max-width: 540px) {
     .hero { min-height: 100dvh; padding: 0 16px; }
-    .hero-inner { padding-top: 80px; padding-bottom: 40px; }
+    .hero-inner { padding-top: 70px; padding-bottom: 32px; }
     .hero-title { font-size: clamp(2rem, 9vw, 3rem); }
     .hero-sub { font-size: .92rem; }
     .hero-actions { flex-direction: column; }
@@ -189,7 +189,7 @@ import DownloadBtn from './DownloadBtn.astro';
   const termBox = document.getElementById('terminal-box');
   if (termBox && window.innerWidth > 900) {
     const lines = [
-      { id: 't1', cls: 'cmd', text: 'yay -S beamsync-bin' },
+      { id: 't1', cls: 'cmd', text: 'brew install beamsync' },
       { id: 't2', cls: 'out', text: ':: Resolving dependencies...' },
       { id: 't3', cls: 'out', text: '\u2713 BeamSync installed. Run: beamsync' },
     ];

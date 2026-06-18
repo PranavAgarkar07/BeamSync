@@ -13,7 +13,7 @@ const slides = [
       <h2>See BeamSync.<br>Feel the Speed.</h2>
       <p>Real screenshots from the desktop app — no mockups, no filters.</p>
     </div>
-    <div class="carousel reveal" id="ss-carousel">
+    <div class="carousel reveal" id="ss-carousel" role="region" aria-roledescription="carousel" aria-label="Screenshot carousel">
       <div class="carousel-viewport">
         <div class="carousel-track" id="ss-track">
           {slides.map((s) => (
@@ -21,7 +21,7 @@ const slides = [
               <div class="ss-img-wrap" data-lb-index={slides.indexOf(s)}>
                 <img src={s.src} alt={s.alt} loading="lazy" decoding="async" />
               </div>
-              <div class="ss-caption">
+              <div class="ss-caption" aria-live="polite">
                 <span class="ss-num">{s.num}</span>
                 <span>{s.caption}</span>
               </div>
@@ -49,7 +49,7 @@ const slides = [
 </section>
 
 <style>
-  .screenshots { padding: 100px 28px; background: var(--surface); border-bottom: 2px solid var(--border); }
+  .screenshots { padding: 80px 28px; background: var(--surface); border-bottom: 2px solid var(--border); }
   .carousel { position: relative; max-width: 1140px; margin: 0 auto; border: 2px solid var(--border); box-shadow: var(--sh-xl); }
   .carousel-viewport { overflow: hidden; }
   .carousel-track { display: flex; transition: transform .45s cubic-bezier(.4,0,.2,1); }
@@ -80,7 +80,7 @@ const slides = [
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 16px 24px;
+    padding: 12px 20px;
     font-family: var(--fd);
     font-weight: 700;
     font-size: .85rem;
@@ -165,6 +165,8 @@ const slides = [
     document.addEventListener('keydown', e => {
       if (e.key === 'ArrowLeft')  { goTo(current - 1); resetAuto(); }
       if (e.key === 'ArrowRight') { goTo(current + 1); resetAuto(); }
+      if (e.key === 'Home') { goTo(0); resetAuto(); }
+      if (e.key === 'End') { goTo(total - 1); resetAuto(); }
     });
 
     let startX = 0;
@@ -174,7 +176,7 @@ const slides = [
       if (Math.abs(dx) > 40) { goTo(dx < 0 ? current + 1 : current - 1); resetAuto(); }
     });
 
-    function startAuto() { autoTimer = setInterval(() => goTo(current + 1), 4000); }
+    function startAuto() { autoTimer = setInterval(() => goTo(current + 1), 5000); }
     function resetAuto() { clearInterval(autoTimer); startAuto(); }
 
     const carousel = track.closest('.carousel');
