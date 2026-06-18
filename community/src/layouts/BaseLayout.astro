@@ -1,0 +1,49 @@
+---
+import '../styles/global.css';
+import ClickRipple from '../components/ClickRipple.astro';
+
+export interface Props {
+  title: string;
+  description: string;
+  image?: string;
+}
+
+const { title, description, image = '/BeamSync/icon.png' } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#0C1120" />
+
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={image} />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Manrope:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
+
+    <link rel="icon" type="image/png" href="/BeamSync/icon.png" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <ClickRipple />
+    <a href="#hero" class="skip-link">Skip to content</a>
+    <slot />
+  </body>
+</html>
+
+<style is:global>
+  noscript { display: none; }
+</style>

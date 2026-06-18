@@ -1,0 +1,115 @@
+---
+export interface Props {
+  class?: string;
+  href: string;
+  size?: 'default' | 'lg';
+  pulse?: boolean;
+  id?: string;
+}
+
+const { href, size = 'default', pulse = false, id } = Astro.props;
+const cls = [
+  'btn-dl',
+  size === 'lg' && 'btn-lg',
+  pulse && 'btn-dl-pulse',
+  Astro.props.class
+].filter(Boolean).join(' ');
+---
+
+<a href={href} target="_blank" rel="noopener" class={cls} id={id}>
+  <svg class="dl-icon" width={size === 'lg' ? 18 : 14} height={size === 'lg' ? 18 : 14} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+  <slot />
+</a>
+
+<style>
+  .btn-dl {
+    font-family: var(--fd);
+    font-weight: 800;
+    font-size: .88rem;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    padding: 15px 34px;
+    background: linear-gradient(135deg, var(--green) 0%, #06d6a0 100%);
+    color: #000 !important;
+    border: 2px solid rgba(255,255,255,.5);
+    box-shadow: 0 0 24px rgba(16,217,138,.2), 0 2px 8px rgba(0,0,0,.35);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+    overflow: hidden;
+    white-space: nowrap;
+    transform: translateY(0);
+    transition: transform 250ms cubic-bezier(.2,0,0,1), box-shadow 250ms ease-out, border-color 250ms ease-out, background 250ms ease-out;
+  }
+  .btn-dl::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, transparent 35%, rgba(255,255,255,.18) 50%, transparent 65%);
+    opacity: 0;
+    transition: opacity 350ms ease;
+    pointer-events: none;
+  }
+  .btn-dl:hover {
+    transform: translateY(-3px);
+    background: linear-gradient(135deg, #0de882 0%, #4ade80 100%);
+    border-color: rgba(255,255,255,.95);
+    box-shadow: 0 0 36px rgba(16,217,138,.35), 0 8px 28px rgba(0,0,0,.4), 0 0 0 1px rgba(16,217,138,.1);
+  }
+  .btn-dl:hover::after { opacity: 1; }
+  .btn-dl:active {
+    transform: translateY(1px);
+    box-shadow: 0 0 12px rgba(16,217,138,.15), 0 1px 4px rgba(0,0,0,.3);
+    transition: transform 80ms ease-out, box-shadow 80ms ease-out;
+  }
+  .btn-dl .dl-icon { transition: transform 250ms cubic-bezier(.34,1.56,.64,1); }
+  .btn-dl:hover .dl-icon { transform: translateY(4px) scale(1.1); }
+  .btn-dl:focus-visible {
+    outline: 2px solid var(--green);
+    outline-offset: 3px;
+  }
+  .btn-lg { padding: 18px 42px; font-size: 1.05rem; }
+  .btn-dl-pulse { animation: dl-breathe 2.5s ease-in-out infinite; }
+
+  @keyframes dl-breathe {
+    0%, 100% { box-shadow: 0 0 24px rgba(16,217,138,.2), 0 2px 8px rgba(0,0,0,.35), 0 0 0 0 rgba(16,217,138,.25); }
+    50% { box-shadow: 0 0 24px rgba(16,217,138,.2), 0 2px 8px rgba(0,0,0,.35), 0 0 0 14px rgba(16,217,138,0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .btn-dl { transition: background 150ms ease, border-color 150ms ease; transform: none !important; animation: none !important; }
+    .btn-dl::after { display: none; }
+  }
+</style>
+
+<script>
+  document.querySelectorAll('.btn-dl').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const r = btn.getBoundingClientRect();
+      const size = Math.max(r.width, r.height) * 2;
+      const ripple = document.createElement('span');
+      ripple.className = 'ripple';
+      ripple.style.cssText = `
+        position: absolute;
+        border-radius: 50%;
+        background: rgba(255,255,255,.35);
+        transform: scale(0);
+        pointer-events: none;
+        width: ${size}px;
+        height: ${size}px;
+        left: ${e.clientX - r.left - size / 2}px;
+        top: ${e.clientY - r.top - size / 2}px;
+        animation: ripple-expand 500ms ease-out forwards;
+      `;
+      btn.appendChild(ripple);
+      ripple.addEventListener('animationend', () => ripple.remove());
+    });
+  });
+</script>

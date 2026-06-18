@@ -1,0 +1,149 @@
+@font-face {
+  font-display: swap;
+  font-family: 'Syne';
+  font-style: normal;
+  font-weight: 400 800;
+  src: url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&display=swap') format('woff2');
+}
+
+@font-face {
+  font-display: swap;
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 300 700;
+  src: url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap') format('woff2');
+}
+
+@font-face {
+  font-display: swap;
+  font-family: 'Space Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  src: url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap') format('woff2');
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg:       #0C1120;
+  --surface:  #141E30;
+  --raised:   #1C2840;
+  --border:   #2D3F5E;
+  --border-b: rgba(45,63,94,0.5);
+  --text:     #E2E8F0;
+  --muted:    #8892B0;
+  --primary:  #4F8EFF;
+  --orange:   #FF8A00;
+  --green:    #10D98A;
+  --danger:   #FF5C7A;
+  --sh-dark:  #08101E;
+  --sh-sm:  2px 2px 0px var(--sh-dark);
+  --sh-md:  4px 4px 0px var(--sh-dark);
+  --sh-lg:  6px 6px 0px var(--sh-dark);
+  --sh-xl:  8px 8px 0px var(--sh-dark);
+  --sh-blue:  4px 4px 0px #0A2870;
+  --sh-green: 4px 4px 0px #006845;
+  --t: transform 150ms ease, box-shadow 150ms ease;
+  --fd: 'Syne', system-ui, sans-serif;
+  --fb: 'Manrope', system-ui, sans-serif;
+  --fm: 'Space Mono', monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--fb);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+::selection { background: rgba(79,142,255,.3); color: var(--text); }
+:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+button:focus-visible:not(:active) { outline: 2px solid var(--green); outline-offset: 3px; }
+a:focus-visible:not(:active) { outline: 2px solid var(--green); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); border-left: 2px solid var(--border); }
+::-webkit-scrollbar-thumb { background: var(--border); }
+
+body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--fd);
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.05;
+}
+h1 { font-size: clamp(2.4rem, 5.5vw, 4.6rem); letter-spacing: -2px; }
+h2 { font-size: clamp(1.8rem, 3.5vw, 3rem); letter-spacing: -1px; }
+h3 { font-size: 1.1rem; font-weight: 700; }
+p { color: var(--muted); font-size: 1rem; }
+a { text-decoration: none; color: inherit; }
+code {
+  font-family: var(--fm);
+  font-size: .82em;
+  background: rgba(79,142,255,.1);
+  border: 1px solid var(--border);
+  padding: .1em .4em;
+  color: var(--primary);
+}
+
+.wrap { max-width: 1140px; margin: 0 auto; padding: 0 28px; }
+@media (max-width: 540px) { .wrap { padding: 0 16px; } }
+
+.reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity .5s ease, transform .5s ease;
+}
+.reveal.visible { opacity: 1; transform: translateY(0); }
+
+.skip-link {
+  position: fixed;
+  top: -100%;
+  left: 8px;
+  z-index: 99999;
+  padding: 8px 16px;
+  background: var(--green);
+  color: #000;
+  font-family: var(--fd);
+  font-weight: 700;
+  font-size: .85rem;
+  border: 2px solid rgba(255,255,255,.6);
+}
+.skip-link:focus { top: 8px; }
+
+.section-tag {
+  display: inline-block;
+  font-family: var(--fm);
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--green);
+  background: rgba(16,217,138,.08);
+  border: 1px solid var(--green);
+  padding: 4px 12px;
+  box-shadow: var(--sh-green);
+  margin-bottom: 18px;
+}
+.section-header { text-align: center; max-width: 680px; margin: 0 auto 56px; }
+.section-header h2 { margin-bottom: 14px; }

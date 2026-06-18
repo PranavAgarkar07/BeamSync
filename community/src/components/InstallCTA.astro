@@ -1,0 +1,114 @@
+---
+import DownloadBtn from './DownloadBtn.astro';
+---
+
+<section class="install-cta" id="install">
+  <div class="wrap">
+    <div class="section-header reveal">
+      <span class="section-tag">Get Started</span>
+      <h2>Install in Seconds.</h2>
+      <p>Available on Arch Linux (AUR) and as pre-built binaries for all platforms.</p>
+    </div>
+    <div class="install-options reveal">
+      <div class="install-card">
+        <div class="install-card-label">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2" />
+            <polyline points="2 17 12 22 22 17" />
+            <polyline points="2 12 12 17 22 12" />
+          </svg>
+          Arch Linux (AUR)
+        </div>
+        <div class="code-block">
+          <code>yay -S beamsync-bin</code>
+          <button class="copy-btn" data-copy="yay -S beamsync-bin" id="copy-aur" title="Copy" type="button">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="install-card">
+        <div class="install-card-label">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
+          Build from Source
+        </div>
+        <div class="code-block">
+          <code>git clone github.com/PranavAgarkar07/BeamSync</code>
+          <button class="copy-btn" data-copy="git clone https://github.com/PranavAgarkar07/BeamSync.git" id="copy-src" title="Copy" type="button">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="cta-buttons reveal">
+      <DownloadBtn href="https://github.com/PranavAgarkar07/BeamSync/releases" size="lg">Latest Release</DownloadBtn>
+      <a href="https://github.com/PranavAgarkar07/BeamSync" target="_blank" rel="noopener" class="btn-outline btn-lg">Contribute on GitHub</a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .install-cta { padding: 100px 28px; background: var(--surface); border-bottom: 2px solid var(--border); text-align: center; }
+  .install-options { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-bottom: 36px; padding: 0 4px; }
+  .install-card { text-align: left; background: var(--bg); border: 2px solid var(--border); padding: 20px 24px; min-width: min(320px, 100%); box-shadow: var(--sh-md); transition: var(--t); width: 100%; max-width: 480px; }
+  .install-card:hover { transform: translate(-2px,-2px); box-shadow: var(--sh-lg); border-color: var(--primary); }
+  .install-card-label { display: flex; align-items: center; gap: 8px; font-family: var(--fm); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 12px; }
+  .code-block { display: flex; align-items: center; justify-content: space-between; background: #060D1A; border: 1px solid var(--border); padding: 10px 14px; gap: 10px; }
+  .code-block code { background: none; border: none; padding: 0; font-size: .82rem; color: var(--green); white-space: pre-wrap; word-break: break-all; }
+  .copy-btn { background: none; border: none; cursor: pointer; color: var(--muted); padding: 4px; display: flex; align-items: center; flex-shrink: 0; transition: color 150ms ease; }
+  .copy-btn:hover { color: var(--green); }
+  .copy-btn:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+  .cta-buttons { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn-outline { font-family: var(--fd); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; display: inline-flex; align-items: center; gap: 8px; border: 2px solid var(--border); cursor: pointer; transition: var(--t); padding: 15px 34px; font-size: .95rem; background: transparent; color: var(--text); box-shadow: var(--sh-sm); }
+  .btn-outline:hover { transform: translate(-2px,-2px); box-shadow: var(--sh-md); background: var(--surface); }
+  .btn-outline:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+  @media (max-width: 540px) {
+    .install-options { flex-direction: column; align-items: stretch; padding: 0 16px; }
+    .install-card { min-width: 0; width: 100%; max-width: 100%; box-sizing: border-box; }
+    .cta-buttons { flex-direction: column; align-items: stretch; padding: 0 16px; }
+    .cta-buttons .btn-dl, .cta-buttons .btn-outline { width: 100%; justify-content: center; text-align: center; }
+    .code-block code { font-size: .75rem; word-break: break-all; }
+  }
+  @media (max-width: 400px) {
+    .install-cta { padding: 60px 0; }
+    .install-card { padding: 16px; }
+    .code-block { padding: 8px 10px; }
+    .code-block code { font-size: .7rem; }
+    .cta-buttons { padding: 0 16px; }
+    .install-options { padding: 0 16px; }
+  }
+</style>
+
+<script>
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const text = btn.dataset.copy;
+      try {
+        await navigator.clipboard.writeText(text);
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+        btn.style.color = '#34D399';
+        setTimeout(() => {
+          btn.innerHTML = orig;
+          btn.style.color = '';
+        }, 1800);
+      } catch {
+        const code = btn.previousElementSibling;
+        if (code) {
+          const range = document.createRange();
+          range.selectNodeContents(code);
+          window.getSelection().removeAllRanges();
+          window.getSelection().addRange(range);
+        }
+      }
+    });
+  });
+</script>

@@ -1,0 +1,103 @@
+---
+const stats = [
+  { target: 0, suffix: ' Cloud', label: 'No Cloud Involved' },
+  { target: 100, suffix: '% LAN', label: 'Fully Offline' },
+  { target: 0, suffix: ' Accounts', label: 'No Sign-Up' },
+  { target: 1, suffix: ' QR', label: 'To Connect Any Device' },
+];
+---
+
+<section class="stats-bar">
+  <div class="stats-inner">
+    {stats.map((stat) => (
+      <div class="stat-item reveal">
+        <span class="stat-num" data-target={stat.target} data-suffix={stat.suffix}>{stat.target}{stat.suffix}</span>
+        <span class="stat-label">{stat.label}</span>
+      </div>
+    ))}
+  </div>
+</section>
+
+<style>
+  .stats-bar { border-bottom: 2px solid var(--border); background: var(--surface); }
+  .stats-inner {
+    max-width: 1140px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .stat-item {
+    text-align: center;
+    padding: 36px 20px;
+    border-right: 1px solid var(--border);
+  }
+  .stat-item:last-child { border-right: none; }
+  .stat-num {
+    display: block;
+    font-family: var(--fd);
+    font-size: clamp(1.5rem, 3vw, 2.2rem);
+    font-weight: 800;
+    color: var(--primary);
+    margin-bottom: 6px;
+  }
+  .stat-label {
+    font-size: .78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+  }
+
+  @media (max-width: 900px) {
+    .stats-inner { grid-template-columns: repeat(2, 1fr); }
+    .stat-item:nth-child(2n) { border-right: none; }
+    .stat-item:nth-child(1), .stat-item:nth-child(2) { border-bottom: 1px solid var(--border); }
+  }
+
+  @media (max-width: 540px) {
+    .stats-inner { grid-template-columns: 1fr; }
+    .stat-item { border-right: none !important; border-bottom: 1px solid var(--border); }
+    .stat-item:last-child { border-bottom: none; }
+  }
+  @media (max-width: 400px) {
+    .stat-item { padding: 24px 16px; }
+  }
+</style>
+
+<script>
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function animateCounter(el) {
+    const raw = el.dataset.target;
+    const suffix = el.dataset.suffix || '';
+    const target = parseInt(raw, 10);
+
+    if (prefersReducedMotion || target <= 1) {
+      el.textContent = target + suffix;
+      return;
+    }
+
+    const duration = 1400;
+    const start = performance.now();
+
+    function step(now) {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = Math.round(eased * target);
+      el.textContent = current + suffix;
+      if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  const counterObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        animateCounter(entry.target);
+        counterObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.5 });
+
+  document.querySelectorAll('.stat-num[data-target]').forEach(el => counterObserver.observe(el));
+</script>

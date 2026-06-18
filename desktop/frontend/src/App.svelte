@@ -941,19 +941,27 @@
     <main class="main-content">
       {#if mode === "RECEIVE"}
         <div class="mode-wrapper" in:fly={{ y: 15, duration: 250 }}>
-        {#if connectionState !== "CONNECTED"}
-          <div class="receive-standby">
+          <div
+            class="receive-layout"
+            class:receive-layout--split={connectionState === "CONNECTED"}
+          >
+            <div
+              class="receive-standby"
+              class:receive-standby--compact={connectionState === "CONNECTED"}
+            >
             <div class="nb-card home-card">
               <div class="home-card__header">
                 <div
                   class="status-indicator"
-                  class:pulse={connectionState === "WAITING"}
+                  class:pulse={connectionState === "WAITING" || connectionState === "CONNECTED"}
                 ></div>
                 <h1 class="standby-title">
                   {#if connectionState === "WAITING"}
                     Connect via {serverUrl
                       .replace(/^https?:\/\//, "")
                       .split(":")[0] || "Wi-Fi"}
+                  {:else if connectionState === "CONNECTED"}
+                    Device Connected
                   {:else if connectionState === "DISCONNECTED"}
                     Connection Lost
                   {:else}
@@ -964,11 +972,12 @@
 
               <div class="home-card__body">
                 {#if qrImage}
-                  <div class="qr-wrapper">
+                  <div class="qr-wrapper" class:qr-wrapper--compact={connectionState === "CONNECTED"}>
                     <img
                       src={qrImage}
                       alt="QR Code"
                       class="qr-code"
+                      class:qr-code--compact={connectionState === "CONNECTED"}
                       draggable="false"
                     />
                   </div>
@@ -1012,67 +1021,71 @@
               >
             {/if}
           </div>
-        {:else}
-          <div class="receive-active">
-            <h2 class="active-title">Device Connected</h2>
 
-            <div class="ready-banner pulse-bg">
-              <div class="radar-ping"></div>
-              <div class="ready-content">
-                <span class="status-badge">READY</span>
-                <span class="status-text">WAITING FOR FILES...</span>
+          {#if connectionState === "CONNECTED"}
+            <div class="receive-active" in:fly={{ x: 20, duration: 300, delay: 100 }}>
+              <div class="ready-banner pulse-bg">
+                <div class="radar-ping"></div>
+                <div class="ready-content">
+                  <span class="status-badge">READY</span>
+                  <span class="status-text">WAITING FOR FILES...</span>
+                </div>
               </div>
+
+              <TransferStatsDashboard
+                stats={transferStats}
+                now={transferStatsNow}
+                direction="receive"
+                currentSpeed={transferSpeeds.receive}
+                speedActive={activeSpeedDirection === "receive"}
+              />
+
+              <div class="files-panel">
+                <div class="files-header">
+                  <h3>RECEIVED FILES ({receivedFiles.length})</h3>
+                </div>
+                <div class="files-list" class:empty={receivedFiles.length === 0}>
+                  {#if receivedFiles.length === 0}
+                    <div class="empty-state">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><rect x="3" y="3" width="18" height="18" rx="0" ry="0"/><line x1="9" y1="3" x2="9" y2="21"/><path d="M13 8h4"/><path d="M13 12h4"/></svg>
+                      <p>INBOX EMPTY<br><small>Incoming data will appear here</small></p>
+                    </div>
+                  {/if}
+                  {#each sortedFiles as file}
+                    <button
+                      class="file-item"
+                      on:click={() => openFile(file.name)}
+                    >
+                      <span class="file-icon">{fileIcon(file.name)}</span>
+                      <span class="file-name">{file.name}</span>
+                      <span class="file-size">{formatSize(file.sizeBytes)}</span>
+                      <span class="file-time">{file.modTime}</span>
+                    </button>
+                  {/each}
+                </div>
+              </div>
+
+              <ActivityPanel {transferHistory} {sessionLog} {formatSize} {formatDuration} {formatTransferTime} />
             </div>
-
-            <TransferStatsDashboard
-              stats={transferStats}
-              now={transferStatsNow}
-              direction="receive"
-              currentSpeed={transferSpeeds.receive}
-              speedActive={activeSpeedDirection === "receive"}
-            />
-
-            <div class="files-panel">
-              <div class="files-header">
-                <h3>RECEIVED FILES ({receivedFiles.length})</h3>
-              </div>
-              <div class="files-list" class:empty={receivedFiles.length === 0}>
-                {#if receivedFiles.length === 0}
-                  <div class="empty-state">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><rect x="3" y="3" width="18" height="18" rx="0" ry="0"/><line x1="9" y1="3" x2="9" y2="21"/><path d="M13 8h4"/><path d="M13 12h4"/></svg>
-                    <p>INBOX EMPTY<br><small>Incoming data will appear here</small></p>
-                  </div>
-                {/if}
-                {#each sortedFiles as file}
-                  <button
-                    class="file-item"
-                    on:click={() => openFile(file.name)}
-                  >
-                    <span class="file-icon">{fileIcon(file.name)}</span>
-                    <span class="file-name">{file.name}</span>
-                    <span class="file-size">{formatSize(file.sizeBytes)}</span>
-                    <span class="file-time">{file.modTime}</span>
-                  </button>
-                {/each}
-              </div>
-            </div>
-
-            <ActivityPanel {transferHistory} {sessionLog} {formatSize} {formatDuration} {formatTransferTime} />
+          {/if}
           </div>
-        {/if}
         </div>
       {:else if mode === "SEND"}
-        <div class="mode-wrapper send-layout" in:fly={{ y: 15, duration: 250 }}>
-          <FileDropZone
-            files={senderFiles}
-            on:dropped={({ detail }) => handleDropZoneFiles(detail.files)}
-            on:filesSelected={({ detail }) => handleDropZoneFiles(detail.files)}
-            on:requestPicker={startSend}
-          />
+        <div class="mode-wrapper" in:fly={{ y: 15, duration: 250 }}>
+          <div class="send-split" class:send-split--active={showSenderDialog}>
+            <div class="send-sidebar" class:send-sidebar--compact={showSenderDialog}>
+              <FileDropZone
+                files={senderFiles}
+                on:dropped={({ detail }) => handleDropZoneFiles(detail.files)}
+                on:filesSelected={({ detail }) => handleDropZoneFiles(detail.files)}
+                on:requestPicker={startSend}
+              />
+            </div>
 
-          {#if showSenderDialog}
-            <div class="sender-dialog">
-              <div class="sender-header">
+            {#if showSenderDialog}
+              <div class="send-main" in:fly={{ x: 20, duration: 300, delay: 100 }}>
+                <div class="sender-dialog">
+                <div class="sender-header">
                 <span class="radar-ping-small"></span>
                 <h3>READY TO SEND</h3>
               </div>
@@ -1110,8 +1123,10 @@
                 class="nb-btn nb-btn--danger close-btn"
                 on:click={() => (showSenderDialog = false)}>CLOSE SESSION</button
               >
-            </div>
-          {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
 
           <ActivityPanel {transferHistory} {sessionLog} {formatSize} {formatDuration} {formatTransferTime} />
         </div>
@@ -1441,8 +1456,6 @@
   }
 
   /* Receive Standby */
-  .receive-standby,
-  .receive-active,
   .about-layout,
   .send-layout {
     width: 100%;
@@ -1452,12 +1465,54 @@
     gap: var(--nb-space-6);
   }
 
+  .receive-layout {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--nb-space-6);
+    width: 100%;
+    max-width: 500px;
+    transition: max-width 400ms cubic-bezier(.2, 0, 0, 1);
+    will-change: max-width;
+  }
+  .receive-layout--split {
+    max-width: 1000px;
+  }
+
   .receive-standby {
+    display: flex;
+    flex-direction: column;
+    gap: var(--nb-space-6);
     align-items: center;
     width: 100%;
     max-width: 500px;
-    margin: 0 auto;
+    flex-shrink: 0;
+    transition: max-width 400ms cubic-bezier(.2, 0, 0, 1);
+    will-change: max-width;
     margin-top: var(--nb-space-4);
+  }
+  .receive-standby--compact {
+    max-width: 340px;
+  }
+  .receive-standby--compact .home-card__body {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: var(--nb-space-4);
+    gap: var(--nb-space-4);
+  }
+  .receive-standby--compact .instructions-list {
+    flex: 1;
+    min-width: 200px;
+    max-width: 320px;
+  }
+
+  .receive-active {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--nb-space-6);
   }
 
   .home-card {
@@ -1538,6 +1593,18 @@
     width: 220px;
     height: 220px;
     display: block;
+  }
+  .qr-code--compact {
+    width: 140px;
+    height: 140px;
+  }
+  .qr-wrapper--compact {
+    padding: var(--nb-space-3);
+    box-shadow: 4px 4px 0px var(--nb-border-color);
+  }
+  .qr-wrapper--compact:hover {
+    transform: translate(-2px,-2px);
+    box-shadow: 6px 6px 0px var(--nb-border-color);
   }
 
   .qr-loading {
@@ -1673,12 +1740,6 @@
   }
 
   /* Receive Active Components */
-  .active-title {
-    font-size: var(--nb-text-xl);
-    border-bottom: var(--nb-border-lg);
-    padding-bottom: var(--nb-space-2);
-  }
-
   .ready-banner {
     padding: var(--nb-space-4);
     background: var(--nb-surface);
@@ -1922,6 +1983,43 @@
     width: 100%;
     max-width: 400px;
     margin-top: var(--nb-space-2);
+  }
+
+  /* Send Split Layout */
+  .send-split {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--nb-space-6);
+    width: 100%;
+    max-width: 600px;
+    transition: max-width 400ms cubic-bezier(.2, 0, 0, 1);
+    will-change: max-width;
+    margin: 0 auto;
+  }
+  .send-split--active {
+    max-width: 1000px;
+  }
+
+  .send-sidebar {
+    width: 100%;
+    flex-shrink: 0;
+    transition: max-width 400ms cubic-bezier(.2, 0, 0, 1);
+    will-change: max-width;
+  }
+  .send-sidebar--compact {
+    max-width: 420px;
+  }
+
+  .send-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--nb-space-6);
+  }
+  .send-main .sender-dialog {
+    margin-top: 0;
   }
 
   /* About Layout */

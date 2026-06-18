@@ -130,7 +130,8 @@
 
   .activity-item__name,
   .session-item__title {
-    font-weight: 800;
+    font-family: var(--nb-font-plex);
+    font-weight: 700;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

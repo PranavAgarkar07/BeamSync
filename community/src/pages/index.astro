@@ -1,0 +1,33 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Navbar from '../components/Navbar.astro';
+import Hero from '../components/Hero.astro';
+import StatsBar from '../components/StatsBar.astro';
+import Features from '../components/Features.astro';
+import HowItWorks from '../components/HowItWorks.astro';
+import Screenshots from '../components/Screenshots.astro';
+import Architecture from '../components/Architecture.astro';
+import InstallCTA from '../components/InstallCTA.astro';
+import Footer from '../components/Footer.astro';
+import Lightbox from '../components/Lightbox.astro';
+import CustomCursor from '../components/CustomCursor.astro';
+import ScrollReveal from '../components/ScrollReveal.astro';
+
+const title = 'BeamSync — Secure. Fast. Local.';
+const description = 'BeamSync: offline-first peer-to-peer desktop file transfer. No cloud. No accounts. Just your LAN.';
+---
+
+<BaseLayout {title} {description}>
+  <Navbar />
+  <Hero />
+  <StatsBar />
+  <Features />
+  <HowItWorks />
+  <Screenshots />
+  <Architecture />
+  <InstallCTA />
+  <Footer />
+  <Lightbox />
+  <CustomCursor />
+  <ScrollReveal />
+</BaseLayout>
