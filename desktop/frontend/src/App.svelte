@@ -68,6 +68,7 @@
   let transferStatsNow = Date.now();
   let transferStatsTimer;
   let transferStatsThrottleTimer;
+  let qrGenerationTimer = null;
   let pendingTransferStats = null;
   let lastTransferStatsUpdateAt = 0;
   let transferSpeeds = {
@@ -482,6 +483,7 @@
     clearTimeout(batchTimer);
     clearTimeout(_progressTimeout);
     clearTimeout(transferStatsThrottleTimer);
+    clearTimeout(qrGenerationTimer);
     clearInterval(transferStatsTimer);
   });
 
@@ -550,18 +552,26 @@
   }
 
   function generateQR(text) {
-    if (!text) return;
-    QRCode.toDataURL(
-      text,
-      {
-        width: 220,
-        margin: 2,
-        color: { dark: "#0A0A0A", light: "#00000000" },
-      },
-      (err, url) => {
-        if (!err) qrImage = url;
-      },
-    );
+    clearTimeout(qrGenerationTimer);
+
+    if (!text) {
+      qrImage = "";
+      return;
+    }
+
+    qrGenerationTimer = setTimeout(() => {
+      QRCode.toDataURL(
+        text,
+        {
+          width: 220,
+          margin: 2,
+          color: { dark: "#0A0A0A", light: "#00000000" },
+        },
+        (err, url) => {
+          if (!err) qrImage = url;
+        },
+      );
+    }, 100);
   }
 
   function playSound(type) {
