@@ -71,6 +71,32 @@ func TestClientRateLimiterEvictsOldestClientWhenFull(t *testing.T) {
 	}
 }
 
+func TestClientRateLimiterPrunesExpiredClients(t *testing.T) {
+	now := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
+	limiter := newClientRateLimiter(2, time.Minute)
+	limiter.now = func() time.Time { return now }
+
+	limiter.clients["10.0.0.1"] = &rateLimitState{
+		windowStart: now.Add(-3 * time.Minute),
+		count:       1,
+		lastSeen:    now.Add(-3 * time.Minute),
+	}
+	limiter.clients["10.0.0.2"] = &rateLimitState{
+		windowStart: now.Add(-30 * time.Second),
+		count:       1,
+		lastSeen:    now.Add(-30 * time.Second),
+	}
+
+	limiter.prune(now)
+
+	if _, ok := limiter.clients["10.0.0.1"]; ok {
+		t.Fatal("stale client should be pruned")
+	}
+	if _, ok := limiter.clients["10.0.0.2"]; !ok {
+		t.Fatal("recent client should remain")
+	}
+}
+
 func TestRateLimitMiddlewareReturns429(t *testing.T) {
 	now := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	limiter := newClientRateLimiter(1, time.Minute)

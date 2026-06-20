@@ -158,13 +158,57 @@ type clientRateLimiter struct {
 	now        func() time.Time
 }
 
+const clientRateLimiterPruneInterval = 2 * time.Minute
+
+var clientRateLimiterPruner = struct {
+	once     sync.Once
+	mu       sync.Mutex
+	limiters map[*clientRateLimiter]struct{}
+}{
+	limiters: make(map[*clientRateLimiter]struct{}),
+}
+
 func newClientRateLimiter(limit int, window time.Duration) *clientRateLimiter {
-	return &clientRateLimiter{
+	limiter := &clientRateLimiter{
 		limit:      limit,
 		window:     window,
 		maxClients: 4096,
 		clients:    make(map[string]*rateLimitState),
 		now:        time.Now,
+	}
+	registerClientRateLimiter(limiter)
+	return limiter
+}
+
+func registerClientRateLimiter(limiter *clientRateLimiter) {
+	if limiter == nil {
+		return
+	}
+
+	clientRateLimiterPruner.mu.Lock()
+	clientRateLimiterPruner.limiters[limiter] = struct{}{}
+	clientRateLimiterPruner.mu.Unlock()
+
+	clientRateLimiterPruner.once.Do(func() {
+		go runClientRateLimiterPruner()
+	})
+}
+
+func runClientRateLimiterPruner() {
+	ticker := time.NewTicker(clientRateLimiterPruneInterval)
+	defer ticker.Stop()
+
+	for now := range ticker.C {
+		clientRateLimiterPruner.mu.Lock()
+		limiters := make([]*clientRateLimiter, 0, len(clientRateLimiterPruner.limiters))
+		for limiter := range clientRateLimiterPruner.limiters {
+			limiters = append(limiters, limiter)
+		}
+		clientRateLimiterPruner.mu.Unlock()
+
+		for _, limiter := range limiters {
+			limiter.prune(now)
+		}
 	}
 }
 
@@ -177,8 +221,6 @@ func (l *clientRateLimiter) allow(client string) rateLimitDecision {
 	resetAt := now.Add(l.window)
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
-	l.prune(now)
 
 	state, ok := l.clients[client]
 	if !ok || now.Sub(state.windowStart) >= l.window {
