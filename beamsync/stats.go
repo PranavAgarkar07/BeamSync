@@ -2,114 +2,176 @@ package beamsync
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
-	"time"
 )
 
+// TransferDirection indicates whether a recorded transfer was inbound or outbound.
+type TransferDirection string
+
+const (
+	TransferDirectionReceive TransferDirection = "receive"
+	TransferDirectionSend    TransferDirection = "send"
+)
+
+// TransferStats is an immutable snapshot of cumulative transfer activity.
 type TransferStats struct {
-	StartedAt         string `json:"startedAt"`
-	FilesReceived     int    `json:"filesReceived"`
-	BytesReceived     int64  `json:"bytesReceived"`
-	FilesSent         int    `json:"filesSent"`
-	BytesSent         int64  `json:"bytesSent"`
-	ActiveUploads     int32  `json:"activeUploads"`
-	ActiveDownloads   int32  `json:"activeDownloads"`
-	IntegrityFailures int    `json:"integrityFailures"`
-	LastFilename      string `json:"lastFilename,omitempty"`
-	LastDirection     string `json:"lastDirection,omitempty"`
-	LastUpdatedAt     string `json:"lastUpdatedAt,omitempty"`
+	FilesReceived     int               `json:"files_received"`
+	BytesReceived     int64             `json:"bytes_received"`
+	FilesSent         int               `json:"files_sent"`
+	BytesSent         int64             `json:"bytes_sent"`
+	LastFilename      string            `json:"last_filename"`
+	LastDirection     TransferDirection `json:"last_direction"`
+	ActiveUploads     int               `json:"active_uploads"`
+	ActiveDownloads   int               `json:"active_downloads"`
+	IntegrityFailures int               `json:"integrity_failures"`
 }
 
+// TotalFiles returns the combined count of received and sent files.
+func (s TransferStats) TotalFiles() int {
+	return s.FilesReceived + s.FilesSent
+}
+
+// TotalBytes returns the combined byte count of received and sent transfers.
+func (s TransferStats) TotalBytes() int64 {
+	return s.BytesReceived + s.BytesSent
+}
+
+// HasFailures reports whether any integrity failures have been recorded.
+func (s TransferStats) HasFailures() bool {
+	return s.IntegrityFailures > 0
+}
+
+// transferStatsTracker accumulates transfer statistics in a thread-safe manner.
 type transferStatsTracker struct {
-	mu                sync.Mutex
-	startedAt         time.Time
-	filesReceived     int
-	bytesReceived     int64
-	filesSent         int
-	bytesSent         int64
-	integrityFailures int
-	lastFilename      string
-	lastDirection     string
-	lastUpdatedAt     time.Time
+	mu    sync.Mutex
+	stats TransferStats
 }
 
 func newTransferStatsTracker() *transferStatsTracker {
-	return &transferStatsTracker{startedAt: time.Now()}
+	return &transferStatsTracker{}
 }
 
-func (t *transferStatsTracker) recordReceived(filename string, bytes int64, activeUploads int32) TransferStats {
+// recordReceived records an inbound file transfer and returns the updated snapshot.
+func (t *transferStatsTracker) recordReceived(filename string, bytes int64, activeUploads int) TransferStats {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.filesReceived++
-	t.bytesReceived += bytes
-	t.lastFilename = filename
-	t.lastDirection = TransferDirectionReceive
-	t.lastUpdatedAt = time.Now()
+	t.stats.FilesReceived++
+	t.stats.BytesReceived += bytes
+	t.stats.LastFilename = filename
+	t.stats.LastDirection = TransferDirectionReceive
+	t.stats.ActiveUploads = activeUploads
 
-	return t.snapshotLocked(activeUploads, 0)
+	return t.stats
 }
 
-func (t *transferStatsTracker) recordSent(filename string, bytes int64, activeDownloads int32) TransferStats {
+// recordSent records an outbound file transfer and returns the updated snapshot.
+func (t *transferStatsTracker) recordSent(filename string, bytes int64, activeDownloads int) TransferStats {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.filesSent++
-	t.bytesSent += bytes
-	t.lastFilename = filename
-	t.lastDirection = TransferDirectionSend
-	t.lastUpdatedAt = time.Now()
+	t.stats.FilesSent++
+	t.stats.BytesSent += bytes
+	t.stats.LastFilename = filename
+	t.stats.LastDirection = TransferDirectionSend
+	t.stats.ActiveDownloads = activeDownloads
 
-	return t.snapshotLocked(0, activeDownloads)
+	return t.stats
 }
 
+// recordIntegrityFailure increments the integrity failure counter and returns the updated snapshot.
 func (t *transferStatsTracker) recordIntegrityFailure() TransferStats {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.integrityFailures++
-	t.lastUpdatedAt = time.Now()
+	t.stats.IntegrityFailures++
 
-	return t.snapshotLocked(0, 0)
+	return t.stats
 }
 
-func (t *transferStatsTracker) snapshot(activeUploads int32) TransferStats {
+// snapshot returns the current stats without mutating any counters.
+func (t *transferStatsTracker) snapshot() TransferStats {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	return t.snapshotLocked(activeUploads, 0)
+	return t.stats
 }
 
-func (t *transferStatsTracker) snapshotDownloads(activeDownloads int32) TransferStats {
+// reset clears all counters back to zero and returns the cleared snapshot.
+func (t *transferStatsTracker) reset() TransferStats {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	return t.snapshotLocked(0, activeDownloads)
+	t.stats = TransferStats{}
+
+	return t.stats
 }
 
-func (t *transferStatsTracker) snapshotLocked(activeUploads int32, activeDownloads int32) TransferStats {
-	stats := TransferStats{
-		StartedAt:         t.startedAt.Format(time.RFC3339),
-		FilesReceived:     t.filesReceived,
-		BytesReceived:     t.bytesReceived,
-		FilesSent:         t.filesSent,
-		BytesSent:         t.bytesSent,
-		ActiveUploads:     activeUploads,
-		ActiveDownloads:   activeDownloads,
-		IntegrityFailures: t.integrityFailures,
-		LastFilename:      t.lastFilename,
-		LastDirection:     t.lastDirection,
-	}
-	if !t.lastUpdatedAt.IsZero() {
-		stats.LastUpdatedAt = t.lastUpdatedAt.Format(time.RFC3339)
-	}
-	return stats
+// beginUpload increments the active upload count, e.g. when a remote peer
+// starts pushing a file to us.
+func (t *transferStatsTracker) beginUpload() TransferStats {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.stats.ActiveUploads++
+
+	return t.stats
 }
 
+// endUpload decrements the active upload count, never going below zero.
+func (t *transferStatsTracker) endUpload() TransferStats {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.stats.ActiveUploads > 0 {
+		t.stats.ActiveUploads--
+	}
+
+	return t.stats
+}
+
+// beginDownload increments the active download count, e.g. when we start
+// pulling a file from a remote peer.
+func (t *transferStatsTracker) beginDownload() TransferStats {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.stats.ActiveDownloads++
+
+	return t.stats
+}
+
+// endDownload decrements the active download count, never going below zero.
+func (t *transferStatsTracker) endDownload() TransferStats {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.stats.ActiveDownloads > 0 {
+		t.stats.ActiveDownloads--
+	}
+
+	return t.stats
+}
+
+// transferStatsJSON serializes a TransferStats snapshot to a JSON string.
 func transferStatsJSON(stats TransferStats) string {
 	data, err := json.Marshal(stats)
 	if err != nil {
 		return "{}"
 	}
 	return string(data)
+}
+
+// transferStatsSummary renders a short human-readable summary line, useful
+// for logging or CLI status output.
+func transferStatsSummary(stats TransferStats) string {
+	return fmt.Sprintf(
+		"received %d file(s) / %d bytes, sent %d file(s) / %d bytes, last=%q (%s), active up/down=%d/%d, failures=%d",
+		stats.FilesReceived, stats.BytesReceived,
+		stats.FilesSent, stats.BytesSent,
+		stats.LastFilename, stats.LastDirection,
+		stats.ActiveUploads, stats.ActiveDownloads,
+		stats.IntegrityFailures,
+	)
 }
