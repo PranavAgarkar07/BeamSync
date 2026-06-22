@@ -423,7 +423,7 @@
     </div>
 
     <script>
-        const TOKEN = "{{TOKEN}}";
+        let TOKEN = "{{TOKEN}}";
 
         // ── File state ──────────────────────────────────────────────
         // fileStates[i] = { name, size, status: 'queued'|'uploading'|'done'|'error' }
@@ -443,10 +443,11 @@
             if (_reloading) return;
             fetch("/heartbeat?token=" + TOKEN, { method: "POST" })
                 .then(r => {
+                    const renewedToken = r.headers.get('X-BeamSync-Token');
+                    if (renewedToken) TOKEN = renewedToken;
                     if ((r.status === 401 || r.status === 403) && !_uploading) {
                         _reloading = true;
-                        setStatus('Connection changed — reconnecting…', false);
-                        setTimeout(() => location.reload(), 800);
+                        setStatus('Session expired — re-scan the current QR code to reconnect', false);
                     }
                 })
                 .catch(() => {});

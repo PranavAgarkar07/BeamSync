@@ -22,7 +22,8 @@ import (
 )
 
 func TestTokenMiddlewareRejectsMissingOrInvalidToken(t *testing.T) {
-	handler := tokenMiddleware("secret-token", func(w http.ResponseWriter, r *http.Request) {
+	store := newTokenStoreForTest(t)
+	handler := tokenMiddleware(store, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	})
 
@@ -42,11 +43,17 @@ func TestTokenMiddlewareRejectsMissingOrInvalidToken(t *testing.T) {
 }
 
 func TestTokenMiddlewareAllowsValidTokenAndOptions(t *testing.T) {
-	handler := tokenMiddleware("secret-token", func(w http.ResponseWriter, r *http.Request) {
+	store := newTokenStoreForTest(t)
+	token, err := store.issue(tokenScopeSession, 0, "192.0.2.10")
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+	handler := tokenMiddleware(store, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/upload?token=secret-token", nil)
+	req := httptest.NewRequest(http.MethodPost, "/upload?token="+token, nil)
+	req.RemoteAddr = "192.0.2.10:1234"
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 	if rec.Code != http.StatusAccepted {
@@ -81,8 +88,8 @@ func TestAutoRenamePathFindsNonCollidingName(t *testing.T) {
 	}
 }
 
-func TestGenerateTokenReturnsHexToken(t *testing.T) {
-	token := generateToken()
+func TestGenerateIDReturnsHexValue(t *testing.T) {
+	token := generateID()
 	if len(token) != 32 {
 		t.Fatalf("token length = %d, want 32", len(token))
 	}
@@ -93,12 +100,12 @@ func TestGenerateTokenReturnsHexToken(t *testing.T) {
 	}
 }
 
-func TestGenerateTokenDoesNotCollideInSmallSample(t *testing.T) {
+func TestGenerateIDDoesNotCollideInSmallSample(t *testing.T) {
 	seen := make(map[string]bool)
 	for i := 0; i < 100; i++ {
-		token := generateToken()
+		token := generateID()
 		if seen[token] {
-			t.Fatalf("generateToken collision at token %q", token)
+			t.Fatalf("generateID collision at value %q", token)
 		}
 		seen[token] = true
 	}
@@ -411,9 +418,9 @@ func TestStartWriteWorkersProcessesJobsAndIgnoresCreateErrors(t *testing.T) {
 }
 
 func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
-	server, baseURL, token, events, _ := startServerForTest(t)
+	server, baseURL, bootstrapToken, events, _ := startRawServerForTest(t)
 
-	resp, err := http.Get(baseURL + "/")
+	resp, err := http.Get(baseURL + "/?token=" + bootstrapToken)
 	if err != nil {
 		t.Fatalf("GET /: %v", err)
 	}
@@ -428,8 +435,18 @@ func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
 	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "*" {
 		t.Fatalf("root Access-Control-Allow-Origin = %q, want *", got)
 	}
-	if !strings.Contains(string(body), token) {
-		t.Fatal("root page did not include session token")
+	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("root Cache-Control = %q, want no-store", got)
+	}
+	token := extractInjectedToken(t, string(body))
+
+	replayResp, err := http.Get(baseURL + "/?token=" + bootstrapToken)
+	if err != nil {
+		t.Fatalf("replay bootstrap token: %v", err)
+	}
+	replayResp.Body.Close()
+	if replayResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("replayed bootstrap status = %d, want %d", replayResp.StatusCode, http.StatusForbidden)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, baseURL+"/heartbeat?token="+token, nil)
@@ -444,6 +461,9 @@ func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
 	if heartbeatResp.StatusCode != http.StatusOK {
 		t.Fatalf("heartbeat status = %d, want %d", heartbeatResp.StatusCode, http.StatusOK)
 	}
+	if heartbeatResp.Header.Get("X-BeamSync-Token") == "" {
+		t.Fatal("heartbeat did not return a renewed session token")
+	}
 	if got := heartbeatResp.Header.Get("Access-Control-Allow-Origin"); got != "" {
 		t.Fatalf("heartbeat Access-Control-Allow-Origin = %q, want empty", got)
 	}
@@ -453,6 +473,71 @@ func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
 	}
 	if err := server.Shutdown(); err != nil {
 		t.Fatalf("shutdown: %v", err)
+	}
+}
+
+func TestStartSenderIssuesClientBoundSingleUseDownloadToken(t *testing.T) {
+	t.Setenv(tlsEnvVar, "")
+	filePath := filepath.Join(t.TempDir(), "secure.txt")
+	if err := os.WriteFile(filePath, []byte("secure payload"), 0600); err != nil {
+		t.Fatalf("write sender fixture: %v", err)
+	}
+
+	server, port, bootstrapToken := StartSender([]string{filePath}, nil)
+	if server == nil {
+		t.Fatal("StartSender returned nil server")
+	}
+	defer server.Shutdown()
+	baseURL := "http://127.0.0.1:" + port
+
+	rootResp, err := http.Get(baseURL + "/?token=" + bootstrapToken)
+	if err != nil {
+		t.Fatalf("GET sender page: %v", err)
+	}
+	rootBody, err := io.ReadAll(rootResp.Body)
+	rootResp.Body.Close()
+	if err != nil || rootResp.StatusCode != http.StatusOK {
+		t.Fatalf("sender page status=%d err=%v", rootResp.StatusCode, err)
+	}
+
+	replayRootResp, err := http.Get(baseURL + "/?token=" + bootstrapToken)
+	if err != nil {
+		t.Fatalf("replay sender bootstrap: %v", err)
+	}
+	replayRootResp.Body.Close()
+	if replayRootResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("replayed sender bootstrap status=%d, want %d", replayRootResp.StatusCode, http.StatusForbidden)
+	}
+
+	const linkPrefix = "/download?token="
+	start := strings.Index(string(rootBody), linkPrefix)
+	if start == -1 {
+		t.Fatal("sender page did not include a secure download link")
+	}
+	start += len(linkPrefix)
+	end := strings.IndexAny(string(rootBody[start:]), "'\"")
+	if end == -1 {
+		t.Fatal("secure download token was not terminated")
+	}
+	downloadURL := baseURL + linkPrefix + string(rootBody[start:start+end])
+
+	firstResp, err := http.Get(downloadURL)
+	if err != nil {
+		t.Fatalf("first secure download: %v", err)
+	}
+	firstBody, _ := io.ReadAll(firstResp.Body)
+	firstResp.Body.Close()
+	if firstResp.StatusCode != http.StatusOK || string(firstBody) != "secure payload" {
+		t.Fatalf("first download status=%d body=%q", firstResp.StatusCode, firstBody)
+	}
+
+	replayResp, err := http.Get(downloadURL)
+	if err != nil {
+		t.Fatalf("replayed secure download: %v", err)
+	}
+	replayResp.Body.Close()
+	if replayResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("replayed download status=%d, want %d", replayResp.StatusCode, http.StatusForbidden)
 	}
 }
 
@@ -708,6 +793,23 @@ func waitForEvent(events <-chan string, want string, timeout time.Duration) bool
 
 func startServerForTest(t *testing.T) (*HTTPServer, string, string, <-chan string, string) {
 	t.Helper()
+	server, baseURL, bootstrapToken, events, uploadDir := startRawServerForTest(t)
+	resp, err := http.Get(baseURL + "/?token=" + bootstrapToken)
+	if err != nil {
+		server.Shutdown()
+		t.Fatalf("exchange bootstrap token: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil || resp.StatusCode != http.StatusOK {
+		server.Shutdown()
+		t.Fatalf("bootstrap exchange status=%d err=%v body=%q", resp.StatusCode, err, body)
+	}
+	return server, baseURL, extractInjectedToken(t, string(body)), events, uploadDir
+}
+
+func startRawServerForTest(t *testing.T) (*HTTPServer, string, string, <-chan string, string) {
+	t.Helper()
 	uploadDir := t.TempDir()
 	startPort := freePort(t)
 	events := make(chan string, 20)
@@ -724,6 +826,21 @@ func startServerForTest(t *testing.T) (*HTTPServer, string, string, <-chan strin
 		t.Fatalf("StartServer port = %q, want %d", port, startPort)
 	}
 	return server, "http://127.0.0.1:" + port, token, events, uploadDir
+}
+
+func extractInjectedToken(t *testing.T, html string) string {
+	t.Helper()
+	const prefix = `let TOKEN = "`
+	start := strings.Index(html, prefix)
+	if start == -1 {
+		t.Fatal("page did not include an injected session token")
+	}
+	start += len(prefix)
+	end := strings.Index(html[start:], `"`)
+	if end == -1 {
+		t.Fatal("injected session token was not terminated")
+	}
+	return html[start : start+end]
 }
 
 func multipartUploadBody(t *testing.T, filename string, payload []byte) (bytes.Buffer, string) {
