@@ -43,7 +43,7 @@ To prevent copied URLs from granting another device access, BeamSync uses short-
 ```bash
 curl -X GET "http://192.168.1.50:3000/?token=<qr-bootstrap-token>"
 # With BEAMSYNC_ENABLE_TLS=true:
-curl -k -X GET "https://192.168.1.50:3000/"
+curl -k -X GET "https://192.168.1.50:3000/?token=<qr-bootstrap-token>"
 ```
 
 ---

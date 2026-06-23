@@ -71,7 +71,11 @@ func TestTokenStoreRejectsTampering(t *testing.T) {
 		t.Fatalf("issue token: %v", err)
 	}
 
-	tampered := "0" + token[1:]
+	newFirstChar := byte('0')
+	if token[0] == '0' {
+		newFirstChar = '1'
+	}
+	tampered := string(newFirstChar) + token[1:]
 	if err := store.validate(tampered, "192.0.2.10", tokenScopeSession, false); !errors.Is(err, errInvalidToken) {
 		t.Fatalf("tampered-token error = %v, want %v", err, errInvalidToken)
 	}
