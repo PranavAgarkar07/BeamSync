@@ -131,7 +131,6 @@ func TestTransferHistoryEmptyState(t *testing.T) {
 
 func TestTransferHistoryNilReceiver(t *testing.T) {
 	var history *TransferHistory
-	// Should not panic
 	record := history.Add(TransferRecord{Filename: "test.txt"})
 	if record.Filename != "test.txt" {
 		t.Fatalf("expected returned record to match input, got %v", record)
