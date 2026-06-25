@@ -376,7 +376,7 @@
     </div>
 
     <script>
-        const TOKEN = "{{TOKEN}}";
+        let TOKEN = "{{TOKEN}}";
 
         // ── Progress tracking ──────────────────────────────────────
         let progressState = {
@@ -556,7 +556,11 @@
                     if (btn) { btn.classList.remove('downloading'); btn.textContent = 'RETRY'; }
                     if (chip) chip.className = 'file-card__chip';
                     document.getElementById('active-progress').classList.remove('visible');
-                    alert('Download failed — please try again.');
+                    if (xhr.status === 401 || xhr.status === 403) {
+                        alert('This secure download link expired or was already used. Re-scan the current QR code to reconnect.');
+                    } else {
+                        alert('Download failed — please try again.');
+                    }
                 }
             });
 
@@ -579,9 +583,11 @@
             const url = TOKEN ? `/heartbeat?token=${TOKEN}` : '/heartbeat';
             fetch(url, { method: 'POST' })
                 .then(r => {
+                    const renewedToken = r.headers.get('X-BeamSync-Token');
+                    if (renewedToken) TOKEN = renewedToken;
                     if (r.status === 401 || r.status === 403) {
                         _reloading = true;
-                        setTimeout(() => location.reload(), 800);
+                        alert('Your BeamSync session expired. Re-scan the current QR code to reconnect.');
                     }
                 })
                 .catch(() => {});

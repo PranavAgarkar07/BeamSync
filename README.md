@@ -219,6 +219,7 @@ For developers, contributors, and security auditors who want to understand the u
 
 - **Local-only** — All transfers happen over your LAN. No external servers are contacted.
 - **Optional HTTPS** — Set `BEAMSYNC_ENABLE_TLS=true` before launching BeamSync to serve receiver and sender pages over HTTPS with a persisted ECDSA local certificate in `~/.config/beamsync/`.
+- **Ephemeral credentials** — HMAC-signed sessions expire after five minutes, bind to the connecting client and TLS context, renew through heartbeats, and use single-use links for downloads.
 - **Zero data collection** — BeamSync does not store, transmit, or analyze your files beyond the direct LAN transfer.
 - **Open source** — The entire codebase is available for audit.
 

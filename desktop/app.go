@@ -377,8 +377,7 @@ func (a *App) StartSender() string {
 	a.currentIP = localIP
 	a.currentPort = port
 
-	// Root page loads without token (acts as the landing), downloads require token.
-	url := fmt.Sprintf("%s://%s:%s/", beamsync.ServerScheme(), localIP, port)
+	url := fmt.Sprintf("%s://%s:%s/?token=%s", beamsync.ServerScheme(), localIP, port, token)
 
 	fmt.Println("========================================")
 	fmt.Println("📤 SENDER STARTED:", url)
@@ -431,7 +430,7 @@ func (a *App) SendFiles(filePaths []string) string {
 	a.currentIP = localIP
 	a.currentPort = port
 
-	url := fmt.Sprintf("%s://%s:%s/", beamsync.ServerScheme(), localIP, port)
+	url := fmt.Sprintf("%s://%s:%s/?token=%s", beamsync.ServerScheme(), localIP, port, token)
 
 	fmt.Println("========================================")
 	fmt.Println("📤 SENDER STARTED (from drag-drop):", url)
