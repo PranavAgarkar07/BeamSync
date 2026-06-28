@@ -1,0 +1,221 @@
+<nav class="navbar" id="navbar">
+  <div class="nav-inner">
+    <a href="#" class="nav-logo">
+      <img src="/BeamSync/icon.png" alt="BeamSync icon" width="30" height="30">
+      BeamSync
+    </a>
+    <div class="nav-links" id="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">Workflow</a>
+      <a href="#screenshots">Screenshots</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/PranavAgarkar07/BeamSync" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/PranavAgarkar07/BeamSync/releases" target="_blank" rel="noopener"
+        class="btn-dl btn-dl-pulse" id="nav-dl">
+        <svg class="dl-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+        Download
+      </a>
+    </div>
+    <button class="nav-hamburger" id="nav-hamburger" aria-label="Toggle menu" aria-expanded="false" type="button">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<style>
+  .navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: var(--bg);
+    border-bottom: 2px solid var(--border);
+    transition: background 200ms ease, box-shadow 200ms ease, backdrop-filter 200ms ease;
+  }
+  .navbar.scrolled {
+    background: rgba(12,17,32,.88);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 4px 24px rgba(0,0,0,.4);
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 32px;
+    max-width: 1280px;
+    margin: 0 auto;
+    gap: 16px;
+  }
+  .nav-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--fd);
+    font-weight: 800;
+    font-size: 1.05rem;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .nav-logo img { width: 30px; height: 30px; object-fit: contain; }
+  .nav-links { display: flex; align-items: center; gap: 8px; }
+  .nav-links a {
+    font-family: var(--fd);
+    font-weight: 700;
+    font-size: .8rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    padding: 8px 14px;
+    border: 1px solid transparent;
+    color: var(--muted);
+    transition: color 200ms ease, border-color 200ms ease, background 200ms ease;
+    position: relative;
+  }
+  .nav-links a::after {
+    content: '';
+    position: absolute;
+    bottom: 4px;
+    left: 50%;
+    width: 0;
+    height: 2px;
+    background: var(--green);
+    transition: width 200ms ease, left 200ms ease;
+  }
+  .nav-links a:hover {
+    color: var(--text);
+    background: rgba(255,255,255,.04);
+    border-color: var(--border);
+  }
+  .nav-links a:hover::after { width: calc(100% - 28px); left: 14px; }
+  .nav-hamburger {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    background: none;
+    border: 2px solid var(--border);
+    padding: 8px 10px;
+    cursor: pointer;
+    box-shadow: var(--sh-sm);
+    transition: var(--t);
+  }
+  .nav-hamburger span {
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: var(--text);
+    transition: transform .25s ease, opacity .25s ease;
+  }
+  .nav-hamburger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  .nav-hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+  .nav-hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+  .nav-hamburger:hover { border-color: var(--primary); box-shadow: var(--sh-md); }
+  .nav-hamburger:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+  .nav-links a:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+  @media (max-width: 900px) {
+    .nav-hamburger { display: flex; }
+    .nav-links {
+      flex-direction: column;
+      position: fixed;
+      top: auto;
+      left: 0;
+      right: 0;
+      background: var(--bg);
+      border-top: 2px solid var(--border);
+      border-bottom: 2px solid var(--border);
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+      z-index: 98;
+      max-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      transform: translateY(-8px);
+      transition: max-height 0.35s cubic-bezier(.4,0,.2,1), opacity 0.25s ease, transform 0.3s ease;
+    }
+    .nav-links.open {
+      max-height: 100vh;
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .nav-links a {
+      font-family: var(--fd);
+      font-weight: 700;
+      font-size: .85rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      padding: 14px 28px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      display: block;
+    }
+    .nav-links a:last-child { border-bottom: none; }
+    .nav-links a::after { display: none; }
+    .nav-links a:hover { color: var(--text); background: var(--surface); }
+    .nav-links .btn-dl {
+      margin: 16px 28px;
+      width: calc(100% - 56px);
+      justify-content: center;
+      border: 2px solid var(--text);
+    }
+  }
+
+  @media (max-width: 540px) {
+    .nav-inner { padding: 12px 16px; padding-left: calc(12px + env(safe-area-inset-left, 0px)); padding-right: calc(16px + env(safe-area-inset-right, 0px)); }
+    .nav-links { left: 0; right: 0; }
+    .nav-links.open { max-height: 100vh; }
+    .nav-links a { padding: 14px 28px; }
+  }
+  @media (max-width: 400px) {
+    .nav-inner { padding: 10px 12px; }
+    .nav-links a { padding: 12px 20px; font-size: .8rem; }
+    .nav-links .btn-dl { margin: 12px 20px; width: calc(100% - 40px); padding: 12px 20px; font-size: .82rem; }
+    .nav-hamburger { padding: 7px 9px; }
+    .nav-hamburger span { width: 18px; }
+    .nav-logo { font-size: .95rem; gap: 8px; }
+    .nav-logo img { width: 26px; height: 26px; }
+  }
+  @media (max-width: 360px) {
+    .nav-inner { padding: 8px 10px; gap: 8px; }
+    .nav-links a { padding: 10px 16px; font-size: .75rem; }
+    .nav-links .btn-dl { margin: 10px 16px; width: calc(100% - 32px); }
+    .nav-logo { font-size: .88rem; }
+    .nav-logo img { width: 24px; height: 24px; }
+  }
+</style>
+
+<script>
+  const navbar = document.getElementById('navbar');
+  window.addEventListener('scroll', () => {
+    navbar.classList.toggle('scrolled', window.scrollY > 40);
+  }, { passive: true });
+
+  const btn = document.getElementById('nav-hamburger');
+  const links = document.getElementById('nav-links');
+  if (btn && links) {
+    const navBar = document.getElementById('navbar');
+
+    function positionDropdown() {
+      links.style.top = navBar.getBoundingClientRect().bottom + 'px';
+    }
+
+    function toggle(force) {
+      const open = force !== undefined ? force : !links.classList.contains('open');
+      links.classList.toggle('open', open);
+      btn.classList.toggle('open', open);
+      btn.setAttribute('aria-expanded', String(open));
+      document.body.style.overflow = open ? 'hidden' : '';
+    }
+
+    btn.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+    links.querySelectorAll('a').forEach(a => a.addEventListener('click', () => toggle(false)));
+    document.addEventListener('click', e => { if (!navBar.contains(e.target)) toggle(false); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') toggle(false); });
+    window.addEventListener('resize', () => { if (window.innerWidth > 900) toggle(false); });
+  }
+</script>

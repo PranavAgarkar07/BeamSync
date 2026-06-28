@@ -26,7 +26,7 @@
         → Syne is the Google Fonts equivalent for display
       • CRED design aesthetic: geometric, bold, distinctive characters
       • Razorpay Blade: strong display + clean grotesque body */
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Manrope:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
 /* ─── Smooth Scrolling ────────────────────────────────────────────────────── */
 html {
@@ -88,6 +88,8 @@ html {
   /* device names, body text, descriptions, UI */
   --nb-font-mono: 'Space Mono', 'Courier New', monospace;
   /* IPs, speeds, sizes, code, data */
+  --nb-font-plex: 'IBM Plex Sans', system-ui, sans-serif;
+  /* dense UI text, all-caps lists, file names */
 
   /* Font weights */
   --nb-fw-regular: 400;

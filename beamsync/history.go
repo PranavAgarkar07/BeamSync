@@ -35,6 +35,8 @@ type TransferHistory struct {
 	maxEntries int
 	nextID     uint64
 	entries    []TransferRecord
+	start      int
+	count      int
 }
 
 func NewTransferHistory(maxEntries int) *TransferHistory {
@@ -52,6 +54,10 @@ func (h *TransferHistory) Add(record TransferRecord) TransferRecord {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	if h.maxEntries <= 0 {
+		h.maxEntries = defaultTransferHistoryLimit
+	}
+
 	h.nextID++
 	if record.ID == "" {
 		record.ID = fmt.Sprintf("transfer-%d-%d", time.Now().UnixNano(), h.nextID)
@@ -66,9 +72,14 @@ func (h *TransferHistory) Add(record TransferRecord) TransferRecord {
 		record.DurationMillis = record.CompletedAt.Sub(record.StartedAt).Milliseconds()
 	}
 
-	h.entries = append([]TransferRecord{record}, h.entries...)
-	if len(h.entries) > h.maxEntries {
-		h.entries = h.entries[:h.maxEntries]
+	if len(h.entries) == 0 {
+		h.entries = make([]TransferRecord, h.maxEntries)
+	}
+
+	h.start = (h.start - 1 + h.maxEntries) % h.maxEntries
+	h.entries[h.start] = record
+	if h.count < h.maxEntries {
+		h.count++
 	}
 	return record
 }
@@ -81,7 +92,9 @@ func (h *TransferHistory) List() []TransferRecord {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	records := make([]TransferRecord, len(h.entries))
-	copy(records, h.entries)
+	records := make([]TransferRecord, h.count)
+	for i := 0; i < h.count; i++ {
+		records[i] = h.entries[(h.start+i)%h.maxEntries]
+	}
 	return records
 }

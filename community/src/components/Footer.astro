@@ -1,0 +1,51 @@
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a href="#" class="nav-logo">
+        <img src="/BeamSync/icon.png" alt="BeamSync" width="28" height="28" style="object-fit:contain" />
+        BeamSync
+      </a>
+      <p>Secure. Fast. Local.<br />MIT Licensed · Open Source.<br />Go · Svelte · Wails v2.</p>
+    </div>
+    <div class="footer-links">
+      <div class="footer-col">
+        <h4>Project</h4>
+        <a href="https://github.com/PranavAgarkar07/BeamSync" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/PranavAgarkar07/BeamSync/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://aur.archlinux.org/packages/beamsync-bin" target="_blank" rel="noopener">AUR Package</a>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <a href="https://github.com/PranavAgarkar07/BeamSync/blob/main/README.md" target="_blank" rel="noopener">Documentation</a>
+        <a href="https://github.com/PranavAgarkar07/BeamSync/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+        <a href="https://github.com/PranavAgarkar07/BeamSync/issues" target="_blank" rel="noopener">Report Issue</a>
+      </div>
+      <div class="footer-col">
+        <h4>Stack</h4>
+        <a href="https://wails.io" target="_blank" rel="noopener">Wails v2</a>
+        <a href="https://svelte.dev" target="_blank" rel="noopener">Svelte</a>
+        <a href="https://go.dev" target="_blank" rel="noopener">Go</a>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© {new Date().getFullYear()} BeamSync · MIT License</span>
+    <span>Built with Go · Svelte · Wails v2</span>
+  </div>
+</footer>
+
+<style>
+  .footer { background: #060D1A; border-top: 2px solid var(--border); padding: 48px 28px 24px; }
+  .footer-inner { max-width: 1140px; margin: 0 auto; display: grid; grid-template-columns: 1fr 2fr; gap: 40px; padding-bottom: 48px; border-bottom: 1px solid var(--border); }
+  .nav-logo { display: flex; align-items: center; gap: 10px; font-family: var(--fd); font-weight: 800; font-size: 1.05rem; color: var(--text); cursor: pointer; margin-bottom: 16px; }
+  .nav-logo img { width: 28px; height: 28px; object-fit: contain; }
+  .footer-brand p { font-size: .88rem; color: var(--muted); line-height: 1.8; }
+  .footer-links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .footer-col h4 { font-family: var(--fm); font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--text); margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .footer-col a { display: block; font-size: .88rem; color: var(--muted); margin-bottom: 10px; transition: color 150ms ease; cursor: pointer; }
+  .footer-col a:hover { color: var(--green); }
+  .footer-bottom { max-width: 1140px; margin: 28px auto 0; display: flex; justify-content: space-between; font-family: var(--fm); font-size: .72rem; color: var(--muted); }
+  @media (max-width: 900px) { .footer-inner { grid-template-columns: 1fr; gap: 36px; } .footer-links { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 540px) { .footer-links { grid-template-columns: 1fr; } .footer-bottom { flex-direction: column; gap: 6px; text-align: center; } }
+  @media (max-width: 400px) { .footer { padding: 40px 16px 24px; } }
+</style>

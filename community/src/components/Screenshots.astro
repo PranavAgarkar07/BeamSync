@@ -1,0 +1,189 @@
+---
+const slides = [
+  { src: '/BeamSync/assets/appSS1.png', alt: 'BeamSync main window — file drop and QR connect', caption: 'Receive files from Mobile', num: '01' },
+  { src: '/BeamSync/assets/appSS2.png', alt: 'BeamSync live transfer progress', caption: 'Sending Files From PC to Mobile', num: '02' },
+  { src: '/BeamSync/assets/appSS3.png', alt: 'BeamSync settings and configuration', caption: 'Settings & Configuration', num: '03' },
+];
+---
+
+<section class="screenshots" id="screenshots">
+  <div class="wrap">
+    <div class="section-header reveal">
+      <span class="section-tag">In Action</span>
+      <h2>See BeamSync.<br>Feel the Speed.</h2>
+      <p>Real screenshots from the desktop app — no mockups, no filters.</p>
+    </div>
+    <div class="carousel reveal" id="ss-carousel" role="region" aria-roledescription="carousel" aria-label="Screenshot carousel">
+      <div class="carousel-viewport">
+        <div class="carousel-track" id="ss-track">
+          {slides.map((s) => (
+            <div class="carousel-slide">
+              <div class="ss-img-wrap" data-lb-index={slides.indexOf(s)}>
+                <img src={s.src} alt={s.alt} loading="lazy" decoding="async" />
+              </div>
+              <div class="ss-caption" aria-live="polite">
+                <span class="ss-num">{s.num}</span>
+                <span>{s.caption}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <button class="carousel-btn carousel-prev" id="ss-prev" aria-label="Previous screenshot" type="button">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+      </button>
+      <button class="carousel-btn carousel-next" id="ss-next" aria-label="Next screenshot" type="button">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </button>
+      <div class="carousel-dots" id="ss-dots">
+        {slides.map((_, i) => (
+          <button class={"carousel-dot" + (i === 0 ? " active" : "")} data-idx={i} aria-label={"Screenshot " + (i + 1)} type="button"></button>
+        ))}
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .screenshots { padding: 80px 28px; background: var(--surface); border-bottom: 2px solid var(--border); }
+  .carousel { position: relative; max-width: 1140px; margin: 0 auto; border: 2px solid var(--border); box-shadow: var(--sh-xl); }
+  .carousel-viewport { overflow: hidden; }
+  .carousel-track { display: flex; transition: transform .45s cubic-bezier(.4,0,.2,1); }
+  .carousel-slide { min-width: 100%; background: var(--bg); }
+  .ss-img-wrap {
+    overflow: hidden;
+    border-bottom: 2px solid var(--border);
+    background: #060D1A;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    cursor: zoom-in;
+  }
+  .ss-img-wrap img {
+    max-width: 100%;
+    max-height: 520px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
+    transition: transform .18s ease, filter .18s ease;
+    pointer-events: none;
+    user-select: none;
+  }
+  .ss-img-wrap:active img { transform: scale(.96); filter: brightness(.85); }
+  .ss-caption {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    font-family: var(--fd);
+    font-weight: 700;
+    font-size: .85rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+  }
+  .ss-num { font-family: var(--fm); font-size: 1.5rem; font-weight: 700; color: var(--primary); line-height: 1; }
+  .carousel-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-60%);
+    background: var(--surface);
+    border: 2px solid var(--border);
+    color: var(--text);
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: var(--sh-md);
+    transition: var(--t);
+    z-index: 5;
+  }
+  .carousel-btn:hover { background: var(--raised); transform: translateY(-60%) translate(-2px,-2px); box-shadow: var(--sh-lg); color: var(--primary); }
+  .carousel-prev { left: -22px; }
+  .carousel-next { right: -22px; }
+  .carousel-dots { display: flex; justify-content: center; gap: 8px; padding: 14px 0 4px; }
+  .carousel-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: background .2s, width .2s, box-shadow .2s;
+    padding: 0;
+  }
+  .carousel-dot.active { background: var(--primary); width: 24px; box-shadow: var(--sh-blue); }
+  .carousel-btn:focus-visible, .carousel-dot:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+  @media (max-width: 600px) { .carousel-prev { left: -14px; } .carousel-next { right: -14px; } }
+  @media (max-width: 540px) {
+    .ss-img-wrap img { max-height: 300px; }
+    .ss-caption { padding: 12px 16px; font-size: .75rem; }
+    .ss-num { font-size: 1.2rem; }
+    .carousel-btn { width: 36px; height: 36px; }
+    .carousel-prev { left: -10px; }
+    .carousel-next { right: -10px; }
+  }
+  @media (max-width: 400px) {
+    .ss-img-wrap img { max-height: 220px; }
+    .ss-img-wrap { padding: 6px; }
+    .carousel-btn { width: 32px; height: 32px; }
+    .carousel-prev { left: -6px; }
+    .carousel-next { right: -6px; }
+  }
+</style>
+
+<script>
+  (function () {
+    const track = document.getElementById('ss-track');
+    const prevBtn = document.getElementById('ss-prev');
+    const nextBtn = document.getElementById('ss-next');
+    const dots = document.querySelectorAll('#ss-dots .carousel-dot');
+    if (!track) return;
+
+    const total = track.children.length;
+    let current = 0;
+    let autoTimer;
+
+    function goTo(idx) {
+      current = (idx + total) % total;
+      track.style.transform = 'translateX(-' + (current * 100) + '%)';
+      dots.forEach((d, i) => d.classList.toggle('active', i === current));
+    }
+
+    prevBtn.addEventListener('click', () => { goTo(current - 1); resetAuto(); });
+    nextBtn.addEventListener('click', () => { goTo(current + 1); resetAuto(); });
+    dots.forEach(d => d.addEventListener('click', () => { goTo(+d.dataset.idx); resetAuto(); }));
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowLeft')  { goTo(current - 1); resetAuto(); }
+      if (e.key === 'ArrowRight') { goTo(current + 1); resetAuto(); }
+      if (e.key === 'Home') { goTo(0); resetAuto(); }
+      if (e.key === 'End') { goTo(total - 1); resetAuto(); }
+    });
+
+    let startX = 0;
+    track.addEventListener('touchstart', e => { startX = e.touches[0].clientX; }, { passive: true });
+    track.addEventListener('touchend', e => {
+      const dx = e.changedTouches[0].clientX - startX;
+      if (Math.abs(dx) > 40) { goTo(dx < 0 ? current + 1 : current - 1); resetAuto(); }
+    });
+
+    function startAuto() { autoTimer = setInterval(() => goTo(current + 1), 5000); }
+    function resetAuto() { clearInterval(autoTimer); startAuto(); }
+
+    const carousel = track.closest('.carousel');
+    carousel.addEventListener('mouseenter', () => clearInterval(autoTimer));
+    carousel.addEventListener('mouseleave', startAuto);
+    startAuto();
+
+    window.addEventListener('beforeunload', () => { if (autoTimer) clearInterval(autoTimer); });
+  })();
+</script>

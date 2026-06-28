@@ -16,6 +16,7 @@ import (
 	stdruntime "runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -34,6 +35,8 @@ type App struct {
 	serverApp    *beamsync.HTTPServer
 	senderApp    *beamsync.HTTPServer
 	eventChan    chan EventData
+	eventsClosed chan struct{}
+	shutdownOnce sync.Once
 	lastSavePath string
 	currentIP    string
 	currentPort  string
@@ -64,7 +67,8 @@ type ReceivedFile struct {
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
-		eventChan: make(chan EventData, 100),
+		eventChan:    make(chan EventData, 100),
+		eventsClosed: make(chan struct{}),
 	}
 }
 
@@ -153,17 +157,25 @@ func (a *App) startup(ctx context.Context) {
 
 // processEvents handles backend events on a safe goroutine before relaying to Wails.
 func (a *App) processEvents() {
-	for event := range a.eventChan {
-		if event.Name == "device_connected" {
-			currentRealIP := getLocalIP()
-			if a.currentIP != "" && a.currentIP != currentRealIP {
-				fmt.Printf("🔄 IP Change Detected! Old: %s, New: %s\n", a.currentIP, currentRealIP)
-				a.currentIP = currentRealIP
-				newURL := fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), a.currentIP, a.currentPort)
-				a.safeEmit("url_changed", newURL)
+	for {
+		select {
+		case event, ok := <-a.eventChan:
+			if !ok {
+				return
 			}
+			if event.Name == "device_connected" {
+				currentRealIP := getLocalIP()
+				if a.currentIP != "" && a.currentIP != currentRealIP {
+					fmt.Printf("🔄 IP Change Detected! Old: %s, New: %s\n", a.currentIP, currentRealIP)
+					a.currentIP = currentRealIP
+					newURL := fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), a.currentIP, a.currentPort)
+					a.safeEmit("url_changed", newURL)
+				}
+			}
+			a.safeEmit(event.Name, event.Data)
+		case <-a.eventsClosed:
+			return
 		}
-		a.safeEmit(event.Name, event.Data)
 	}
 }
 
@@ -184,19 +196,21 @@ func (a *App) safeEmit(eventName string, data interface{}) {
 
 // shutdown is called when the app is closing.
 func (a *App) shutdown(ctx context.Context) {
-	close(a.eventChan)
-	if a.serverApp != nil {
-		fmt.Println("🛑 Shutting down receiver server...")
-		if err := a.serverApp.Shutdown(); err != nil {
-			fmt.Println("⚠️ Server shutdown error:", err)
+	a.shutdownOnce.Do(func() {
+		if a.serverApp != nil {
+			fmt.Println("🛑 Shutting down receiver server...")
+			if err := a.serverApp.Shutdown(); err != nil {
+				fmt.Println("⚠️ Server shutdown error:", err)
+			}
 		}
-	}
-	if a.senderApp != nil {
-		fmt.Println("🛑 Shutting down sender server...")
-		if err := a.senderApp.Shutdown(); err != nil {
-			fmt.Println("⚠️ Sender shutdown error:", err)
+		if a.senderApp != nil {
+			fmt.Println("🛑 Shutting down sender server...")
+			if err := a.senderApp.Shutdown(); err != nil {
+				fmt.Println("⚠️ Sender shutdown error:", err)
+			}
 		}
-	}
+		close(a.eventsClosed)
+	})
 }
 
 // PlaySound is exposed to the frontend.
@@ -213,7 +227,13 @@ func (a *App) PlaySound(name string) {
 // makeCallback returns an EventCallback that queues events into the channel.
 func (a *App) makeCallback() beamsync.EventCallback {
 	return func(name string, data string) {
-		a.eventChan <- EventData{Name: name, Data: data}
+		select {
+		case <-a.eventsClosed:
+			return
+		case a.eventChan <- EventData{Name: name, Data: data}:
+		default:
+			fmt.Printf("Dropping frontend event because queue is full: %s\n", name)
+		}
 	}
 }
 
@@ -357,8 +377,7 @@ func (a *App) StartSender() string {
 	a.currentIP = localIP
 	a.currentPort = port
 
-	// Root page loads without token (acts as the landing), downloads require token.
-	url := fmt.Sprintf("%s://%s:%s/", beamsync.ServerScheme(), localIP, port)
+	url := fmt.Sprintf("%s://%s:%s/?token=%s", beamsync.ServerScheme(), localIP, port, token)
 
 	fmt.Println("========================================")
 	fmt.Println("📤 SENDER STARTED:", url)
@@ -376,6 +395,58 @@ func (a *App) StartSender() string {
 		}
 		entries := make([]fileEntry, 0, len(selection))
 		for _, p := range selection {
+			entry := fileEntry{Name: filepath.Base(p)}
+			if fi, err := os.Stat(p); err == nil {
+				entry.SizeBytes = fi.Size()
+			}
+			entries = append(entries, entry)
+		}
+		if b, err := json.Marshal(entries); err == nil {
+			a.safeEmit("sender_files", string(b))
+		}
+	}()
+
+	return url
+}
+
+// SendFiles starts a sender with the given file paths (used by drag-and-drop).
+func (a *App) SendFiles(filePaths []string) string {
+	if len(filePaths) == 0 {
+		return "Cancelled"
+	}
+
+	if a.senderApp != nil {
+		fmt.Println("🔄 Stopping previous sender server...")
+		if err := a.senderApp.Shutdown(); err != nil {
+			fmt.Println("⚠️ Failed to stop previous sender:", err)
+		}
+		a.senderApp = nil
+	}
+
+	app, port, token := beamsync.StartSender(filePaths, a.makeCallback())
+	a.senderApp = app
+
+	localIP := getLocalIP()
+	a.currentIP = localIP
+	a.currentPort = port
+
+	url := fmt.Sprintf("%s://%s:%s/?token=%s", beamsync.ServerScheme(), localIP, port, token)
+
+	fmt.Println("========================================")
+	fmt.Println("📤 SENDER STARTED (from drag-drop):", url)
+	fmt.Printf("   token: %s\n", token)
+	fmt.Println("========================================")
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		a.safeEmit("sender_started", url)
+
+		type fileEntry struct {
+			Name      string `json:"name"`
+			SizeBytes int64  `json:"sizeBytes"`
+		}
+		entries := make([]fileEntry, 0, len(filePaths))
+		for _, p := range filePaths {
 			entry := fileEntry{Name: filepath.Base(p)}
 			if fi, err := os.Stat(p); err == nil {
 				entry.SizeBytes = fi.Size()
@@ -463,10 +534,16 @@ func (a *App) GetReceivedFiles() []ReceivedFile {
 	}
 	entries, err := os.ReadDir(a.lastSavePath)
 	if err != nil {
-		fmt.Println("⚠️ GetReceivedFiles: could not read dir:", err)
+		fmt.Println("GetReceivedFiles: could not read dir:", err)
 		return nil
 	}
-	var result []ReceivedFile
+
+	type receivedFileWithModTime struct {
+		file    ReceivedFile
+		modTime time.Time
+	}
+
+	var files []receivedFileWithModTime
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -475,21 +552,24 @@ func (a *App) GetReceivedFiles() []ReceivedFile {
 		if err != nil {
 			continue
 		}
-		result = append(result, ReceivedFile{
-			Name:      e.Name(),
-			SizeBytes: info.Size(),
-			ModTime:   info.ModTime().Format("02 Jan · 15:04"),
+		files = append(files, receivedFileWithModTime{
+			file: ReceivedFile{
+				Name:      e.Name(),
+				SizeBytes: info.Size(),
+				ModTime:   info.ModTime().Format("02 Jan - 15:04"),
+			},
+			modTime: info.ModTime(),
 		})
 	}
-	// Sort newest-first by filesystem mod time
-	sort.Slice(result, func(i, j int) bool {
-		ii, _ := os.Stat(filepath.Join(a.lastSavePath, result[i].Name))
-		jj, _ := os.Stat(filepath.Join(a.lastSavePath, result[j].Name))
-		if ii == nil || jj == nil {
-			return false
-		}
-		return ii.ModTime().After(jj.ModTime())
+	// Sort newest-first by the mod time already loaded from the directory scan.
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime.After(files[j].modTime)
 	})
+
+	result := make([]ReceivedFile, 0, len(files))
+	for _, file := range files {
+		result = append(result, file.file)
+	}
 	return result
 }
 

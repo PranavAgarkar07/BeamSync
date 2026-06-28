@@ -1,0 +1,156 @@
+---
+const slides = [
+  { src: '/BeamSync/assets/appSS1.png', alt: 'BeamSync main window — file drop and QR connect', caption: 'File Drop & QR Connect' },
+  { src: '/BeamSync/assets/appSS2.png', alt: 'BeamSync live transfer progress', caption: 'Live Transfer Progress' },
+  { src: '/BeamSync/assets/appSS3.png', alt: 'BeamSync settings and configuration', caption: 'Settings & Configuration' },
+];
+---
+
+<div class="lb-overlay" id="lb-overlay" role="dialog" aria-modal="true" aria-label="Image viewer" aria-hidden="true">
+  <div class="lb-panel" id="lb-panel">
+    <button class="lb-close" id="lb-close" aria-label="Close lightbox" type="button">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square">
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    </button>
+    <div class="lb-topbar">
+      <span class="lb-tag">In Action</span>
+      <span class="lb-caption-text" id="lb-caption-text"></span>
+    </div>
+    <div class="lb-img-area">
+      <button class="lb-nav lb-prev" id="lb-prev" aria-label="Previous" type="button">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+      </button>
+      <img class="lb-img" id="lb-img" src="" alt="" />
+      <button class="lb-nav lb-next" id="lb-next" aria-label="Next" type="button">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </button>
+    </div>
+    <div class="lb-dots" id="lb-dots"></div>
+  </div>
+</div>
+
+<style>
+  .lb-overlay { position: fixed; inset: 0; z-index: 9000; background: rgba(6,13,26,.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .22s ease-out; }
+  .lb-overlay.lb-open { opacity: 1; pointer-events: all; }
+  .lb-panel { position: relative; width: min(1100px, 96vw); background: var(--surface); border: 2px solid var(--border); box-shadow: var(--sh-xl); transform: translateY(28px) scale(.96); transition: transform .32s cubic-bezier(.2,0,0,1), opacity .22s ease-out; opacity: 0; display: flex; flex-direction: column; }
+  .lb-overlay.lb-open .lb-panel { transform: translateY(0) scale(1); opacity: 1; }
+  .lb-topbar { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 2px solid var(--border); background: var(--raised); }
+  .lb-tag { font-family: var(--fm); font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--green); background: rgba(16,217,138,.08); border: 1px solid var(--green); padding: 3px 10px; flex-shrink: 0; }
+  .lb-caption-text { font-family: var(--fd); font-weight: 700; font-size: .82rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); flex: 1; }
+  .lb-close { position: absolute; top: -2px; right: -48px; width: 44px; height: 44px; background: var(--surface); border: 2px solid var(--border); color: var(--text); display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: var(--sh-md); transition: var(--t); z-index: 10; flex-shrink: 0; outline: none; }
+  .lb-close:hover { color: var(--danger); border-color: var(--danger); background: var(--raised); transform: translate(-2px,-2px); box-shadow: 4px 4px 0 rgba(255,92,122,.5); }
+  .lb-close:active { transform: translate(1px,1px); box-shadow: none; }
+  .lb-img-area { position: relative; display: flex; align-items: center; justify-content: center; background: #060D1A; min-height: 200px; padding: 0 56px; }
+  .lb-img { max-width: 100%; max-height: 78vh; object-fit: contain; display: block; }
+  .lb-nav { position: absolute; top: 50%; transform: translateY(-50%); background: var(--surface); border: 2px solid var(--border); color: var(--text); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: var(--sh-md); transition: var(--t); z-index: 2; }
+  .lb-nav:hover { background: var(--raised); color: var(--primary); border-color: var(--primary); transform: translateY(-50%) translate(-2px,-2px); box-shadow: var(--sh-lg); }
+  .lb-prev { left: 6px; }
+  .lb-next { right: 6px; }
+  .lb-dots { display: flex; justify-content: center; gap: 8px; padding: 14px; }
+  .lb-dot { width: 8px; height: 8px; background: var(--border); border: 1px solid var(--border); cursor: pointer; transition: background .2s, width .2s, box-shadow .2s; padding: 0; }
+  .lb-dot.active { background: var(--primary); width: 24px; box-shadow: var(--sh-blue); }
+  .lb-close:focus-visible, .lb-nav:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+  @media (max-width: 900px) { .lb-close { right: 4px; top: 4px; } }
+  @media (max-width: 540px) {
+    .lb-panel { width: 100vw; min-height: 100dvh; border: none; }
+    .lb-close { right: 0; top: 0; width: 40px; height: 40px; }
+    .lb-img-area { padding: 0; min-height: 150px; }
+    .lb-img { max-height: 60vh; }
+    .lb-nav { width: 36px; height: 36px; }
+    .lb-topbar { padding: 10px 14px; }
+    .lb-caption-text { font-size: .72rem; }
+  }
+  @media (max-width: 400px) {
+    .lb-nav { width: 32px; height: 32px; }
+    .lb-img { max-height: 50vh; }
+  }
+  @media (prefers-reduced-motion: reduce) { .lb-overlay, .lb-panel { transition: none; } }
+</style>
+
+<script>
+  (function () {
+    const slides = [
+      { src: '/BeamSync/assets/appSS1.png', alt: 'BeamSync main window — file drop and QR connect', caption: 'File Drop & QR Connect' },
+      { src: '/BeamSync/assets/appSS2.png', alt: 'BeamSync live transfer progress', caption: 'Live Transfer Progress' },
+      { src: '/BeamSync/assets/appSS3.png', alt: 'BeamSync settings and configuration', caption: 'Settings & Configuration' },
+    ];
+
+    const overlay = document.getElementById('lb-overlay');
+    const lbImg = document.getElementById('lb-img');
+    const lbCaption = document.getElementById('lb-caption-text');
+    const lbClose = document.getElementById('lb-close');
+    const lbPrev = document.getElementById('lb-prev');
+    const lbNext = document.getElementById('lb-next');
+    const lbDotsWrap = document.getElementById('lb-dots');
+    if (!overlay) return;
+
+    const lbDots = slides.map((_, i) => {
+      const d = document.createElement('button');
+      d.className = 'lb-dot' + (i === 0 ? ' active' : '');
+      d.setAttribute('aria-label', 'View screenshot ' + (i + 1));
+      d.addEventListener('click', () => open(i));
+      lbDotsWrap.appendChild(d);
+      return d;
+    });
+
+    let current = 0;
+    let previousActiveElement = null;
+
+    function open(idx) {
+      current = idx;
+      lbImg.src = slides[idx].src;
+      lbImg.alt = slides[idx].alt;
+      lbCaption.textContent = slides[idx].caption;
+      lbDots.forEach((d, i) => d.classList.toggle('active', i === idx));
+      overlay.classList.add('lb-open');
+      overlay.setAttribute('aria-hidden', 'false');
+      previousActiveElement = document.activeElement;
+      lbClose.focus();
+      document.body.classList.add('lb-active');
+      document.querySelectorAll('body > :not(.lb-overlay)').forEach(el => {
+        if (el !== overlay) el.setAttribute('inert', '');
+      });
+    }
+
+    function close() {
+      overlay.classList.remove('lb-open');
+      overlay.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('lb-active');
+      document.querySelectorAll('[inert]').forEach(el => el.removeAttribute('inert'));
+      if (previousActiveElement) previousActiveElement.focus();
+    }
+
+    function step(dir) {
+      open((current + dir + slides.length) % slides.length);
+    }
+
+    document.querySelectorAll('[data-lb-index]').forEach(wrap => {
+      wrap.addEventListener('click', () => open(+wrap.dataset.lbIndex));
+    });
+
+    lbClose.addEventListener('click', close);
+    lbPrev.addEventListener('click', () => step(-1));
+    lbNext.addEventListener('click', () => step(1));
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    document.addEventListener('keydown', e => {
+      if (!overlay.classList.contains('lb-open')) return;
+      if (e.key === 'Escape') close();
+      if (e.key === 'ArrowLeft') step(-1);
+      if (e.key === 'ArrowRight') step(1);
+    });
+
+    let lbStartX = 0;
+    lbImg.addEventListener('touchstart', e => { lbStartX = e.touches[0].clientX; }, { passive: true });
+    lbImg.addEventListener('touchend', e => {
+      const dx = e.changedTouches[0].clientX - lbStartX;
+      if (Math.abs(dx) > 40) step(dx < 0 ? 1 : -1);
+    });
+  })();
+</script>

@@ -2,6 +2,8 @@ package beamsync
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,8 +11,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -18,7 +22,8 @@ import (
 )
 
 func TestTokenMiddlewareRejectsMissingOrInvalidToken(t *testing.T) {
-	handler := tokenMiddleware("secret-token", func(w http.ResponseWriter, r *http.Request) {
+	store := newTokenStoreForTest(t)
+	handler := tokenMiddleware(store, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	})
 
@@ -31,19 +36,31 @@ func TestTokenMiddlewareRejectsMissingOrInvalidToken(t *testing.T) {
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%s returned %d, want %d", target, rec.Code, http.StatusForbidden)
 		}
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Fatalf("%s set Access-Control-Allow-Origin = %q, want empty", target, got)
+		}
 	}
 }
 
 func TestTokenMiddlewareAllowsValidTokenAndOptions(t *testing.T) {
-	handler := tokenMiddleware("secret-token", func(w http.ResponseWriter, r *http.Request) {
+	store := newTokenStoreForTest(t)
+	token, err := store.issue(tokenScopeSession, 0, "192.0.2.10")
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+	handler := tokenMiddleware(store, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/upload?token=secret-token", nil)
+	req := httptest.NewRequest(http.MethodPost, "/upload?token="+token, nil)
+	req.RemoteAddr = "192.0.2.10:1234"
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("valid token status = %d, want %d", rec.Code, http.StatusAccepted)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("valid token response set Access-Control-Allow-Origin = %q, want empty", got)
 	}
 
 	optionsReq := httptest.NewRequest(http.MethodOptions, "/upload", nil)
@@ -51,6 +68,9 @@ func TestTokenMiddlewareAllowsValidTokenAndOptions(t *testing.T) {
 	handler(optionsRec, optionsReq)
 	if optionsRec.Code != http.StatusNoContent {
 		t.Fatalf("OPTIONS status = %d, want %d", optionsRec.Code, http.StatusNoContent)
+	}
+	if got := optionsRec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("OPTIONS response set Access-Control-Allow-Origin = %q, want empty", got)
 	}
 }
 
@@ -68,8 +88,8 @@ func TestAutoRenamePathFindsNonCollidingName(t *testing.T) {
 	}
 }
 
-func TestGenerateTokenReturnsHexToken(t *testing.T) {
-	token := generateToken()
+func TestGenerateIDReturnsHexValue(t *testing.T) {
+	token := generateID()
 	if len(token) != 32 {
 		t.Fatalf("token length = %d, want 32", len(token))
 	}
@@ -80,12 +100,12 @@ func TestGenerateTokenReturnsHexToken(t *testing.T) {
 	}
 }
 
-func TestGenerateTokenDoesNotCollideInSmallSample(t *testing.T) {
+func TestGenerateIDDoesNotCollideInSmallSample(t *testing.T) {
 	seen := make(map[string]bool)
 	for i := 0; i < 100; i++ {
-		token := generateToken()
+		token := generateID()
 		if seen[token] {
-			t.Fatalf("generateToken collision at token %q", token)
+			t.Fatalf("generateID collision at value %q", token)
 		}
 		seen[token] = true
 	}
@@ -104,6 +124,48 @@ func TestSetCORSHeaders(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Headers"); got != "Content-Type" {
 		t.Fatalf("Allow-Headers = %q", got)
+	}
+}
+
+func TestUploadBufferInitialCapacityUsesSmallManifestSize(t *testing.T) {
+	got := uploadBufferInitialCapacity(
+		"tiny.txt",
+		map[string]int64{"tiny.txt": 1024},
+		textproto.MIMEHeader{},
+		largeFileThreshold+1024,
+	)
+
+	if got != 1024 {
+		t.Fatalf("initial capacity = %d, want manifest size 1024", got)
+	}
+}
+
+func TestUploadBufferInitialCapacityCapsLargeManifestAtThreshold(t *testing.T) {
+	got := uploadBufferInitialCapacity(
+		"movie.mp4",
+		map[string]int64{"movie.mp4": largeFileThreshold + 1},
+		textproto.MIMEHeader{},
+		0,
+	)
+
+	if got != largeFileThreshold {
+		t.Fatalf("initial capacity = %d, want largeFileThreshold", got)
+	}
+}
+
+func TestUploadBufferInitialCapacityFallsBackToRequestLength(t *testing.T) {
+	got := uploadBufferInitialCapacity("unknown.txt", nil, textproto.MIMEHeader{}, 4096)
+
+	if got != 4096 {
+		t.Fatalf("initial capacity = %d, want request content length 4096", got)
+	}
+}
+
+func TestUploadBufferInitialCapacityAvoidsUnknownLargePreallocation(t *testing.T) {
+	got := uploadBufferInitialCapacity("unknown.bin", nil, textproto.MIMEHeader{}, largeFileThreshold+1024)
+
+	if got != 0 {
+		t.Fatalf("initial capacity = %d, want 0 for unknown large upload", got)
 	}
 }
 
@@ -136,6 +198,129 @@ func TestSafeEmitHandlesNilCallbackAndCallbackPanic(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("safeEmit did not invoke callback")
+	}
+}
+
+func TestSafeEmitDoesNotSpawnPerEventGoroutines(t *testing.T) {
+	block := make(chan struct{})
+	started := make(chan struct{}, 1)
+	callback := func(string, string) {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-block
+	}
+
+	before := runtime.NumGoroutine()
+	for i := 0; i < 50; i++ {
+		safeEmit(callback, "upload_progress", "file.txt|1|50")
+	}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("dispatcher did not start processing events")
+	}
+
+	after := runtime.NumGoroutine()
+	close(block)
+
+	if growth := after - before; growth > 5 {
+		t.Fatalf("goroutine count grew by %d; safeEmit should use one bounded dispatcher", growth)
+	}
+}
+
+func TestHTTPServerShutdownWaitsForActiveRequest(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	httpSrv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			close(started)
+			<-release
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	serveDone := make(chan error, 1)
+	go func() {
+		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			serveDone <- err
+			return
+		}
+		serveDone <- nil
+	}()
+
+	clientDone := make(chan error, 1)
+	go func() {
+		resp, err := http.Get("http://" + ln.Addr().String())
+		if err != nil {
+			clientDone <- err
+			return
+		}
+		defer resp.Body.Close()
+		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+			clientDone <- err
+			return
+		}
+		if resp.StatusCode != http.StatusNoContent {
+			clientDone <- fmt.Errorf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+			return
+		}
+		clientDone <- nil
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not receive request")
+	}
+
+	server := &HTTPServer{server: httpSrv}
+	shutdownDone := make(chan error, 1)
+	go func() {
+		shutdownDone <- server.Shutdown()
+	}()
+
+	select {
+	case err := <-shutdownDone:
+		t.Fatalf("Shutdown returned before active request finished: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+
+	select {
+	case err := <-clientDone:
+		if err != nil {
+			t.Fatalf("client request: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("client request did not complete")
+	}
+
+	select {
+	case err := <-shutdownDone:
+		if err != nil {
+			t.Fatalf("shutdown: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Shutdown did not complete after request finished")
+	}
+
+	select {
+	case err := <-serveDone:
+		if err != nil {
+			t.Fatalf("serve: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Serve did not exit after shutdown")
 	}
 }
 
@@ -233,9 +418,9 @@ func TestStartWriteWorkersProcessesJobsAndIgnoresCreateErrors(t *testing.T) {
 }
 
 func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
-	server, baseURL, token, events, _ := startServerForTest(t)
+	server, baseURL, bootstrapToken, events, _ := startRawServerForTest(t)
 
-	resp, err := http.Get(baseURL + "/")
+	resp, err := http.Get(baseURL + "/?token=" + bootstrapToken)
 	if err != nil {
 		t.Fatalf("GET /: %v", err)
 	}
@@ -247,8 +432,21 @@ func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
 	if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
 		t.Fatalf("Content-Type = %q, want text/html", resp.Header.Get("Content-Type"))
 	}
-	if !strings.Contains(string(body), token) {
-		t.Fatal("root page did not include session token")
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("root Access-Control-Allow-Origin = %q, want *", got)
+	}
+	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("root Cache-Control = %q, want no-store", got)
+	}
+	token := extractInjectedToken(t, string(body))
+
+	replayResp, err := http.Get(baseURL + "/?token=" + bootstrapToken)
+	if err != nil {
+		t.Fatalf("replay bootstrap token: %v", err)
+	}
+	replayResp.Body.Close()
+	if replayResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("replayed bootstrap status = %d, want %d", replayResp.StatusCode, http.StatusForbidden)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, baseURL+"/heartbeat?token="+token, nil)
@@ -263,12 +461,83 @@ func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
 	if heartbeatResp.StatusCode != http.StatusOK {
 		t.Fatalf("heartbeat status = %d, want %d", heartbeatResp.StatusCode, http.StatusOK)
 	}
+	if heartbeatResp.Header.Get("X-BeamSync-Token") == "" {
+		t.Fatal("heartbeat did not return a renewed session token")
+	}
+	if got := heartbeatResp.Header.Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("heartbeat Access-Control-Allow-Origin = %q, want empty", got)
+	}
 
 	if !waitForEvent(events, "device_connected", time.Second) {
 		t.Fatal("device_connected event was not emitted")
 	}
 	if err := server.Shutdown(); err != nil {
 		t.Fatalf("shutdown: %v", err)
+	}
+}
+
+func TestStartSenderIssuesClientBoundSingleUseDownloadToken(t *testing.T) {
+	t.Setenv(tlsEnvVar, "")
+	filePath := filepath.Join(t.TempDir(), "secure.txt")
+	if err := os.WriteFile(filePath, []byte("secure payload"), 0600); err != nil {
+		t.Fatalf("write sender fixture: %v", err)
+	}
+
+	server, port, bootstrapToken := StartSender([]string{filePath}, nil)
+	if server == nil {
+		t.Fatal("StartSender returned nil server")
+	}
+	defer server.Shutdown()
+	baseURL := "http://127.0.0.1:" + port
+
+	rootResp, err := http.Get(baseURL + "/?token=" + bootstrapToken)
+	if err != nil {
+		t.Fatalf("GET sender page: %v", err)
+	}
+	rootBody, err := io.ReadAll(rootResp.Body)
+	rootResp.Body.Close()
+	if err != nil || rootResp.StatusCode != http.StatusOK {
+		t.Fatalf("sender page status=%d err=%v", rootResp.StatusCode, err)
+	}
+
+	replayRootResp, err := http.Get(baseURL + "/?token=" + bootstrapToken)
+	if err != nil {
+		t.Fatalf("replay sender bootstrap: %v", err)
+	}
+	replayRootResp.Body.Close()
+	if replayRootResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("replayed sender bootstrap status=%d, want %d", replayRootResp.StatusCode, http.StatusForbidden)
+	}
+
+	const linkPrefix = "/download?token="
+	start := strings.Index(string(rootBody), linkPrefix)
+	if start == -1 {
+		t.Fatal("sender page did not include a secure download link")
+	}
+	start += len(linkPrefix)
+	end := strings.IndexAny(string(rootBody[start:]), "'\"")
+	if end == -1 {
+		t.Fatal("secure download token was not terminated")
+	}
+	downloadURL := baseURL + linkPrefix + string(rootBody[start:start+end])
+
+	firstResp, err := http.Get(downloadURL)
+	if err != nil {
+		t.Fatalf("first secure download: %v", err)
+	}
+	firstBody, _ := io.ReadAll(firstResp.Body)
+	firstResp.Body.Close()
+	if firstResp.StatusCode != http.StatusOK || string(firstBody) != "secure payload" {
+		t.Fatalf("first download status=%d body=%q", firstResp.StatusCode, firstBody)
+	}
+
+	replayResp, err := http.Get(downloadURL)
+	if err != nil {
+		t.Fatalf("replayed secure download: %v", err)
+	}
+	replayResp.Body.Close()
+	if replayResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("replayed download status=%d, want %d", replayResp.StatusCode, http.StatusForbidden)
 	}
 }
 
@@ -289,6 +558,70 @@ func TestUploadWithoutFileReturnsBadRequest(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("upload status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("upload Access-Control-Allow-Origin = %q, want empty", got)
+	}
+}
+
+func TestResumableEndpointsAreRateLimited(t *testing.T) {
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		wantBefore int
+	}{
+		{
+			name:       "resumable upload",
+			method:     http.MethodPut,
+			path:       "/upload/resumable",
+			wantBefore: http.StatusBadRequest,
+		},
+		{
+			name:       "upload status",
+			method:     http.MethodGet,
+			path:       "/upload-status/test-upload-id",
+			wantBefore: http.StatusNotFound,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, baseURL, token, _, _ := startServerForTest(t)
+			defer server.Shutdown()
+
+			target := baseURL + tc.path + "?token=" + token
+			for i := 0; i < 12; i++ {
+				req, err := http.NewRequest(tc.method, target, nil)
+				if err != nil {
+					t.Fatalf("create request %d: %v", i+1, err)
+				}
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					t.Fatalf("%s %s request %d: %v", tc.method, tc.path, i+1, err)
+				}
+				resp.Body.Close()
+				if resp.StatusCode != tc.wantBefore {
+					t.Fatalf("request %d status = %d, want %d before rate limit", i+1, resp.StatusCode, tc.wantBefore)
+				}
+			}
+
+			req, err := http.NewRequest(tc.method, target, nil)
+			if err != nil {
+				t.Fatalf("create rate-limited request: %v", err)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("%s %s rate-limited request: %v", tc.method, tc.path, err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusTooManyRequests {
+				t.Fatalf("rate-limited status = %d, want %d", resp.StatusCode, http.StatusTooManyRequests)
+			}
+			if got := resp.Header.Get("Retry-After"); got == "" {
+				t.Fatal("rate-limited response should include Retry-After")
+			}
+		})
 	}
 }
 
@@ -345,12 +678,90 @@ func TestUploadWithFileSavesToDiskAndEmitsEvents(t *testing.T) {
 	if statsResp.StatusCode != http.StatusOK {
 		t.Fatalf("stats status = %d, want %d", statsResp.StatusCode, http.StatusOK)
 	}
+	if got := statsResp.Header.Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("stats Access-Control-Allow-Origin = %q, want empty", got)
+	}
 	var stats TransferStats
 	if err := json.NewDecoder(statsResp.Body).Decode(&stats); err != nil {
 		t.Fatalf("decode stats: %v", err)
 	}
 	if stats.FilesReceived != 1 || stats.BytesReceived != 11 {
 		t.Fatalf("stats = %#v, want one 11-byte received file", stats)
+	}
+}
+
+func TestUploadWithMatchingSHA256HeaderSucceeds(t *testing.T) {
+	server, baseURL, token, _, uploadDir := startServerForTest(t)
+	defer server.Shutdown()
+
+	payload := []byte("hello verified world")
+	body, contentType := multipartUploadBody(t, "verified.txt", payload)
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/upload?token="+token, &body)
+	if err != nil {
+		t.Fatalf("create upload request: %v", err)
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set(uploadIntegrityHeader, sha256String(payload))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /upload: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		responseBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("upload status = %d, want %d: %s", resp.StatusCode, http.StatusOK, responseBody)
+	}
+
+	got, err := os.ReadFile(filepath.Join(uploadDir, "verified.txt"))
+	if err != nil {
+		t.Fatalf("read uploaded file: %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("uploaded file = %q, want %q", got, payload)
+	}
+}
+
+func TestUploadWithMismatchedSHA256HeaderRejectsAndRecordsFailure(t *testing.T) {
+	server, baseURL, token, _, uploadDir := startServerForTest(t)
+	defer server.Shutdown()
+
+	payload := []byte("corrupted on the wire")
+	body, contentType := multipartUploadBody(t, "corrupt.txt", payload)
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/upload?token="+token, &body)
+	if err != nil {
+		t.Fatalf("create upload request: %v", err)
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set(uploadIntegrityHeader, strings.Repeat("0", 64))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /upload: %v", err)
+	}
+	defer resp.Body.Close()
+	responseBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("upload status = %d, want %d: %s", resp.StatusCode, http.StatusBadRequest, responseBody)
+	}
+	if !strings.Contains(string(responseBody), "integrity-mismatch") {
+		t.Fatalf("response body = %q, want integrity-mismatch", responseBody)
+	}
+	if _, err := os.Stat(filepath.Join(uploadDir, "corrupt.txt")); !os.IsNotExist(err) {
+		t.Fatalf("corrupt file should not be kept, stat err = %v", err)
+	}
+
+	statsResp, err := http.Get(baseURL + "/stats?token=" + token)
+	if err != nil {
+		t.Fatalf("GET /stats: %v", err)
+	}
+	defer statsResp.Body.Close()
+	var stats TransferStats
+	if err := json.NewDecoder(statsResp.Body).Decode(&stats); err != nil {
+		t.Fatalf("decode stats: %v", err)
+	}
+	if stats.IntegrityFailures != 1 {
+		t.Fatalf("integrity failures = %d, want 1", stats.IntegrityFailures)
 	}
 }
 
@@ -382,6 +793,23 @@ func waitForEvent(events <-chan string, want string, timeout time.Duration) bool
 
 func startServerForTest(t *testing.T) (*HTTPServer, string, string, <-chan string, string) {
 	t.Helper()
+	server, baseURL, bootstrapToken, events, uploadDir := startRawServerForTest(t)
+	resp, err := http.Get(baseURL + "/?token=" + bootstrapToken)
+	if err != nil {
+		server.Shutdown()
+		t.Fatalf("exchange bootstrap token: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil || resp.StatusCode != http.StatusOK {
+		server.Shutdown()
+		t.Fatalf("bootstrap exchange status=%d err=%v body=%q", resp.StatusCode, err, body)
+	}
+	return server, baseURL, extractInjectedToken(t, string(body)), events, uploadDir
+}
+
+func startRawServerForTest(t *testing.T) (*HTTPServer, string, string, <-chan string, string) {
+	t.Helper()
 	uploadDir := t.TempDir()
 	startPort := freePort(t)
 	events := make(chan string, 20)
@@ -398,6 +826,51 @@ func startServerForTest(t *testing.T) (*HTTPServer, string, string, <-chan strin
 		t.Fatalf("StartServer port = %q, want %d", port, startPort)
 	}
 	return server, "http://127.0.0.1:" + port, token, events, uploadDir
+}
+
+func extractInjectedToken(t *testing.T, html string) string {
+	t.Helper()
+	const prefix = `let TOKEN = "`
+	start := strings.Index(html, prefix)
+	if start == -1 {
+		t.Fatal("page did not include an injected session token")
+	}
+	start += len(prefix)
+	end := strings.Index(html[start:], `"`)
+	if end == -1 {
+		t.Fatal("injected session token was not terminated")
+	}
+	return html[start : start+end]
+}
+
+func multipartUploadBody(t *testing.T, filename string, payload []byte) (bytes.Buffer, string) {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	manifest, err := writer.CreateFormField("beam_manifest")
+	if err != nil {
+		t.Fatalf("create manifest field: %v", err)
+	}
+	if _, err := fmt.Fprintf(manifest, `[{"name":%q,"size":%d}]`, filename, len(payload)); err != nil {
+		t.Fatalf("write manifest field: %v", err)
+	}
+	file, err := writer.CreateFormFile("files", filename)
+	if err != nil {
+		t.Fatalf("create file field: %v", err)
+	}
+	if _, err := file.Write(payload); err != nil {
+		t.Fatalf("write file field: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	return body, writer.FormDataContentType()
+}
+
+func sha256String(payload []byte) string {
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
 }
 
 func freePort(t *testing.T) int {

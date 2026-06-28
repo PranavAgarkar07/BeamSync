@@ -4,6 +4,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/faiface/beep"
@@ -12,6 +13,7 @@ import (
 )
 
 type AudioEngine struct {
+	mu          sync.RWMutex
 	buffers     map[string]*beep.Buffer
 	initialized bool
 	sampleRate  beep.SampleRate
@@ -31,7 +33,9 @@ func (ae *AudioEngine) Init() error {
 	if err != nil {
 		return err
 	}
+	ae.mu.Lock()
 	ae.initialized = true
+	ae.mu.Unlock()
 	return nil
 }
 
@@ -65,15 +69,20 @@ func (ae *AudioEngine) LoadSoundFromStream(name string, rc io.ReadCloser) error 
 	buffer.Append(s)
 	streamer.Close()
 
+	ae.mu.Lock()
 	ae.buffers[name] = buffer
+	ae.mu.Unlock()
 	return nil
 }
 
 func (ae *AudioEngine) Play(name string) {
+	ae.mu.RLock()
 	if !ae.initialized {
+		ae.mu.RUnlock()
 		return
 	}
 	buffer, ok := ae.buffers[name]
+	ae.mu.RUnlock()
 	if !ok {
 		log.Printf("AudioEngine: Sound '%s' not found", name)
 		return

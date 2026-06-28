@@ -70,11 +70,16 @@
   };
   let transferStatsNow = Date.now();
   let transferStatsTimer;
+  let transferStatsThrottleTimer;
+  let pendingTransferStats = null;
+  let lastTransferStatsUpdateAt = 0;
   let transferSpeeds = {
     receive: "Idle",
     send: "Idle",
   };
   let activeSpeedDirection = "";
+
+  const TRANSFER_STATS_THROTTLE_MS = 1000;
 
   let receivedFiles = [];
   let progress = {
@@ -162,6 +167,54 @@
     ].slice(0, 12);
   }
 
+  function normalizeTransferStats(nextStats) {
+    return {
+      startedAt: nextStats.startedAt || transferStats.startedAt,
+      filesReceived: Number(nextStats.filesReceived) || 0,
+      bytesReceived: Number(nextStats.bytesReceived) || 0,
+      filesSent: Number(nextStats.filesSent) || 0,
+      bytesSent: Number(nextStats.bytesSent) || 0,
+      activeUploads: Number(nextStats.activeUploads) || 0,
+      activeDownloads: Number(nextStats.activeDownloads) || 0,
+      lastFilename: nextStats.lastFilename || "",
+      lastDirection: nextStats.lastDirection || "",
+    };
+  }
+
+  function transferStatsChanged(nextStats) {
+    return Object.keys(nextStats).some((key) => nextStats[key] !== transferStats[key]);
+  }
+
+  function applyTransferStats(nextStats) {
+    transferStats = nextStats;
+    transferStatsNow = Date.now();
+    lastTransferStatsUpdateAt = transferStatsNow;
+  }
+
+  function scheduleTransferStatsUpdate(nextStats) {
+    if (!transferStatsChanged(nextStats)) return;
+
+    const now = Date.now();
+    const elapsed = now - lastTransferStatsUpdateAt;
+    if (elapsed >= TRANSFER_STATS_THROTTLE_MS) {
+      clearTimeout(transferStatsThrottleTimer);
+      pendingTransferStats = null;
+      applyTransferStats(nextStats);
+      return;
+    }
+
+    pendingTransferStats = nextStats;
+    if (transferStatsThrottleTimer) return;
+
+    transferStatsThrottleTimer = setTimeout(() => {
+      transferStatsThrottleTimer = null;
+      if (!pendingTransferStats) return;
+      const latestStats = pendingTransferStats;
+      pendingTransferStats = null;
+      applyTransferStats(latestStats);
+    }, TRANSFER_STATS_THROTTLE_MS - elapsed);
+  }
+
   function formatDuration(ms = 0) {
     if (!ms || ms < 1000) return "<1s";
     const seconds = Math.round(ms / 1000);
@@ -230,6 +283,7 @@
     EventsOn("file_received", (filename) => {
       refreshFileList();
       clearTimeout(_progressTimeout);
+    clearTimeout(qrGenerationTimer);
       progress = {
         active: false,
         filename: "",
@@ -279,18 +333,7 @@
     EventsOn("transfer_stats", (dataStr) => {
       try {
         const nextStats = JSON.parse(dataStr);
-        transferStats = {
-          startedAt: nextStats.startedAt || transferStats.startedAt,
-          filesReceived: Number(nextStats.filesReceived) || 0,
-          bytesReceived: Number(nextStats.bytesReceived) || 0,
-          filesSent: Number(nextStats.filesSent) || 0,
-          bytesSent: Number(nextStats.bytesSent) || 0,
-          activeUploads: Number(nextStats.activeUploads) || 0,
-          activeDownloads: Number(nextStats.activeDownloads) || 0,
-          lastFilename: nextStats.lastFilename || "",
-          lastDirection: nextStats.lastDirection || "",
-        };
-        transferStatsNow = Date.now();
+        scheduleTransferStatsUpdate(normalizeTransferStats(nextStats));
       } catch {
         addSessionEntry("Stats update failed", "Unable to read transfer stats", "warn");
       }
@@ -442,7 +485,7 @@
     OnFileDropOff();
     clearTimeout(batchTimer);
     clearTimeout(_progressTimeout);
-    clearTimeout(qrGenerationTimer);
+    clearTimeout(transferStatsThrottleTimer);
     clearInterval(transferStatsTimer);
   });
 
@@ -649,15 +692,48 @@
     settingsDirty = true;
   }
 
-  function addTrustedDevice() {
-    const ip = newTrustedIP.trim();
-    if (!ip) return;
-    if (!settings.trustedDevices.find(d => d.ip === ip)) {
-      settings.trustedDevices = [...settings.trustedDevices, { ip, friendlyName: newTrustedName.trim() || ip }];
-      settingsDirty = true;
+  function isValidIPv4(ip) {
+    const parts = ip.split(".");
+    return parts.length === 4 && parts.every((part) => {
+      if (!/^\d+$/.test(part)) return false;
+      const value = Number(part);
+      return value >= 0 && value <= 255 && String(value) === String(Number(part));
+    });
+  }
+
+  function upsertDevice(listName, ip, friendlyName) {
+    const trimmedIP = ip.trim();
+    const trimmedName = friendlyName.trim() || trimmedIP;
+    if (!trimmedIP) return false;
+    if (!isValidIPv4(trimmedIP)) {
+      toast("Enter a valid IPv4 address", "error");
+      return false;
     }
-    newTrustedIP = "";
-    newTrustedName = "";
+    if (settings[listName].length >= 50) {
+      toast("Device list limit reached", "warn");
+      return false;
+    }
+    if (settings[listName].find((device) => device.ip === trimmedIP)) {
+      toast("Device already exists", "warn");
+      return false;
+    }
+    settings[listName] = [...settings[listName], { ip: trimmedIP, friendlyName: trimmedName }];
+    settingsDirty = true;
+    return true;
+  }
+
+  function updateDeviceName(listName, ip, friendlyName) {
+    settings[listName] = settings[listName].map((device) =>
+      device.ip === ip ? { ...device, friendlyName: friendlyName.trim() || ip } : device
+    );
+    settingsDirty = true;
+  }
+
+  function addTrustedDevice() {
+    if (upsertDevice("trustedDevices", newTrustedIP, newTrustedName)) {
+      newTrustedIP = "";
+      newTrustedName = "";
+    }
   }
 
   function removeTrustedDevice(ip) {
@@ -666,14 +742,10 @@
   }
 
   function addBlockedDevice() {
-    const ip = newBlockedIP.trim();
-    if (!ip) return;
-    if (!settings.blockedDevices.find(d => d.ip === ip)) {
-      settings.blockedDevices = [...settings.blockedDevices, { ip, friendlyName: newBlockedName.trim() || ip }];
-      settingsDirty = true;
+    if (upsertDevice("blockedDevices", newBlockedIP, newBlockedName)) {
+      newBlockedIP = "";
+      newBlockedName = "";
     }
-    newBlockedIP = "";
-    newBlockedName = "";
   }
 
   function removeBlockedDevice(ip) {
@@ -704,14 +776,18 @@
   // Drag & drop
   function handleDragEnter(e) {
     e.preventDefault();
+    e.stopPropagation();
     dragCounter += 1;
     isDragOver = true;
   }
   function handleDragOver(e) {
     e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
   }
   function handleDragLeave(e) {
     e.preventDefault();
+    e.stopPropagation();
     dragCounter -= 1;
     if (dragCounter <= 0) {
       dragCounter = 0;
@@ -730,6 +806,7 @@
 
   function handleDrop(e) {
     e.preventDefault();
+    e.stopPropagation();
     dragCounter = 0;
     isDragOver = false;
     if (dropGuard) return;
@@ -765,7 +842,13 @@
   $: sortedFiles = [...receivedFiles];
 </script>
 
-<svelte:window on:mousemove={handleMouseMove} />
+<svelte:window
+  on:mousemove={handleMouseMove}
+  on:dragenter={handleDragEnter}
+  on:dragover={handleDragOver}
+  on:dragleave={handleDragLeave}
+  on:drop={handleDrop}
+/>
 
 {#if transferRequest}
   <div class="nb-card" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10000; width: 440px; padding: 2.5rem; border: 4px solid var(--nb-border-color); background: var(--nb-surface);">
@@ -865,19 +948,27 @@
     <main class="main-content">
       {#if mode === "RECEIVE"}
         <div class="mode-wrapper" in:fly={{ y: 15, duration: 250 }}>
-        {#if connectionState !== "CONNECTED"}
-          <div class="receive-standby">
+          <div
+            class="receive-layout"
+            class:receive-layout--split={connectionState === "CONNECTED"}
+          >
+            <div
+              class="receive-standby"
+              class:receive-standby--compact={connectionState === "CONNECTED"}
+            >
             <div class="nb-card home-card">
               <div class="home-card__header">
                 <div
                   class="status-indicator"
-                  class:pulse={connectionState === "WAITING"}
+                  class:pulse={connectionState === "WAITING" || connectionState === "CONNECTED"}
                 ></div>
                 <h1 class="standby-title">
                   {#if connectionState === "WAITING"}
                     Connect via {serverUrl
                       .replace(/^https?:\/\//, "")
                       .split(":")[0] || "Wi-Fi"}
+                  {:else if connectionState === "CONNECTED"}
+                    Device Connected
                   {:else if connectionState === "DISCONNECTED"}
                     Connection Lost
                   {:else}
@@ -888,11 +979,12 @@
 
               <div class="home-card__body">
                 {#if qrImage}
-                  <div class="qr-wrapper">
+                  <div class="qr-wrapper" class:qr-wrapper--compact={connectionState === "CONNECTED"}>
                     <img
                       src={qrImage}
                       alt="QR Code"
                       class="qr-code"
+                      class:qr-code--compact={connectionState === "CONNECTED"}
                       draggable="false"
                     />
                   </div>
@@ -936,67 +1028,71 @@
               >
             {/if}
           </div>
-        {:else}
-          <div class="receive-active">
-            <h2 class="active-title">Device Connected</h2>
 
-            <div class="ready-banner pulse-bg">
-              <div class="radar-ping"></div>
-              <div class="ready-content">
-                <span class="status-badge">READY</span>
-                <span class="status-text">WAITING FOR FILES...</span>
+          {#if connectionState === "CONNECTED"}
+            <div class="receive-active" in:fly={{ x: 20, duration: 300, delay: 100 }}>
+              <div class="ready-banner pulse-bg">
+                <div class="radar-ping"></div>
+                <div class="ready-content">
+                  <span class="status-badge">READY</span>
+                  <span class="status-text">WAITING FOR FILES...</span>
+                </div>
               </div>
+
+              <TransferStatsDashboard
+                stats={transferStats}
+                now={transferStatsNow}
+                direction="receive"
+                currentSpeed={transferSpeeds.receive}
+                speedActive={activeSpeedDirection === "receive"}
+              />
+
+              <div class="files-panel">
+                <div class="files-header">
+                  <h3>RECEIVED FILES ({receivedFiles.length})</h3>
+                </div>
+                <div class="files-list" class:empty={receivedFiles.length === 0}>
+                  {#if receivedFiles.length === 0}
+                    <div class="empty-state">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><rect x="3" y="3" width="18" height="18" rx="0" ry="0"/><line x1="9" y1="3" x2="9" y2="21"/><path d="M13 8h4"/><path d="M13 12h4"/></svg>
+                      <p>INBOX EMPTY<br><small>Incoming data will appear here</small></p>
+                    </div>
+                  {/if}
+                  {#each sortedFiles as file}
+                    <button
+                      class="file-item"
+                      on:click={() => openFile(file.name)}
+                    >
+                      <span class="file-icon">{fileIcon(file.name)}</span>
+                      <span class="file-name">{file.name}</span>
+                      <span class="file-size">{formatSize(file.sizeBytes)}</span>
+                      <span class="file-time">{file.modTime}</span>
+                    </button>
+                  {/each}
+                </div>
+              </div>
+
+              <ActivityPanel {transferHistory} {sessionLog} {formatSize} {formatDuration} {formatTransferTime} />
             </div>
-
-            <TransferStatsDashboard
-              stats={transferStats}
-              now={transferStatsNow}
-              direction="receive"
-              currentSpeed={transferSpeeds.receive}
-              speedActive={activeSpeedDirection === "receive"}
-            />
-
-            <div class="files-panel">
-              <div class="files-header">
-                <h3>RECEIVED FILES ({receivedFiles.length})</h3>
-              </div>
-              <div class="files-list" class:empty={receivedFiles.length === 0}>
-                {#if receivedFiles.length === 0}
-                  <div class="empty-state">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><rect x="3" y="3" width="18" height="18" rx="0" ry="0"/><line x1="9" y1="3" x2="9" y2="21"/><path d="M13 8h4"/><path d="M13 12h4"/></svg>
-                    <p>INBOX EMPTY<br><small>Incoming data will appear here</small></p>
-                  </div>
-                {/if}
-                {#each sortedFiles as file}
-                  <button
-                    class="file-item"
-                    on:click={() => openFile(file.name)}
-                  >
-                    <span class="file-icon">{fileIcon(file.name)}</span>
-                    <span class="file-name">{file.name}</span>
-                    <span class="file-size">{formatSize(file.sizeBytes)}</span>
-                    <span class="file-time">{file.modTime}</span>
-                  </button>
-                {/each}
-              </div>
-            </div>
-
-            <ActivityPanel {transferHistory} {sessionLog} {formatSize} {formatDuration} {formatTransferTime} />
+          {/if}
           </div>
-        {/if}
         </div>
       {:else if mode === "SEND"}
-        <div class="mode-wrapper send-layout" in:fly={{ y: 15, duration: 250 }}>
-          <FileDropZone
-            files={senderFiles}
-            on:dropped={({ detail }) => handleDropZoneFiles(detail.files)}
-            on:filesSelected={({ detail }) => handleDropZoneFiles(detail.files)}
-            on:requestPicker={startSend}
-          />
+        <div class="mode-wrapper" in:fly={{ y: 15, duration: 250 }}>
+          <div class="send-split" class:send-split--active={showSenderDialog}>
+            <div class="send-sidebar" class:send-sidebar--compact={showSenderDialog}>
+              <FileDropZone
+                files={senderFiles}
+                on:dropped={({ detail }) => handleDropZoneFiles(detail.files)}
+                on:filesSelected={({ detail }) => handleDropZoneFiles(detail.files)}
+                on:requestPicker={startSend}
+              />
+            </div>
 
-          {#if showSenderDialog}
-            <div class="sender-dialog">
-              <div class="sender-header">
+            {#if showSenderDialog}
+              <div class="send-main" in:fly={{ x: 20, duration: 300, delay: 100 }}>
+                <div class="sender-dialog">
+                <div class="sender-header">
                 <span class="radar-ping-small"></span>
                 <h3>READY TO SEND</h3>
               </div>
@@ -1034,8 +1130,10 @@
                 class="nb-btn nb-btn--danger close-btn"
                 on:click={() => (showSenderDialog = false)}>CLOSE SESSION</button
               >
-            </div>
-          {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
 
           <ActivityPanel {transferHistory} {sessionLog} {formatSize} {formatDuration} {formatTransferTime} />
         </div>
@@ -1056,11 +1154,70 @@
 
             <div style="margin-bottom: 2rem;">
               <h3>Transfer Mode</h3>
-              {#each [{v: "ask_first", l: "Ask First"}, {v: "accept_all", l: "Accept All"}, {v: "block_all", l: "Block All"}] as opt}
+              {#each [{v: "ask_first", l: "Ask First"}, {v: "accept_all", l: "Accept All"}, {v: "trusted_only", l: "Trusted Only"}, {v: "block_all", l: "Block All"}] as opt}
                 <label style="display: block; margin: 0.5rem 0;">
                   <input type="radio" bind:group={settings.mode} value={opt.v} on:change={() => settingsDirty = true}> {opt.l}
                 </label>
               {/each}
+            </div>
+
+            <div style="margin-bottom: 2rem;">
+              <h3>Devices</h3>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem;">
+                <section style="border: 2px solid var(--nb-border-color); background: var(--nb-bg); padding: 1rem;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
+                    <h4 style="margin: 0;">Trusted Devices</h4>
+                    <span class="nb-badge">{settings.trustedDevices.length}/50</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 0.5rem; margin-bottom: 0.75rem;">
+                    <input class="nb-input" bind:value={newTrustedIP} placeholder="192.168.1.42">
+                    <input class="nb-input" bind:value={newTrustedName} placeholder="Phone">
+                    <button class="nb-btn nb-btn--secondary nb-btn--sm" on:click={addTrustedDevice}>ADD</button>
+                  </div>
+                  {#if settings.trustedDevices.length === 0}
+                    <p style="margin: 0; color: var(--nb-text-muted); font-size: 0.85rem;">No trusted devices yet. Devices you approve can appear here.</p>
+                  {:else}
+                    <div style="display: grid; gap: 0.5rem;">
+                      {#each settings.trustedDevices as device}
+                        <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; border: 2px solid var(--nb-border-color); background: var(--nb-surface); padding: 0.75rem;">
+                          <div style="min-width: 0;">
+                            <input class="nb-input" value={device.friendlyName || device.ip} on:change={(e) => updateDeviceName("trustedDevices", device.ip, e.currentTarget.value)} style="width: 100%; margin-bottom: 0.4rem;">
+                            <div style="font-family: monospace; color: var(--nb-text-muted); font-size: 0.8rem;">{device.ip}</div>
+                          </div>
+                          <button class="nb-btn nb-btn--ghost nb-btn--sm" on:click={() => removeTrustedDevice(device.ip)}>REMOVE</button>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </section>
+
+                <section style="border: 2px solid var(--nb-border-color); background: var(--nb-bg); padding: 1rem;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
+                    <h4 style="margin: 0;">Blocked Devices</h4>
+                    <span class="nb-badge">{settings.blockedDevices.length}/50</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 0.5rem; margin-bottom: 0.75rem;">
+                    <input class="nb-input" bind:value={newBlockedIP} placeholder="192.168.1.99">
+                    <input class="nb-input" bind:value={newBlockedName} placeholder="Unknown laptop">
+                    <button class="nb-btn nb-btn--secondary nb-btn--sm" on:click={addBlockedDevice}>ADD</button>
+                  </div>
+                  {#if settings.blockedDevices.length === 0}
+                    <p style="margin: 0; color: var(--nb-text-muted); font-size: 0.85rem;">No blocked devices yet. Rejected devices can be added here.</p>
+                  {:else}
+                    <div style="display: grid; gap: 0.5rem;">
+                      {#each settings.blockedDevices as device}
+                        <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; border: 2px solid var(--nb-border-color); background: var(--nb-surface); padding: 0.75rem;">
+                          <div style="min-width: 0;">
+                            <input class="nb-input" value={device.friendlyName || device.ip} on:change={(e) => updateDeviceName("blockedDevices", device.ip, e.currentTarget.value)} style="width: 100%; margin-bottom: 0.4rem;">
+                            <div style="font-family: monospace; color: var(--nb-text-muted); font-size: 0.8rem;">{device.ip}</div>
+                          </div>
+                          <button class="nb-btn nb-btn--ghost nb-btn--sm" on:click={() => removeBlockedDevice(device.ip)}>REMOVE</button>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </section>
+              </div>
             </div>
 
             <div style="margin-bottom: 2rem;">
@@ -1306,8 +1463,6 @@
   }
 
   /* Receive Standby */
-  .receive-standby,
-  .receive-active,
   .about-layout,
   .send-layout {
     width: 100%;
@@ -1317,12 +1472,54 @@
     gap: var(--nb-space-6);
   }
 
+  .receive-layout {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--nb-space-6);
+    width: 100%;
+    max-width: 500px;
+    transition: max-width 400ms cubic-bezier(.2, 0, 0, 1);
+    will-change: max-width;
+  }
+  .receive-layout--split {
+    max-width: 1000px;
+  }
+
   .receive-standby {
+    display: flex;
+    flex-direction: column;
+    gap: var(--nb-space-6);
     align-items: center;
     width: 100%;
     max-width: 500px;
-    margin: 0 auto;
+    flex-shrink: 0;
+    transition: max-width 400ms cubic-bezier(.2, 0, 0, 1);
+    will-change: max-width;
     margin-top: var(--nb-space-4);
+  }
+  .receive-standby--compact {
+    max-width: 340px;
+  }
+  .receive-standby--compact .home-card__body {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: var(--nb-space-4);
+    gap: var(--nb-space-4);
+  }
+  .receive-standby--compact .instructions-list {
+    flex: 1;
+    min-width: 200px;
+    max-width: 320px;
+  }
+
+  .receive-active {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--nb-space-6);
   }
 
   .home-card {
@@ -1403,6 +1600,18 @@
     width: 220px;
     height: 220px;
     display: block;
+  }
+  .qr-code--compact {
+    width: 140px;
+    height: 140px;
+  }
+  .qr-wrapper--compact {
+    padding: var(--nb-space-3);
+    box-shadow: 4px 4px 0px var(--nb-border-color);
+  }
+  .qr-wrapper--compact:hover {
+    transform: translate(-2px,-2px);
+    box-shadow: 6px 6px 0px var(--nb-border-color);
   }
 
   .qr-loading {
@@ -1538,12 +1747,6 @@
   }
 
   /* Receive Active Components */
-  .active-title {
-    font-size: var(--nb-text-xl);
-    border-bottom: var(--nb-border-lg);
-    padding-bottom: var(--nb-space-2);
-  }
-
   .ready-banner {
     padding: var(--nb-space-4);
     background: var(--nb-surface);
@@ -1787,6 +1990,43 @@
     width: 100%;
     max-width: 400px;
     margin-top: var(--nb-space-2);
+  }
+
+  /* Send Split Layout */
+  .send-split {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--nb-space-6);
+    width: 100%;
+    max-width: 600px;
+    transition: max-width 400ms cubic-bezier(.2, 0, 0, 1);
+    will-change: max-width;
+    margin: 0 auto;
+  }
+  .send-split--active {
+    max-width: 1000px;
+  }
+
+  .send-sidebar {
+    width: 100%;
+    flex-shrink: 0;
+    transition: max-width 400ms cubic-bezier(.2, 0, 0, 1);
+    will-change: max-width;
+  }
+  .send-sidebar--compact {
+    max-width: 420px;
+  }
+
+  .send-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--nb-space-6);
+  }
+  .send-main .sender-dialog {
+    margin-top: 0;
   }
 
   /* About Layout */
