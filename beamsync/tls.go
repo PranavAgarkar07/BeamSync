@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -37,6 +38,22 @@ func ServerScheme() string {
 		return "https"
 	}
 	return "http"
+}
+
+func serverTLSFingerprint() (string, error) {
+	if !TLSEnabled() {
+		return "plaintext-http", nil
+	}
+
+	cert, err := loadOrCreateLocalCertificate(localCertificateHosts())
+	if err != nil {
+		return "", err
+	}
+	if len(cert.Certificate) == 0 {
+		return "", fmt.Errorf("TLS certificate has no DER data")
+	}
+	fingerprint := sha256.Sum256(cert.Certificate[0])
+	return fmt.Sprintf("%x", fingerprint[:]), nil
 }
 
 func maybeTLSListener(listener net.Listener) (net.Listener, bool, error) {

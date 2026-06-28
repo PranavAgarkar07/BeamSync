@@ -1,0 +1,206 @@
+<section class="architecture" id="architecture">
+  <div class="wrap">
+    <div class="section-header reveal">
+      <span class="section-tag">Architecture</span>
+      <h2>Engineered for<br>Performance.</h2>
+      <p>Built with Go net/http — direct LAN streaming with zero dependencies on the receiving end.</p>
+    </div>
+    <div class="arch-wrap reveal">
+      <div class="arch-diagram">
+        <div class="arch-header-bar">
+          <span class="arch-header-dot" style="background:#FF5F57"></span>
+          <span class="arch-header-dot" style="background:#FFBD2E"></span>
+          <span class="arch-header-dot" style="background:#28C840"></span>
+          <span style="margin-left:8px">beamsync — architecture</span>
+          <span style="margin-left:auto;color:var(--green);font-size:.8rem">● Go + Svelte + Wails v2</span>
+        </div>
+
+        <div class="arch-layer">
+          <div class="arch-layer-num">01</div>
+          <div class="arch-layer-body">
+            <div class="arch-label">Frontend Layer</div>
+            <div class="arch-techs">
+              <span class="tech-pill svelte">Svelte</span>
+              <span class="tech-pill vite">Vite</span>
+            </div>
+            <p>Reactive UI · drag-and-drop interface · QR code display · transfer progress</p>
+          </div>
+        </div>
+
+        <div class="arch-connector">
+          <div class="arch-connector-line"></div>
+          <span class="arch-connector-label">Wails IPC Bridge · EventsOn / EventsEmit</span>
+          <div class="arch-connector-line"></div>
+        </div>
+
+        <div class="arch-layer">
+          <div class="arch-layer-num">02</div>
+          <div class="arch-layer-body">
+            <div class="arch-label">Application Shell</div>
+            <div class="arch-techs">
+              <span class="tech-pill go">Go</span>
+              <span class="tech-pill wails">Wails v2</span>
+            </div>
+            <p><code>App</code> · <code>loadConfig()</code> · <code>saveConfig()</code> · <code>configPath()</code> · event bridge · lifecycle</p>
+          </div>
+        </div>
+
+        <div class="arch-connector">
+          <div class="arch-connector-line"></div>
+          <span class="arch-connector-label">Go net/http · direct LAN stream</span>
+          <div class="arch-connector-line"></div>
+        </div>
+
+        <div class="arch-layer">
+          <div class="arch-layer-num">03</div>
+          <div class="arch-layer-body">
+            <div class="arch-label">Network Engine</div>
+            <div class="arch-techs">
+              <span class="tech-pill go">Go net/http</span>
+            </div>
+            <p><code>StartServer()</code> · <code>StartSender()</code> · <code>writeFileToDisk()</code> · <code>copyChunked()</code> · concurrent I/O</p>
+          </div>
+        </div>
+
+        <div class="arch-connector">
+          <div class="arch-connector-line"></div>
+          <span class="arch-connector-label">OS / syscall layer</span>
+          <div class="arch-connector-line"></div>
+        </div>
+
+        <div class="arch-layer">
+          <div class="arch-layer-num">04</div>
+          <div class="arch-layer-body">
+            <div class="arch-label">Utilities &amp; I/O</div>
+            <div class="arch-techs">
+              <span class="tech-pill go">Go</span>
+            </div>
+            <p><code>getLocalIP()</code> · <code>FindAvailablePort()</code> · <code>RunFirewallSetup()</code> · <code>AudioEngine</code> · <code>TransferSettings</code></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="arch-stats">
+        <div class="arch-stat">
+          <span class="arch-stat-num">Windows</span>
+          <span class="arch-stat-label">macOS · Linux</span>
+        </div>
+        <div class="arch-stat">
+          <span class="arch-stat-num">Gbps</span>
+          <span class="arch-stat-label">LAN Transfer Speed</span>
+        </div>
+        <div class="arch-stat">
+          <span class="arch-stat-num">Zero</span>
+          <span class="arch-stat-label">Cloud Dependencies</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .architecture { padding: 80px 28px; border-bottom: 2px solid var(--border); }
+  .arch-wrap { max-width: 900px; margin: 0 auto; }
+  .arch-diagram { border: 2px solid var(--border); box-shadow: var(--sh-xl); overflow: hidden; }
+  .arch-header-bar {
+    background: var(--surface);
+    border-bottom: 2px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--fm);
+    font-size: .72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+  }
+  .arch-header-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .arch-layer {
+    background: var(--surface);
+    padding: 18px 24px;
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    transition: var(--t);
+    position: relative;
+  }
+  .arch-layer:last-child { border-bottom: none; }
+  .arch-layer:hover { background: var(--raised); transform: translateX(4px); }
+  .arch-layer-num {
+    font-family: var(--fm);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--border);
+    line-height: 1;
+    min-width: 36px;
+    padding-top: 2px;
+  }
+  .arch-layer:hover .arch-layer-num { color: var(--primary); }
+  .arch-layer-body { flex: 1; }
+  .arch-label {
+    font-family: var(--fm);
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .arch-layer:hover .arch-label { color: var(--primary); }
+  .arch-techs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .tech-pill {
+    font-family: var(--fm);
+    font-size: .7rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border: 1px solid;
+    box-shadow: var(--sh-sm);
+  }
+  .tech-pill.go { border-color: #00ADD8; color: #00ADD8; background: rgba(0,173,216,.06); }
+  .tech-pill.svelte { border-color: #FF3E00; color: #FF3E00; background: rgba(255,62,0,.06); }
+  .tech-pill.vite { border-color: #646CFF; color: #646CFF; background: rgba(100,108,255,.06); }
+  .tech-pill.wails { border-color: #CC0000; color: #CC0000; background: rgba(204,0,0,.06); }
+  .arch-layer p { font-size: .85rem; }
+  .arch-connector {
+    background: var(--bg);
+    border-left: 2px solid var(--border);
+    border-right: 2px solid var(--border);
+    padding: 6px 28px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .arch-connector-line { flex: 1; height: 1px; background: var(--border); }
+  .arch-connector-label {
+    font-family: var(--fm);
+    font-size: .65rem;
+    color: var(--muted);
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .arch-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 2px solid var(--border); border-top: none; }
+  .arch-stat { padding: 12px 16px; border-right: 2px solid var(--border); text-align: center; }
+  .arch-stat:last-child { border-right: none; }
+  .arch-stat-num { display: block; font-family: var(--fd); font-size: 1.4rem; font-weight: 800; color: var(--primary); }
+  .arch-stat-label { font-family: var(--fm); font-size: .65rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  @media (max-width: 900px) { .arch-stats { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 540px) {
+    .arch-layer { padding: 14px 16px; gap: 12px; }
+    .arch-layer-num { font-size: 1.2rem; min-width: 28px; }
+    .arch-header-bar { flex-wrap: wrap; gap: 4px; font-size: .63rem; padding: 10px 14px; }
+    .arch-header-bar span:last-child { margin-left: 0; }
+    .arch-connector { padding: 6px 14px; }
+    .arch-connector-label { font-size: .55rem; white-space: normal; text-align: center; }
+    .arch-stats { grid-template-columns: 1fr; }
+    .arch-stat { border-right: none; border-bottom: 1px solid var(--border); }
+    .arch-stat:last-child { border-bottom: none; }
+  }
+  @media (max-width: 400px) {
+    .arch-layer { flex-direction: column; gap: 8px; padding: 12px 14px; }
+    .arch-layer-num { min-width: 0; }
+    .architecture { padding: 60px 16px; }
+  }
+</style>

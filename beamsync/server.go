@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -27,10 +29,69 @@ import (
 
 type EventCallback func(eventName string, data string)
 
+const eventDispatcherBufferSize = 256
+
+type eventDispatchJob struct {
+	emit  EventCallback
+	event string
+	data  string
+}
+
+type eventDispatcher struct {
+	queue chan eventDispatchJob
+}
+
+func newEventDispatcher(bufferSize int) *eventDispatcher {
+	if bufferSize <= 0 {
+		bufferSize = eventDispatcherBufferSize
+	}
+	dispatcher := &eventDispatcher{
+		queue: make(chan eventDispatchJob, bufferSize),
+	}
+	go dispatcher.run()
+	return dispatcher
+}
+
+func (d *eventDispatcher) run() {
+	for job := range d.queue {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Printf("Event callback panic: %v\n", r)
+				}
+			}()
+			if job.emit != nil {
+				job.emit(job.event, job.data)
+			}
+		}()
+	}
+}
+
+func (d *eventDispatcher) emit(job eventDispatchJob) bool {
+	if job.emit == nil {
+		return true
+	}
+	select {
+	case d.queue <- job:
+		return true
+	default:
+		return false
+	}
+}
+
+var defaultEventDispatcher = newEventDispatcher(eventDispatcherBufferSize)
+
 //go:embed ui/*.html ui/*.png
 var uiFS embed.FS
 
 const rateLimitPruneInterval = 2 * time.Minute
+
+var chunkBufferPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 8*1024*1024)
+		return &buf
+	},
+}
 
 // serverState holds per-instance connection tracking (no more package-level globals).
 type serverState struct {
@@ -228,6 +289,7 @@ type HTTPServer struct {
 	settings         *TransferSettings
 	history          *TransferHistory
 	stats            *transferStatsTracker
+	tokens           *tokenStore
 }
 
 // RespondToTransfer approves or rejects a pending transfer by ID.
@@ -268,7 +330,14 @@ func (s *HTTPServer) Shutdown() error {
 		s.cancel()
 	}
 	if s.server != nil {
-		return s.server.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := s.server.Shutdown(ctx); err != nil {
+			if closeErr := s.server.Close(); closeErr != nil {
+				return fmt.Errorf("graceful shutdown failed: %w; forced close failed: %v", err, closeErr)
+			}
+			return err
+		}
 	}
 	return nil
 }
@@ -328,7 +397,14 @@ func (dw *downloadProgressWriter) Write(p []byte) (int, error) {
 // copyChunked accumulates those 4 KB reads into a single chunkSize Write(),
 // giving the OS large sequential disk I/O instead of random small writes.
 func copyChunked(dst io.Writer, src io.Reader, chunkSize int) (int64, error) {
-	buf := make([]byte, chunkSize)
+	var buf []byte
+	if chunkSize == 8*1024*1024 {
+		bufPtr := chunkBufferPool.Get().(*[]byte)
+		defer chunkBufferPool.Put(bufPtr)
+		buf = *bufPtr
+	} else {
+		buf = make([]byte, chunkSize)
+	}
 	var total int64
 	for {
 		n, err := io.ReadFull(src, buf)
@@ -371,6 +447,37 @@ const writeWorkerCount = 3
 // largeFileThreshold is the maximum file size to buffer fully in RAM.
 // Files larger than this are streamed directly to disk.
 const largeFileThreshold = 64 * 1024 * 1024 // 64 MB
+
+const uploadIntegrityHeader = "X-BeamSync-File-SHA256"
+
+func uploadBufferInitialCapacity(filename string, fileSizes map[string]int64, partHeader textproto.MIMEHeader, requestContentLength int64) int {
+	if size, ok := fileSizes[filename]; ok && size > 0 {
+		if size < largeFileThreshold {
+			return int(size)
+		}
+		return largeFileThreshold
+	}
+	if cl, _ := strconv.ParseInt(partHeader.Get("Content-Length"), 10, 64); cl > 0 {
+		if cl < largeFileThreshold {
+			return int(cl)
+		}
+		return largeFileThreshold
+	}
+	if requestContentLength > 0 && requestContentLength < largeFileThreshold {
+		return int(requestContentLength)
+	}
+	return 0
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func hashMatches(expected string, actual string) bool {
+	expected = strings.TrimSpace(expected)
+	return expected == "" || strings.EqualFold(expected, actual)
+}
 
 // startWriteWorkers launches writeWorkerCount goroutines that drain jobs and
 // write files to disk. Returns a WaitGroup the caller can Wait() on.
@@ -486,8 +593,8 @@ func processManifest(r io.Reader) (map[string]int64, error) {
 	return fileSizes, nil
 }
 
-// generateToken creates a 16-byte (32 hex char) crypto-random session token.
-func generateToken() string {
+// generateID creates a crypto-random identifier for non-authentication records.
+func generateID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		// Fallback: timestamp-based (unlikely but safe)
@@ -496,16 +603,16 @@ func generateToken() string {
 	return hex.EncodeToString(b)
 }
 
-// validateToken middleware — returns 403 if the token query-param doesn't match.
-// Exempt routes: "/" (serves UI page).
-func tokenMiddleware(token string, next http.HandlerFunc) http.HandlerFunc {
+// tokenMiddleware rejects credentials that are expired, replayed, wrong-scope,
+// tampered, or bound to a different client IP.
+func tokenMiddleware(tokens *tokenStore, scope tokenScope, consume bool, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if got := r.URL.Query().Get("token"); got != token {
+		if err := tokens.validate(r.URL.Query().Get("token"), clientIP(r), scope, consume); err != nil {
+			w.Header().Set("Cache-Control", "no-store")
 			http.Error(w, "403 Forbidden: invalid token", http.StatusForbidden)
 			return
 		}
@@ -520,22 +627,6 @@ func setCORSHeaders(w http.ResponseWriter) {
 }
 
 func clientIP(r *http.Request) string {
-	forwardedFor := r.Header.Get("X-Forwarded-For")
-	for _, part := range strings.Split(forwardedFor, ",") {
-		ip := strings.TrimSpace(part)
-		if ip == "" {
-			continue
-		}
-		if parsed := net.ParseIP(ip); parsed != nil {
-			return parsed.String()
-		}
-		if host, _, err := net.SplitHostPort(ip); err == nil {
-			if parsed := net.ParseIP(host); parsed != nil {
-				return parsed.String()
-			}
-		}
-	}
-
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil && host != "" {
 		return host
@@ -556,7 +647,6 @@ func rateLimitMiddleware(limiter *clientRateLimiter, settings *TransferSettings,
 	return func(w http.ResponseWriter, r *http.Request) {
 		isUI := r.URL.Path == "/" || r.URL.Path == "/logo.png"
 		if !isUI {
-			setCORSHeaders(w)
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
 				return
@@ -639,20 +729,14 @@ func startWatchdog(ctx context.Context, state *serverState, emit func(string, st
 	}()
 }
 
-// safeEmit dispatches an event in its own goroutine with panic recovery.
+// safeEmit queues an event without spawning a goroutine per notification.
 func safeEmit(emit EventCallback, event, data string) {
-	go func(evt, dt string) {
-		defer func() {
-			if r := recover(); r != nil {
-				fmt.Printf("⚠️ Event callback panic: %v\n", r)
-			}
-		}()
-		fmt.Printf("📡 Emitting event: %s | data: %s\n", evt, dt)
-		if emit != nil {
-			emit(evt, dt)
-			fmt.Printf("✅ Event emitted: %s\n", evt)
-		}
-	}(event, data)
+	if emit == nil {
+		return
+	}
+	if !defaultEventDispatcher.emit(eventDispatchJob{emit: emit, event: event, data: data}) {
+		fmt.Printf("Dropping event because dispatch queue is full: %s\n", event)
+	}
 }
 
 func logTransfer(history *TransferHistory, emit func(string, string), record TransferRecord) {
@@ -686,11 +770,26 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}
 	fmt.Printf("📁 Upload directory: %s\n", uploadDir)
 
-	token := generateToken()
+	fingerprint, err := serverTLSFingerprint()
+	if err != nil {
+		fmt.Println("Failed to establish token fingerprint:", err)
+		return nil, "", ""
+	}
+	tokens, err := newTokenStore(fingerprint)
+	if err != nil {
+		fmt.Println("Failed to initialize token store:", err)
+		return nil, "", ""
+	}
+	token, err := tokens.issue(tokenScopeBootstrap, 1, "")
+	if err != nil {
+		fmt.Println("Failed to issue bootstrap token:", err)
+		return nil, "", ""
+	}
 	emit := func(evt, data string) { safeEmit(callback, evt, data) }
 
 	state := &serverState{}
 	ctx, cancel := context.WithCancel(context.Background())
+	tokens.startCleanup(ctx)
 
 	startWatchdog(ctx, state, emit)
 
@@ -701,6 +800,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		settings:         &settingsCopy,
 		history:          NewTransferHistory(defaultTransferHistoryLimit),
 		stats:            newTransferStatsTracker(),
+		tokens:           tokens,
 	}
 
 	mux := http.NewServeMux()
@@ -710,7 +810,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	uploadLimiter := newClientRateLimiter(12, time.Minute)
 
 	// ── Heartbeat ────────────────────────────────────────────────────────────
-	mux.HandleFunc("/heartbeat", rateLimitMiddleware(heartbeatLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/heartbeat", rateLimitMiddleware(heartbeatLimiter, httpServer.settings, tokenMiddleware(tokens, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -721,23 +821,40 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			emit("device_connected", "Android Device")
 			fmt.Println("💚 Device Connected!")
 		}
+		refreshedToken, err := tokens.issue(tokenScopeSession, 0, clientIP(r))
+		if err != nil {
+			http.Error(w, "Failed to renew session", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("X-BeamSync-Token", refreshedToken)
+		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 	})))
 
-	// ── Serve UI (no token required — this IS the page that shows the token) ─
+	// ── Exchange the one-use QR credential for a client-bound session ───────
 	mux.HandleFunc("/", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
+		if err := tokens.validate(r.URL.Query().Get("token"), clientIP(r), tokenScopeBootstrap, true); err != nil {
+			http.Error(w, "403 Forbidden: reconnect by scanning the current QR code", http.StatusForbidden)
+			return
+		}
 		fmt.Println("🌐 GET / - Serving upload UI")
+		setCORSHeaders(w)
 		content, err := uiFS.ReadFile("ui/upload.html")
 		if err != nil {
 			http.Error(w, "UI Load Error", http.StatusInternalServerError)
 			return
 		}
-		// Inject token so the upload page knows it
-		html := strings.Replace(string(content), "{{TOKEN}}", token, 1)
+		sessionToken, err := tokens.issue(tokenScopeSession, 0, clientIP(r))
+		if err != nil {
+			http.Error(w, "Failed to create session", http.StatusInternalServerError)
+			return
+		}
+		html := strings.Replace(string(content), "{{TOKEN}}", sessionToken, 1)
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(html))
 
@@ -751,6 +868,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}))
 
 	mux.HandleFunc("/logo.png", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 		w.Header().Set("Content-Type", "image/png")
 		content, err := uiFS.ReadFile("ui/logo.png")
@@ -761,8 +879,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		w.Write(content)
 	}))
 
-	mux.HandleFunc("/stats", tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
+	mux.HandleFunc("/stats", tokenMiddleware(tokens, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -774,14 +891,13 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}))
 
 	// ── Request Transfer (ask before accepting) ──────────────────────────────
-	mux.HandleFunc("/request-transfer", rateLimitMiddleware(transferLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
+	mux.HandleFunc("/request-transfer", rateLimitMiddleware(transferLimiter, httpServer.settings, tokenMiddleware(tokens, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		// Extract sender IP, honoring proxy headers when present.
+		// Extract sender IP from the actual TCP connection.
 		senderIP := clientIP(r)
 
 		var req struct {
@@ -843,7 +959,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		}
 
 		// ── ask_first: emit event and wait for user response ──────────────────
-		id := generateToken()
+		id := generateID()
 		sizeMB := fmt.Sprintf("%.2f MB", float64(req.SizeBytes)/1024/1024)
 
 		pt := &PendingTransfer{
@@ -890,7 +1006,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	})))
 
 	// ── Upload ────────────────────────────────────────────────────────────────
-	mux.HandleFunc("/upload", rateLimitMiddleware(uploadLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/upload", rateLimitMiddleware(uploadLimiter, httpServer.settings, tokenMiddleware(tokens, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("📤 POST /upload - Upload started")
 
 		defer func() {
@@ -921,6 +1037,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			return
 		}
 		boundary := params["boundary"]
+		expectedFileSHA256 := strings.TrimSpace(r.Header.Get(uploadIntegrityHeader))
 
 		// 8 MB network read buffer — reduces TCP recv() syscalls dramatically.
 		netReader := bufio.NewReaderSize(r.Body, 8*1024*1024)
@@ -988,7 +1105,9 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 			// Read up to largeFileThreshold bytes to determine dispatch strategy.
 			var buf bytes.Buffer
-			buf.Grow(largeFileThreshold)
+			if initialCapacity := uploadBufferInitialCapacity(filename, fileSizes, part.Header, r.ContentLength); initialCapacity > 0 {
+				buf.Grow(initialCapacity)
+			}
 			readLimit := int64(largeFileThreshold)
 			n, readErr := io.CopyN(&buf, part, readLimit)
 
@@ -1047,11 +1166,16 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 					emit:        emit,
 					minInterval: 500 * time.Millisecond,
 				}
+				var writeTarget io.Writer = lpw
+				hash := sha256.New()
+				if expectedFileSHA256 != "" {
+					writeTarget = io.MultiWriter(lpw, hash)
+				}
 				// Write the already-buffered prefix first.
 				prefixBytes := buf.Bytes()
-				prefixWritten, prefixErr := lpw.Write(prefixBytes)
+				prefixWritten, prefixErr := writeTarget.Write(prefixBytes)
 				// Stream the remainder from the network.
-				lWritten, lErr := copyChunked(lpw, part, 8*1024*1024)
+				lWritten, lErr := copyChunked(writeTarget, part, 8*1024*1024)
 				lWritten += int64(prefixWritten)
 				flushErr := diskBuf.Flush()
 				dst.Close()
@@ -1080,6 +1204,20 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 					})
 					continue
 				}
+				if !hashMatches(expectedFileSHA256, hex.EncodeToString(hash.Sum(nil))) {
+					_ = os.Remove(dstPath)
+					httpServer.stats.recordIntegrityFailure()
+					logTransfer(httpServer.history, emit, TransferRecord{
+						Filename:  savedName,
+						Direction: TransferDirectionReceive,
+						Status:    TransferStatusFailed,
+						SizeBytes: lWritten,
+						StartedAt: startedAt,
+						Error:     "integrity-mismatch",
+					})
+					parseErr = fmt.Errorf("integrity-mismatch")
+					break
+				}
 				emit("upload_progress", fmt.Sprintf("%s|%d|%d", savedName, lWritten, lWritten))
 				snapshot := httpServer.stats.recordReceived(savedName, lWritten, atomic.LoadInt32(&state.uploadingCount))
 				emit("transfer_stats", transferStatsJSON(snapshot))
@@ -1102,6 +1240,19 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 					fmt.Println("❌ Part read error:", readErr)
 					continue
 				}
+				if !hashMatches(expectedFileSHA256, sha256Hex(buf.Bytes())) {
+					httpServer.stats.recordIntegrityFailure()
+					logTransfer(httpServer.history, emit, TransferRecord{
+						Filename:  savedName,
+						Direction: TransferDirectionReceive,
+						Status:    TransferStatusFailed,
+						SizeBytes: int64(buf.Len()),
+						StartedAt: time.Now(),
+						Error:     "integrity-mismatch",
+					})
+					parseErr = fmt.Errorf("integrity-mismatch")
+					break
+				}
 				jobs <- writeJob{
 					dstPath:   dstPath,
 					savedName: savedName,
@@ -1114,6 +1265,11 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		// Signal workers that no more jobs are coming, then wait for all writes.
 		close(jobs)
 		wg.Wait()
+
+		if parseErr != nil && parseErr.Error() == "integrity-mismatch" {
+			http.Error(w, "integrity-mismatch", http.StatusBadRequest)
+			return
+		}
 
 		if parseErr != nil {
 			http.Error(w, "Multipart read error", http.StatusBadRequest)
@@ -1130,8 +1286,8 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		w.Write([]byte("✅ Upload Complete"))
 	})))
 
-	mux.HandleFunc("/upload/resumable", tokenMiddleware(token, handleResumableUpload(uploadDir, state, emit)))
-	mux.HandleFunc("/upload-status/", tokenMiddleware(token, handleResumableUploadStatus(uploadDir)))
+	mux.HandleFunc("/upload/resumable", rateLimitMiddleware(uploadLimiter, httpServer.settings, tokenMiddleware(tokens, tokenScopeSession, false, handleResumableUpload(uploadDir, state, emit))))
+	mux.HandleFunc("/upload-status/", rateLimitMiddleware(uploadLimiter, httpServer.settings, tokenMiddleware(tokens, tokenScopeSession, false, handleResumableUploadStatus(uploadDir))))
 
 	portInt, listener, err := FindAvailablePort(startPort, 2, 50)
 	if err != nil {
@@ -1191,17 +1347,33 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 }
 
 // StartSender starts the file-sender HTTP server.
-// Returns (server handle, port string, session token).
+// Returns (server handle, port string, single-use bootstrap token).
 func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, string, string) {
-	token := generateToken()
+	fingerprint, err := serverTLSFingerprint()
+	if err != nil {
+		fmt.Println("Failed to establish token fingerprint:", err)
+		return nil, "", ""
+	}
+	tokens, err := newTokenStore(fingerprint)
+	if err != nil {
+		fmt.Println("Failed to initialize token store:", err)
+		return nil, "", ""
+	}
+	token, err := tokens.issue(tokenScopeBootstrap, 1, "")
+	if err != nil {
+		fmt.Println("Failed to issue sender bootstrap token:", err)
+		return nil, "", ""
+	}
 	emit := func(evt, data string) { safeEmit(callback, evt, data) }
 
 	state := &serverState{}
 	ctx, cancel := context.WithCancel(context.Background())
+	tokens.startCleanup(ctx)
 	httpServer := &HTTPServer{
 		cancel:  cancel,
 		history: NewTransferHistory(defaultTransferHistoryLimit),
 		stats:   newTransferStatsTracker(),
+		tokens:  tokens,
 	}
 
 	// Sender also gets a watchdog
@@ -1213,7 +1385,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	downloadLimiter := newClientRateLimiter(30, time.Minute)
 
 	// ── Heartbeat ─────────────────────────────────────────────────────────────
-	mux.HandleFunc("/heartbeat", rateLimitMiddleware(heartbeatLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/heartbeat", rateLimitMiddleware(heartbeatLimiter, httpServer.settings, tokenMiddleware(tokens, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -1225,13 +1397,18 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			emit("device_connected", "Mobile (Downloader)")
 			fmt.Println("💚 Device Connected to Sender!")
 		}
+		refreshedToken, err := tokens.issue(tokenScopeSession, 0, clientIP(r))
+		if err != nil {
+			http.Error(w, "Failed to renew session", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("X-BeamSync-Token", refreshedToken)
 		w.WriteHeader(http.StatusOK)
 	})))
 
-	// ── Serve files (no token on / — mobile opens the download page directly) ─
-	// The generated download URL embedded in the QR already carries the token.
+	// ── Exchange the one-use QR credential for a client-bound session ───────
 
-	buildFileBlock := func(filePaths []string) string {
+	buildFileBlock := func(filePaths []string, boundClientIP string) (string, error) {
 		fmtSize := func(sz int64) string {
 			switch {
 			case sz >= 1073741824:
@@ -1270,7 +1447,11 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			if info, err := os.Stat(filePaths[0]); err == nil {
 				sizeStr = fmtSize(info.Size())
 			}
-			b.WriteString(card(name, sizeStr, "single", fmt.Sprintf("/download?token=%s", token)))
+			transferToken, err := tokens.issue(tokenScopeTransfer, 1, boundClientIP)
+			if err != nil {
+				return "", err
+			}
+			b.WriteString(card(name, sizeStr, "single", fmt.Sprintf("/download?token=%s", transferToken)))
 		} else {
 			for i, path := range filePaths {
 				name := filepath.Base(path)
@@ -1279,14 +1460,27 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 					sizeStr = fmtSize(info.Size())
 				}
 				cardID := fmt.Sprintf("multi-%d", i)
-				downloadURL := fmt.Sprintf("/download/%d?token=%s", i, token)
+				transferToken, err := tokens.issue(tokenScopeTransfer, 1, boundClientIP)
+				if err != nil {
+					return "", err
+				}
+				downloadURL := fmt.Sprintf("/download/%d?token=%s", i, transferToken)
 				b.WriteString(card(name, sizeStr, cardID, downloadURL))
 			}
 		}
-		return b.String()
+		return b.String(), nil
 	}
 
 	mux.HandleFunc("/", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := tokens.validate(r.URL.Query().Get("token"), clientIP(r), tokenScopeBootstrap, true); err != nil {
+			http.Error(w, "403 Forbidden: reconnect by scanning the current QR code", http.StatusForbidden)
+			return
+		}
+		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		w.Header().Set("Content-Type", "text/html")
 		content, err := uiFS.ReadFile("ui/download.html")
@@ -1294,12 +1488,24 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			http.Error(w, "UI Load Error", http.StatusInternalServerError)
 			return
 		}
-		html := strings.Replace(string(content), "{{FILES}}", buildFileBlock(filePaths), 1)
-		html = strings.Replace(html, "{{TOKEN}}", token, 1)
+		boundClientIP := clientIP(r)
+		fileBlock, err := buildFileBlock(filePaths, boundClientIP)
+		if err != nil {
+			http.Error(w, "Failed to create transfer links", http.StatusInternalServerError)
+			return
+		}
+		sessionToken, err := tokens.issue(tokenScopeSession, 0, boundClientIP)
+		if err != nil {
+			http.Error(w, "Failed to create session", http.StatusInternalServerError)
+			return
+		}
+		html := strings.Replace(string(content), "{{FILES}}", fileBlock, 1)
+		html = strings.Replace(html, "{{TOKEN}}", sessionToken, 1)
 		w.Write([]byte(html))
 	}))
 
 	mux.HandleFunc("/logo.png", rateLimitMiddleware(pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 		w.Header().Set("Content-Type", "image/png")
 		content, err := uiFS.ReadFile("ui/logo.png")
@@ -1313,8 +1519,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	if len(filePaths) == 1 {
 		filePath := filePaths[0]
 		filename := filepath.Base(filePath)
-		mux.HandleFunc("/download", rateLimitMiddleware(downloadLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
-			setCORSHeaders(w)
+		mux.HandleFunc("/download", rateLimitMiddleware(downloadLimiter, httpServer.settings, tokenMiddleware(tokens, tokenScopeTransfer, true, func(w http.ResponseWriter, r *http.Request) {
 			activeDownloads := atomic.AddInt32(&state.uploadingCount, 1)
 			emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
 			defer func() {
@@ -1385,8 +1590,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		for i, path := range filePaths {
 			idx := i
 			filePath := path
-			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), rateLimitMiddleware(downloadLimiter, httpServer.settings, tokenMiddleware(token, func(w http.ResponseWriter, r *http.Request) {
-				setCORSHeaders(w)
+			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), rateLimitMiddleware(downloadLimiter, httpServer.settings, tokenMiddleware(tokens, tokenScopeTransfer, true, func(w http.ResponseWriter, r *http.Request) {
 				realName := filepath.Base(filePath)
 				activeDownloads := atomic.AddInt32(&state.uploadingCount, 1)
 				emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))

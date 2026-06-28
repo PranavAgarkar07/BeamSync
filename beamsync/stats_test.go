@@ -57,6 +57,7 @@ func TestTransferStatsTrackerRecordsSentFiles(t *testing.T) {
 func TestTransferStatsJSON(t *testing.T) {
 	tracker := newTransferStatsTracker()
 	tracker.recordReceived("file.bin", 42, 0)
+	tracker.recordIntegrityFailure()
 	stats := tracker.recordSent("download.bin", 84, 0)
 	raw := transferStatsJSON(stats)
 
@@ -66,5 +67,8 @@ func TestTransferStatsJSON(t *testing.T) {
 	}
 	if decoded.FilesReceived != 1 || decoded.BytesReceived != 42 || decoded.FilesSent != 1 || decoded.BytesSent != 84 {
 		t.Fatalf("decoded stats = %+v", decoded)
+	}
+	if decoded.IntegrityFailures != 1 {
+		t.Fatalf("integrity failures = %d, want 1", decoded.IntegrityFailures)
 	}
 }

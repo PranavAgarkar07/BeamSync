@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main
@@ -20,11 +20,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Deploy community/ to gh-pages
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: ./community/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./community
+
+      - name: Build Astro site
+        run: npm run build
+        working-directory: ./community
+
+      - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./community
+          publish_dir: ./community/dist
           publish_branch: gh-pages
           force_orphan: true
           user_name: 'github-actions[bot]'

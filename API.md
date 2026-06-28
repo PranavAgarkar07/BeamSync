@@ -10,15 +10,17 @@ Set `BEAMSYNC_ENABLE_TLS=true` before launching BeamSync to serve the same endpo
 
 ## 🔒 Authentication & Token Scheme
 
-To prevent unauthorized devices on the local network from sending or downloading files, BeamSync uses a **Session Token Authentication Scheme**:
+To prevent copied URLs from granting another device access, BeamSync uses short-lived HMAC credentials:
 
-1. **Token Generation:** When the server starts, it generates a cryptographically secure 16-byte (32-character hexadecimal) session token using Go's `crypto/rand` (`generateToken()`).
-2. **Access Control:** All API endpoints (except the UI home page and logo asset) are protected by a token-validation middleware (`tokenMiddleware`).
-3. **Usage:** Clients must supply the session token as a query parameter in every request:
+1. **QR bootstrap:** Receiver and sender QR URLs contain a five-minute, single-use bootstrap credential. Loading the URL exchanges it for a session token bound to the connecting client IP.
+2. **HMAC binding:** Tokens are signed with a per-server secret over the server session, TLS certificate fingerprint (or the explicit plaintext-HTTP context), client IP, scope, expiration, and a random nonce.
+3. **Expiry and renewal:** Credentials expire after five minutes. Successful heartbeats return a replacement session token in the `X-BeamSync-Token` response header, which the bundled web clients adopt automatically.
+4. **Transfer scope:** Download URLs use client-bound, single-use transfer tokens. Replaying a completed download URL returns `403 Forbidden`.
+5. **Usage:** Clients supply their current credential as a query parameter:
    ```http
-   ?token=your_32_character_hex_session_token
+   ?token=your_hmac_credential
    ```
-4. **Validation:** If the token is missing or incorrect, the server immediately rejects the request with a `403 Forbidden` response.
+6. **Validation:** Missing, expired, replayed, wrong-scope, wrong-client, or tampered credentials are rejected with `403 Forbidden`. Token responses use `Cache-Control: no-store`.
 
 ---
 
@@ -27,20 +29,21 @@ To prevent unauthorized devices on the local network from sending or downloading
 ### 1. Serve Upload UI
 *   **URL:** `/`
 *   **HTTP Method:** `GET`
-*   **Authentication:** None (Required to load the page that retrieves the token)
-*   **Query Parameters:** None
+*   **Authentication:** Receiver and sender modes require the single-use QR bootstrap token.
+*   **Query Parameters:**
+    *   `token`: Five-minute QR bootstrap credential.
 *   **Request Body:** None
 *   **Response Format:** `text/html`
 *   **Status Codes:**
     *   `200 OK` — Success, UI page loaded.
     *   `500 Internal Server Error` — UI asset failed to load.
-*   **Description:** Serves the responsive mobile upload page (`ui/upload.html`). The server dynamically injects the generated session token into the page template placeholder (`{{TOKEN}}`) so the mobile browser can authenticate subsequent API calls. Loading this page automatically registers a connection heartbeat.
+*   **Description:** Serves the responsive mobile page and injects an IP-bound five-minute session token into `{{TOKEN}}`. The bootstrap credential is consumed during this exchange. Loading the page automatically registers a connection heartbeat.
 
 #### Example Curl:
 ```bash
-curl -X GET "http://192.168.1.50:3000/"
+curl -X GET "http://192.168.1.50:3000/?token=<qr-bootstrap-token>"
 # With BEAMSYNC_ENABLE_TLS=true:
-curl -k -X GET "https://192.168.1.50:3000/"
+curl -k -X GET "https://192.168.1.50:3000/?token=<qr-bootstrap-token>"
 ```
 
 ---
@@ -53,11 +56,14 @@ curl -k -X GET "https://192.168.1.50:3000/"
     *   `token` (string, required): Session authentication token.
 *   **Request Body:** None
 *   **Response Format:** Empty response body
+*   **Response Headers:**
+    *   `X-BeamSync-Token`: Replacement IP-bound session token with a fresh five-minute lifetime.
+    *   `Cache-Control: no-store`
 *   **Status Codes:**
     *   `200 OK` — Heartbeat successfully registered.
     *   `403 Forbidden` — Missing or invalid token.
     *   `405 Method Not Allowed` — HTTP method was not `POST`.
-*   **Description:** Keeps the connection alive. The mobile browser pings this endpoint every 5 seconds. If the server's watchdog goroutine does not detect a heartbeat or active file transfer write within 15 seconds, it emits a `device_disconnected` event to the desktop app.
+*   **Description:** Keeps the connection alive and renews the short-lived session. The mobile browser pings every 5 seconds and adopts `X-BeamSync-Token`. If the watchdog does not detect a heartbeat or active file transfer within 15 seconds, it emits `device_disconnected`.
 
 #### Example Curl:
 ```bash
@@ -71,7 +77,7 @@ curl -X POST "http://192.168.1.50:3000/heartbeat?token=8a3ef2e987c654ab23f0de1a8
 *   **HTTP Method:** `POST`
 *   **Authentication:** Token Query Parameter (`?token=...`)
 *   **Query Parameters:**
-    *   `token` (string, required): Session authentication token.
+    *   `token` (string, required): Current client-bound session token.
 *   **Request Body:** `application/json`
     ```json
     {
@@ -148,9 +154,9 @@ curl -X POST "http://192.168.1.50:3000/upload?token=8a3ef2e987c654ab23f0de1a87e5
 ### 5. Download File Stream
 *   **URL:** `/download` (Single-file transfer) or `/download/:index` (Multi-file transfer, e.g. `/download/0`, `/download/1`)
 *   **HTTP Method:** `GET`
-*   **Authentication:** Token Query Parameter (`?token=...`)
+*   **Authentication:** Single-use, client-bound transfer token generated into the sender page.
 *   **Query Parameters:**
-    *   `token` (string, required): Session authentication token.
+    *   `token` (string, required): Single-use transfer token.
 *   **Request Body:** None
 *   **Response Headers:**
     *   `Content-Disposition: attachment; filename="filename.ext"`
@@ -163,7 +169,7 @@ curl -X POST "http://192.168.1.50:3000/upload?token=8a3ef2e987c654ab23f0de1a87e5
     *   `403 Forbidden` — Missing or invalid token.
     *   `404 Not Found` — File not found or index out of range.
     *   `500 Internal Server Error` — Failed to open or read file on disk.
-*   **Description:** Streams files from the desktop sender to a remote receiver. Emits progressive `download_progress` events to the desktop UI.
+*   **Description:** Streams one file from the desktop sender and consumes the URL token before the handler runs. Replaying or copying the URL to another client is rejected. Emits progressive `download_progress` events to the desktop UI.
 
 #### Example Curl:
 ```bash

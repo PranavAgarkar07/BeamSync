@@ -1,0 +1,51 @@
+<div id="cursor-dot"></div>
+<div id="cursor-ring"></div>
+
+<style>
+  #cursor-dot { pointer-events: none; position: fixed; z-index: 10000; width: 7px; height: 7px; border-radius: 50%; background: var(--green); transform: translate(-50%,-50%); opacity: 0; top: 0; left: 0; transition: width 200ms ease, height 200ms ease, background 200ms ease, opacity .3s ease; }
+  #cursor-ring { pointer-events: none; position: fixed; z-index: 9999; width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid rgba(16,217,138,.5); transform: translate(-50%,-50%); opacity: 0; top: 0; left: 0; transition: width 200ms ease, height 200ms ease, border-color 200ms ease, opacity .3s ease; }
+  body:not(.touch):not(.lb-active) #cursor-dot, body:not(.touch):not(.lb-active) #cursor-ring { opacity: 1; }
+  body.btn-hovered #cursor-ring { width: 44px; height: 44px; border-color: rgba(16,217,138,.85); border-width: 1.5px; }
+  body.btn-hovered #cursor-dot { width: 5px; height: 5px; }
+  @media (prefers-reduced-motion: reduce) { #cursor-dot, #cursor-ring { display: none !important; } }
+</style>
+
+<script>
+  (function () {
+    const dot = document.getElementById('cursor-dot');
+    const ring = document.getElementById('cursor-ring');
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.body.classList.add('touch');
+      return;
+    }
+    let mouseX = -999, mouseY = -999;
+    let ringX = -999, ringY = -999;
+    
+    document.addEventListener('mousemove', e => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+      if (dot) { dot.style.left = mouseX + 'px'; dot.style.top = mouseY + 'px'; }
+    }, { passive: true });
+    
+    document.addEventListener('mousemove', function init(e) {
+      ringX = e.clientX;
+      ringY = e.clientY;
+      function lerpRing() {
+        ringX += (mouseX - ringX) * 0.18;
+        ringY += (mouseY - ringY) * 0.18;
+        if (ring) {
+          ring.style.left = ringX + 'px';
+          ring.style.top = ringY + 'px';
+        }
+        requestAnimationFrame(lerpRing);
+      }
+      lerpRing();
+      document.removeEventListener('mousemove', init);
+    }, { once: true });
+
+    document.querySelectorAll('.btn-dl, .bento-card, .install-card, .nav-links a').forEach(el => {
+      el.addEventListener('mouseenter', () => document.body.classList.add('btn-hovered'));
+      el.addEventListener('mouseleave', () => document.body.classList.remove('btn-hovered'));
+    });
+  })();
+</script>

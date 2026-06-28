@@ -1,0 +1,66 @@
+<section class="how-it-works" id="how-it-works">
+  <div class="wrap">
+    <div class="section-header reveal">
+      <span class="section-tag">Workflow</span>
+      <h2>Three Steps.<br>That's It.</h2>
+      <p>No configuration. No wizard. Open and go.</p>
+    </div>
+    <div class="steps">
+      <div class="step reveal">
+        <span class="step-num">01</span>
+        <h3>Launch BeamSync</h3>
+        <p>Open the desktop app. A QR code and URL appear instantly — no configuration needed.</p>
+      </div>
+      <div class="step reveal">
+        <span class="step-num">02</span>
+        <h3>Scan or Visit</h3>
+        <p>On the receiving device, scan the QR or visit the URL. Works in any browser — mobile or desktop.</p>
+      </div>
+      <div class="step reveal">
+        <span class="step-num">03</span>
+        <h3>Transfer &amp; Done</h3>
+        <p>Drag files to send, or download directly. Files saved to <code>Downloads/BeamSync/</code>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .how-it-works { padding: 80px 28px; background: var(--bg); border-bottom: 2px solid var(--border); }
+  .steps {
+    max-width: 1140px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border: 2px solid var(--border);
+    box-shadow: var(--sh-xl);
+  }
+  .step { padding: 32px 24px; border-right: 2px solid var(--border); }
+  .step:last-child { border-right: none; }
+  .step-num {
+    font-family: var(--fd);
+    font-size: 3.5rem;
+    font-weight: 800;
+    color: var(--primary);
+    line-height: 1;
+    margin-bottom: 18px;
+    display: block;
+    opacity: .9;
+  }
+  .step h3 { color: var(--text); margin-bottom: 10px; }
+
+  @media (max-width: 900px) {
+    .steps { grid-template-columns: 1fr; }
+    .step { border-right: none !important; border-bottom: 2px solid var(--border); }
+    .step:last-child { border-bottom: none; }
+  }
+  @media (max-width: 540px) {
+    .step { padding: 28px 20px; }
+    .step-num { font-size: 2.5rem; margin-bottom: 12px; }
+  }
+  @media (max-width: 400px) {
+    .step { padding: 22px 16px; }
+    .how-it-works { padding: 60px 16px; }
+  }
+</style>
