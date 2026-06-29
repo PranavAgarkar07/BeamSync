@@ -84,6 +84,8 @@ var defaultEventDispatcher = newEventDispatcher(eventDispatcherBufferSize)
 //go:embed ui/*.html ui/*.png
 var uiFS embed.FS
 
+const rateLimitPruneInterval = 2 * time.Minute
+
 var chunkBufferPool = sync.Pool{
 	New: func() any {
 		buf := make([]byte, 8*1024*1024)
@@ -159,13 +161,30 @@ type clientRateLimiter struct {
 }
 
 func newClientRateLimiter(limit int, window time.Duration) *clientRateLimiter {
-	return &clientRateLimiter{
+	limiter := &clientRateLimiter{
 		limit:      limit,
 		window:     window,
 		maxClients: 4096,
 		clients:    make(map[string]*rateLimitState),
 		now:        time.Now,
 	}
+	limiter.startBackgroundPruner()
+	return limiter
+}
+
+func (l *clientRateLimiter) startBackgroundPruner() {
+	if l.limit <= 0 || l.window <= 0 {
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(rateLimitPruneInterval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			l.prune(l.now())
+		}
+	}()
 }
 
 func (l *clientRateLimiter) allow(client string) rateLimitDecision {
@@ -177,8 +196,6 @@ func (l *clientRateLimiter) allow(client string) rateLimitDecision {
 	resetAt := now.Add(l.window)
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
-	l.prune(now)
 
 	state, ok := l.clients[client]
 	if !ok || now.Sub(state.windowStart) >= l.window {
@@ -220,6 +237,9 @@ func (l *clientRateLimiter) allow(client string) rateLimitDecision {
 }
 
 func (l *clientRateLimiter) prune(now time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	for client, state := range l.clients {
 		if now.Sub(state.lastSeen) > 2*l.window {
 			delete(l.clients, client)
