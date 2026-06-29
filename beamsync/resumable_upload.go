@@ -14,7 +14,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 )
 
@@ -142,7 +141,7 @@ func handleResumableUpload(uploadDir string, state *serverState, emit func(strin
 			emit("file_received", fname)
 		}(savedName)
 
-		fmt.Printf("resumable upload completed: %s (%d bytes, active=%d)\n", savedName, total, atomic.LoadInt32(&state.uploadingCount))
+		fmt.Printf("resumable upload completed: %s (%d bytes, active=%d)\n", savedName, total, state.activeUploads())
 		w.WriteHeader(http.StatusCreated)
 		w.Write([]byte("upload complete"))
 	}

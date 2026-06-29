@@ -23,7 +23,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -98,7 +97,7 @@ type serverState struct {
 	mu             sync.Mutex
 	lastHeartbeat  time.Time
 	isConnected    bool
-	uploadingCount int32 // atomic: number of files currently being written
+	uploadingCount int
 }
 
 func (s *serverState) markHeartbeat() (wasConnected bool) {
@@ -112,25 +111,39 @@ func (s *serverState) markHeartbeat() (wasConnected bool) {
 
 // beginUpload increments the in-flight write counter.
 // The watchdog will not fire device_disconnected while any write is in flight.
-func (s *serverState) beginUpload() {
-	if atomic.AddInt32(&s.uploadingCount, 1) == 1 {
-		// First write starting — reset heartbeat so the 15s clock restarts when all finish
-		s.mu.Lock()
+func (s *serverState) beginUpload() int32 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.uploadingCount++
+	if s.uploadingCount == 1 {
 		s.lastHeartbeat = time.Now()
-		s.mu.Unlock()
 	}
+	return int32(s.uploadingCount)
 }
 
 // endUpload decrements the in-flight write counter.
-func (s *serverState) endUpload() {
-	atomic.AddInt32(&s.uploadingCount, -1)
+func (s *serverState) endUpload() int32 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.uploadingCount > 0 {
+		s.uploadingCount--
+	}
+	return int32(s.uploadingCount)
+}
+
+func (s *serverState) activeUploads() int32 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return int32(s.uploadingCount)
 }
 
 func (s *serverState) checkTimeout() (wasConnected bool, timedOut bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// Never consider it a timeout while data is actively being received/written
-	if s.isConnected && atomic.LoadInt32(&s.uploadingCount) == 0 && time.Since(s.lastHeartbeat) > 15*time.Second {
+	if s.isConnected && s.uploadingCount == 0 && time.Since(s.lastHeartbeat) > 15*time.Second {
 		s.isConnected = false
 		return true, true
 	}
@@ -569,7 +582,7 @@ func writeFileToDisk(job writeJob, state *serverState, stats *transferStatsTrack
 		return
 	}
 	if stats != nil {
-		snapshot := stats.recordReceived(job.savedName, written, atomic.LoadInt32(&state.uploadingCount))
+		snapshot := stats.recordReceived(job.savedName, written, state.activeUploads())
 		emit("transfer_stats", transferStatsJSON(snapshot))
 	}
 
@@ -886,7 +899,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		}
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		w.Header().Set("Content-Type", "application/json")
-		snapshot := httpServer.stats.snapshot(atomic.LoadInt32(&state.uploadingCount))
+		snapshot := httpServer.stats.snapshot(state.activeUploads())
 		w.Write([]byte(transferStatsJSON(snapshot)))
 	}))
 
@@ -1219,7 +1232,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 					break
 				}
 				emit("upload_progress", fmt.Sprintf("%s|%d|%d", savedName, lWritten, lWritten))
-				snapshot := httpServer.stats.recordReceived(savedName, lWritten, atomic.LoadInt32(&state.uploadingCount))
+				snapshot := httpServer.stats.recordReceived(savedName, lWritten, state.activeUploads())
 				emit("transfer_stats", transferStatsJSON(snapshot))
 				fmt.Printf("✅ Large file saved: %s (%d bytes)\n", savedName, lWritten)
 				logTransfer(httpServer.history, emit, TransferRecord{
@@ -1520,10 +1533,10 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		filePath := filePaths[0]
 		filename := filepath.Base(filePath)
 		mux.HandleFunc("/download", rateLimitMiddleware(downloadLimiter, httpServer.settings, tokenMiddleware(tokens, tokenScopeTransfer, true, func(w http.ResponseWriter, r *http.Request) {
-			activeDownloads := atomic.AddInt32(&state.uploadingCount, 1)
+			activeDownloads := state.beginUpload()
 			emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
 			defer func() {
-				activeDownloads := atomic.AddInt32(&state.uploadingCount, -1)
+				activeDownloads := state.endUpload()
 				emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
 			}()
 			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
@@ -1574,7 +1587,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 				status = TransferStatusFailed
 				errMsg = copyErr.Error()
 			} else {
-				snapshot := httpServer.stats.recordSent(filename, written, atomic.LoadInt32(&state.uploadingCount))
+				snapshot := httpServer.stats.recordSent(filename, written, state.activeUploads())
 				emit("transfer_stats", transferStatsJSON(snapshot))
 			}
 			logTransfer(httpServer.history, emit, TransferRecord{
@@ -1592,10 +1605,10 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			filePath := path
 			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), rateLimitMiddleware(downloadLimiter, httpServer.settings, tokenMiddleware(tokens, tokenScopeTransfer, true, func(w http.ResponseWriter, r *http.Request) {
 				realName := filepath.Base(filePath)
-				activeDownloads := atomic.AddInt32(&state.uploadingCount, 1)
+				activeDownloads := state.beginUpload()
 				emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
 				defer func() {
-					activeDownloads := atomic.AddInt32(&state.uploadingCount, -1)
+					activeDownloads := state.endUpload()
 					emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
 				}()
 				w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
@@ -1646,7 +1659,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 					status = TransferStatusFailed
 					errMsg = copyErr.Error()
 				} else {
-					snapshot := httpServer.stats.recordSent(realName, written, atomic.LoadInt32(&state.uploadingCount))
+					snapshot := httpServer.stats.recordSent(realName, written, state.activeUploads())
 					emit("transfer_stats", transferStatsJSON(snapshot))
 				}
 				logTransfer(httpServer.history, emit, TransferRecord{

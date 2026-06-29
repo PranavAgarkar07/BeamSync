@@ -417,6 +417,24 @@ func TestStartWriteWorkersProcessesJobsAndIgnoresCreateErrors(t *testing.T) {
 	}
 }
 
+func TestServerStateActiveUploadPreventsTimeout(t *testing.T) {
+	state := &serverState{
+		lastHeartbeat: time.Now().Add(-30 * time.Second),
+		isConnected:   true,
+	}
+
+	if active := state.beginUpload(); active != 1 {
+		t.Fatalf("beginUpload active count = %d, want 1", active)
+	}
+	wasConnected, timedOut := state.checkTimeout()
+	if !wasConnected || timedOut {
+		t.Fatalf("checkTimeout while upload active = (%v, %v), want connected without timeout", wasConnected, timedOut)
+	}
+	if active := state.endUpload(); active != 0 {
+		t.Fatalf("endUpload active count = %d, want 0", active)
+	}
+}
+
 func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
 	server, baseURL, bootstrapToken, events, _ := startRawServerForTest(t)
 
