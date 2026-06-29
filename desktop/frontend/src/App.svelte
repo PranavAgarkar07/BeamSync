@@ -283,7 +283,8 @@
     EventsOn("file_received", (filename) => {
       refreshFileList();
       clearTimeout(_progressTimeout);
-    clearTimeout(qrGenerationTimer);
+      clearTimeout(qrGenerationTimer);
+      generateQR(serverUrl);
       progress = {
         active: false,
         filename: "",
@@ -485,6 +486,7 @@
     OnFileDropOff();
     clearTimeout(batchTimer);
     clearTimeout(_progressTimeout);
+    clearTimeout(qrGenerationTimer);
     clearTimeout(transferStatsThrottleTimer);
     clearInterval(transferStatsTimer);
   });
