@@ -44,11 +44,14 @@
   // Logo asset
   import logoImg from "./assets/images/icon.png";
 
+  const QR_GENERATION_DEBOUNCE_MS = 100;
+
   // ── App State ──────────────────────────────────────────────────────────────
   let mode = "RECEIVE"; // "RECEIVE" | "SEND" | "ABOUT" | "SETTINGS"
   let connectionState = "IDLE"; // "IDLE" | "WAITING" | "CONNECTED" | "DISCONNECTED"
 
   let qrImage = "";
+  let qrGenerationTimer;
   let serverUrl = "";
   let senderUrl = "";
   let senderFiles = []; // [{name, sizeBytes}] — populated from sender_files event
@@ -280,6 +283,7 @@
     EventsOn("file_received", (filename) => {
       refreshFileList();
       clearTimeout(_progressTimeout);
+    clearTimeout(qrGenerationTimer);
       progress = {
         active: false,
         filename: "",
@@ -551,17 +555,20 @@
 
   function generateQR(text) {
     if (!text) return;
-    QRCode.toDataURL(
-      text,
-      {
-        width: 220,
-        margin: 2,
-        color: { dark: "#0A0A0A", light: "#00000000" },
-      },
-      (err, url) => {
-        if (!err) qrImage = url;
-      },
-    );
+    clearTimeout(qrGenerationTimer);
+    qrGenerationTimer = setTimeout(() => {
+      QRCode.toDataURL(
+        text,
+        {
+          width: 220,
+          margin: 2,
+          color: { dark: "#0A0A0A", light: "#00000000" },
+        },
+        (err, url) => {
+          if (!err) qrImage = url;
+        },
+      );
+    }, QR_GENERATION_DEBOUNCE_MS);
   }
 
   function playSound(type) {
