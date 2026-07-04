@@ -197,7 +197,7 @@ func localCertificateHosts() []string {
 		if iface.Flags&net.FlagUp == 0 {
 			continue
 		}
-		if shouldSkipCertificateInterface(iface.Name) {
+		if iface.Flags&net.FlagLoopback != 0 || shouldSkipCertificateInterface(iface.Name) {
 			continue
 		}
 		addrs, err := iface.Addrs()
