@@ -172,3 +172,4 @@ This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) f
 ## Contributing
 
 Contributions are welcome. Please open an issue or submit a pull request.
+# TODO: 🧪 [test] desktop/app.go has no test coverage (735 lines untested) (#87)
