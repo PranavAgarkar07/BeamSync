@@ -172,3 +172,4 @@ This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) f
 ## Contributing
 
 Contributions are welcome. Please open an issue or submit a pull request.
+# TODO: 🔒 [security] enforce mandatory ephemeral tls using in-memory self-signed certificates (#62)
