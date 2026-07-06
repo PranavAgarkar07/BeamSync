@@ -172,3 +172,4 @@ This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) f
 ## Contributing
 
 Contributions are welcome. Please open an issue or submit a pull request.
+# TODO: 🐛 [bug] download endpoints lack cache-control headers (potential stale/cross-user cache data) (#60)
