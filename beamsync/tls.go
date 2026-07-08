@@ -197,6 +197,9 @@ func localCertificateHosts() []string {
 		if iface.Flags&net.FlagUp == 0 {
 			continue
 		}
+		if iface.Flags&net.FlagLoopback != 0 || shouldSkipCertificateInterface(iface.Name) {
+			continue
+		}
 		addrs, err := iface.Addrs()
 		if err != nil {
 			continue
@@ -209,13 +212,45 @@ func localCertificateHosts() []string {
 			case *net.IPAddr:
 				ip = v.IP
 			}
-			if ip == nil || ip.IsUnspecified() {
+			if ip == nil || ip.IsUnspecified() || !isRelevantCertificateIP(ip) {
 				continue
 			}
 			hosts = append(hosts, ip.String())
 		}
 	}
 	return dedupeStrings(hosts)
+}
+
+func shouldSkipCertificateInterface(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return false
+	}
+	virtualPrefixes := []string{"docker", "br-", "veth", "tun", "tap", "wg", "vmnet", "vboxnet"}
+	for _, prefix := range virtualPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	virtualFragments := []string{"virtual", "hyper-v", "tailscale", "zerotier"}
+	for _, fragment := range virtualFragments {
+		if strings.Contains(name, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func isRelevantCertificateIP(ip net.IP) bool {
+	if ip.IsLoopback() {
+		return true
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		return ip4[0] == 10 ||
+			(ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31) ||
+			(ip4[0] == 192 && ip4[1] == 168)
+	}
+	return ip.IsLinkLocalUnicast()
 }
 
 func dedupeStrings(values []string) []string {

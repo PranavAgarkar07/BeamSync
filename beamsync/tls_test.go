@@ -147,6 +147,50 @@ func TestMaybeTLSListenerWrapsOnlyWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestCertificateHostFilteringKeepsOnlyRelevantLANIPs(t *testing.T) {
+	cases := []struct {
+		name string
+		ip   string
+		want bool
+	}{
+		{name: "loopback ipv4", ip: "127.0.0.1", want: true},
+		{name: "private class a", ip: "10.2.3.4", want: true},
+		{name: "private class b", ip: "172.20.1.9", want: true},
+		{name: "private class c", ip: "192.168.1.20", want: true},
+		{name: "link local ipv6", ip: "fe80::1", want: true},
+		{name: "public ipv4", ip: "8.8.8.8", want: false},
+		{name: "carrier nat", ip: "100.64.0.1", want: false},
+		{name: "public ipv6", ip: "2001:4860:4860::8888", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isRelevantCertificateIP(net.ParseIP(tc.ip))
+			if got != tc.want {
+				t.Fatalf("isRelevantCertificateIP(%s) = %v, want %v", tc.ip, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCertificateHostFilteringSkipsVirtualInterfaces(t *testing.T) {
+	for _, name := range []string{"docker0", "br-1234", "vethabc", "tun0", "tap1", "wg0", "vboxnet0", "Hyper-V Adapter", "tailscale0"} {
+		t.Run(name, func(t *testing.T) {
+			if !shouldSkipCertificateInterface(name) {
+				t.Fatalf("shouldSkipCertificateInterface(%q) = false, want true", name)
+			}
+		})
+	}
+
+	for _, name := range []string{"eth0", "en0", "wlan0", "Wi-Fi"} {
+		t.Run(name, func(t *testing.T) {
+			if shouldSkipCertificateInterface(name) {
+				t.Fatalf("shouldSkipCertificateInterface(%q) = true, want false", name)
+			}
+		})
+	}
+}
+
 func assertFileMode(t *testing.T, path string, want os.FileMode) {
 	t.Helper()
 
