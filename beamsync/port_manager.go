@@ -3,19 +3,26 @@ package beamsync
 import (
 	"fmt"
 	"net"
+	"os"
 	"strings"
 )
 
 // FindAvailablePort tries to find a free port starting from startPort.
 // It iterates by 'step' (e.g. 2 for even/odd only) up to maxAttempts.
 // It returns the allocated port, the active listener, and any error.
+// By default, binds to 127.0.0.1 (loopback) only. Set BEAMSYNC_LAN_MODE=true to bind to all interfaces.
 func FindAvailablePort(startPort int, step int, maxAttempts int) (int, net.Listener, error) {
+	bindHost := "127.0.0.1"
+	if os.Getenv("BEAMSYNC_LAN_MODE") == "true" {
+		bindHost = "0.0.0.0"
+	}
+
 	for i := 0; i < maxAttempts; i++ {
 		port := startPort + (i * step)
-		addr := fmt.Sprintf(":%d", port)
+		addr := fmt.Sprintf("%s:%d", bindHost, port)
 		listener, err := net.Listen("tcp", addr)
 		if err == nil {
-			fmt.Printf("🎯 Found available port: %d\n", port)
+			fmt.Printf("🎯 Found available port: %d (bind: %s)\n", port, bindHost)
 			return port, listener, nil
 		}
 
