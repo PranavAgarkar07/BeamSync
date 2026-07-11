@@ -41,6 +41,11 @@ type tokenRecord struct {
 	Nonce            string
 }
 
+type sessionState struct {
+	CreatedAt time.Time
+	Used      bool
+}
+
 type tokenStore struct {
 	mu          sync.Mutex
 	secret      []byte
@@ -49,6 +54,7 @@ type tokenStore struct {
 	ttl         time.Duration
 	now         func() time.Time
 	tokens      map[string]*tokenRecord
+	sessions    map[string]*sessionState
 }
 
 func newTokenStore(fingerprint string) (*tokenStore, error) {
@@ -67,6 +73,7 @@ func newTokenStore(fingerprint string) (*tokenStore, error) {
 		ttl:         defaultTokenTTL,
 		now:         time.Now,
 		tokens:      make(map[string]*tokenRecord),
+		sessions:    make(map[string]*sessionState),
 	}, nil
 }
 
@@ -124,8 +131,10 @@ func (s *tokenStore) validate(value, clientIP string, scope tokenScope, consume 
 	if !ok || record.Scope != scope || !hmac.Equal([]byte(value), []byte(s.sign(record))) {
 		return errInvalidToken
 	}
+
 	if !s.now().Before(record.ExpiresAt) {
 		delete(s.tokens, value)
+		s.sessions[value] = nil
 		return errExpiredToken
 	}
 	if record.BoundFingerprint != s.fingerprint {
@@ -137,9 +146,30 @@ func (s *tokenStore) validate(value, clientIP string, scope tokenScope, consume 
 	if record.MaxUses > 0 && record.UseCount >= record.MaxUses {
 		return errUsedToken
 	}
-	if consume {
+
+	if scope == tokenScopeSession {
+		session, exists := s.sessions[value]
+		if !exists {
+			session = &sessionState{CreatedAt: record.CreatedAt, Used: false}
+			s.sessions[value] = session
+		}
+
+		if time.Since(session.CreatedAt) > s.ttl {
+			delete(s.sessions, value)
+			return errExpiredToken
+		}
+
+		if session.Used {
+			return errUsedToken
+		}
+
+		if consume {
+			session.Used = true
+		}
+	} else if consume {
 		record.UseCount++
 	}
+
 	return nil
 }
 
