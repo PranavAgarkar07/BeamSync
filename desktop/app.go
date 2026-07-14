@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	stdruntime "runtime"
 	"sort"
@@ -91,12 +92,55 @@ func configPath() string {
 
 func loadConfig() configData {
 	var cfg configData
-	data, err := os.ReadFile(configPath())
+	cfgPath := configPath()
+
+	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		return cfg
 	}
-	_ = json.Unmarshal(data, &cfg)
+
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return cfg
+	}
+
+	if err := validateConfigIntegrity(cfgPath, &cfg); err != nil {
+		return cfg
+	}
+
 	return cfg
+}
+
+func validateConfigIntegrity(cfgPath string, cfg *configData) error {
+	if cfg.SavePath == "" {
+		return nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	absPath, err := filepath.Abs(cfg.SavePath)
+	if err != nil {
+		return fmt.Errorf("cannot resolve SavePath: %w", err)
+	}
+
+	cleanHome := filepath.Clean(home)
+	cleanPath := filepath.Clean(absPath)
+	if !strings.HasPrefix(cleanPath, cleanHome) {
+		return fmt.Errorf("SavePath must be within the user home directory")
+	}
+
+	stat, err := os.Stat(cfgPath)
+	if err != nil {
+		return nil
+	}
+
+	if stat.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("config file has unsafe permissions (should be 0600)")
+	}
+
+	return nil
 }
 
 func saveConfig(cfg configData) error {
@@ -108,7 +152,10 @@ func saveConfig(cfg configData) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, data, 0644)
+	if err := os.WriteFile(p, data, 0600); err != nil {
+		return err
+	}
+	return os.Chmod(p, 0600)
 }
 
 func defaultSavePath() string {
