@@ -56,6 +56,7 @@
   let senderUrl = "";
   let senderFiles = []; // [{name, sizeBytes}] — populated from sender_files event
   let transferHistory = [];
+  let appVersion = 'v2.4.0';
   let sessionLog = [];
   let transferStats = {
     startedAt: new Date().toISOString(),
@@ -257,6 +258,10 @@
     transferStatsTimer = setInterval(() => {
       transferStatsNow = Date.now();
     }, 1000);
+
+    try {
+      appVersion = await window.go.main.App.GetVersion();
+    } catch { /* fallback already set */ }
 
     // Load settings
     try {
@@ -941,7 +946,7 @@
       activeTab={mode.toLowerCase()}
       networkStatus={connectionState.toLowerCase()}
       serverUrl={displayUrl}
-      appVersion="v2.2"
+      appVersion={appVersion}
       on:tabChange={({ detail }) => switchMode(detail.tab.toUpperCase())}
       on:settings={() => switchMode('SETTINGS')}
       on:reset={handleDisconnectReset}
@@ -1257,7 +1262,7 @@
               </div>
               <div class="about-title">
                 <h1>BEAMSYNC</h1>
-                <span class="version-badge">v2.2</span>
+                <span class="version-badge">{appVersion}</span>
               </div>
             </div>
 

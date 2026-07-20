@@ -70,7 +70,7 @@
     {activeTab}
     {networkStatus}
     serverUrl="http://192.168.1.10:8096"
-    appVersion="v2.2"
+    appVersion="v2.4.0"
     on:tabChange={({ detail }) => activeTab = detail.tab}
     on:settings={() => alert('Settings!')}
     on:reset={() => networkStatus = 'idle'}

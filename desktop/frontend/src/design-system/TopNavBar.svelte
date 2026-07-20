@@ -8,7 +8,7 @@
     activeTab      {string}  — "receive" | "send" | "about"
     networkStatus  {string}  — "idle" | "waiting" | "connected" | "disconnected"
     serverUrl      {string}  — Current server URL (displayed in status)
-    appVersion     {string}  — App version string e.g. "v2.2"
+    appVersion     {string}  — App version string e.g. "v2.4.0"
 
   Events:
     on:tabChange   — { tab } when a nav tab is clicked
@@ -20,7 +20,7 @@
       activeTab="receive"
       networkStatus="connected"
       serverUrl="http://192.168.1.10:8080"
-      appVersion="v2.2"
+      appVersion="v2.4.0"
       on:tabChange={({ detail }) => switchMode(detail.tab)}
       on:settings={openSettings}
       on:reset={resetAll}
@@ -33,7 +33,7 @@
   export let activeTab     = 'receive';
   export let networkStatus = 'idle';
   export let serverUrl     = '';
-  export let appVersion    = 'v2.2';
+  export let appVersion    = 'v2.4.0';
 
   const dispatch = createEventDispatcher();
 

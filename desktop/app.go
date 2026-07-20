@@ -25,8 +25,11 @@ import (
 //go:embed sounds/*.wav
 var soundFS embed.FS
 
-// currentVersion is the running build version — keep in sync with wails.json productVersion.
-const currentVersion = "v2.4.0"
+//go:embed wails.json
+var wailsJSONData []byte
+
+const eventChanCapacity = 512
+const fallbackVersion = "v2.4.0"
 
 // App struct
 type App struct {
@@ -40,6 +43,7 @@ type App struct {
 	lastSavePath string
 	currentIP    string
 	currentPort  string
+	version      string
 }
 
 // UpdateInfo is returned to the frontend.
@@ -67,7 +71,7 @@ type ReceivedFile struct {
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
-		eventChan:    make(chan EventData, 100),
+		eventChan:    make(chan EventData, eventChanCapacity),
 		eventsClosed: make(chan struct{}),
 	}
 }
@@ -122,6 +126,19 @@ func defaultSavePath() string {
 // startup is called when the app starts
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+
+	type wailsInfo struct {
+		Info struct {
+			ProductVersion string `json:"productVersion"`
+		} `json:"info"`
+	}
+	var info wailsInfo
+	if err := json.Unmarshal(wailsJSONData, &info); err != nil {
+		fmt.Println("⚠️ Failed to parse wails.json:", err)
+		a.version = fallbackVersion
+	} else {
+		a.version = "v" + info.Info.ProductVersion
+	}
 
 	go a.processEvents()
 	go a.startIPMonitor()
@@ -218,6 +235,11 @@ func (a *App) PlaySound(name string) {
 	if a.audio != nil {
 		a.audio.Play(name)
 	}
+}
+
+// GetVersion returns the app version from wails.json (single source of truth).
+func (a *App) GetVersion() string {
+	return a.version
 }
 
 // ---------------------------------------------------------
@@ -628,11 +650,11 @@ func (a *App) RejectTransfer(id string) {
 // The User-Agent header encodes the current version + OS, giving GitHub's
 // traffic analytics natural DAU and platform signals at zero privacy cost.
 func (a *App) CheckForUpdate() UpdateInfo {
-	info := UpdateInfo{CurrentVersion: currentVersion}
+	info := UpdateInfo{CurrentVersion: a.version}
 
 	userAgent := fmt.Sprintf(
 		"BeamSync/%s (%s; %s)",
-		currentVersion, stdruntime.GOOS, stdruntime.GOARCH,
+		a.version, stdruntime.GOOS, stdruntime.GOARCH,
 	)
 
 	req, err := http.NewRequest("GET",
@@ -676,10 +698,10 @@ func (a *App) CheckForUpdate() UpdateInfo {
 		notes = notes[:280] + "…"
 	}
 	info.ReleaseNotes = notes
-	info.UpdateAvailable = release.TagName != "" && release.TagName != currentVersion
+	info.UpdateAvailable = release.TagName != "" && release.TagName != a.version
 
 	fmt.Printf("🔍 UpdateCheck: current=%s latest=%s available=%v\n",
-		currentVersion, release.TagName, info.UpdateAvailable)
+		a.version, release.TagName, info.UpdateAvailable)
 	return info
 }
 
