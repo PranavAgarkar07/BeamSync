@@ -29,19 +29,22 @@
 
 **Requirements:** EVT-01, EVT-02, EVT-03, VER-01, VER-02, VER-03
 
-### Plans
+**Plans:** 3 plans
 
-1.1 **Resize `eventDispatcher` buffer** — `beamsync/server.go` line ~72: change `make(chan eventDispatchJob, 256)` → `1024`. Verify no other code depends on the 256 constant.
+| Plan | File | Coverage |
+|------|------|----------|
+| [ ] `01-01-PLAN.md` — Event dispatcher hardening | `beamsync/server.go` | EVT-01, EVT-03 |
+| [ ] `01-02-PLAN.md` — Desktop app channel + version | `desktop/app.go` | EVT-02, VER-01, VER-02 |
+| [ ] `01-03-PLAN.md` — Frontend version bridge | Svelte files | VER-03 |
 
-1.2 **Resize `eventChan` buffer** — `desktop/app.go` line ~70: change `eventChan: make(chan appEvent, 100)` → `512`. Make the capacity a named `const eventChanCapacity = 512` in `app.go`.
+### Wave Structure
 
-1.3 **Add drop counters to event dispatcher** — Add `atomic.Int64 dropped` field to `eventDispatcher` struct. Increment on the `default:` branch of the non-blocking send. Expose via `DroppedCount()` method. Log on emit and periodically in `processEvents`.
-
-1.4 **Unify version to `wails.json`** — Remove `const currentVersion = "v2.4.0"` from `desktop/app.go:29`. Read version from `wails.json` at startup (embed + parse JSON). Expose via `App.GetVersion()` Wails-bound method.
-
-1.5 **Pass version to Svelte frontend** — Remove hardcoded `appVersion="v2.2"` from `App.svelte:944`. Call `window.go.main.App.GetVersion()` on mount. Use the returned value in the About view.
-
-1.6 **Add drop counter to `makeCallback`** — `desktop/app.go` `makeCallback`: add `atomic.Int64` counter for drops on the `default:` branch of the `eventChan` send.
+```
+Wave 1 (all parallel — no file overlap):
+├── 01-01  Event dispatcher hardening    server.go
+├── 01-02  Desktop app channel + version  app.go
+└── 01-03  Frontend version bridge       Svelte files
+```
 
 ### Dependencies
 
