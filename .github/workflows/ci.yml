@@ -1,84 +1,49 @@
 name: CI
-
-on:
-  pull_request:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
+on: [push, pull_request]
 jobs:
-  build-test:
-    name: Go and frontend checks
+  lint-go:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.25' }
+      - run: (cd beamsync && golangci-lint run ./...)
+      - run: (cd desktop && golangci-lint run ./...)
 
-      - name: Install system dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libasound2-dev
+  lint-svelte:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: cd desktop/frontend && npm ci && npm run lint
 
-      - name: Set up Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
-        with:
-          go-version: '1.25.5'
-          cache-dependency-path: |
-            beamsync/go.sum
-            desktop/go.sum
+  test-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.25' }
+      - run: (cd beamsync && go test ./...)
+      - run: (cd desktop && go test ./...)
 
-      - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: desktop/frontend/package-lock.json
+  test-svelte:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: cd desktop/frontend && npm ci && npm run test
 
-      - name: Install frontend dependencies
-        working-directory: desktop/frontend
-        run: npm ci
-
-      - name: Run frontend lint if configured
-        working-directory: desktop/frontend
-        run: npm run lint --if-present
-
-      - name: Build frontend assets
-        working-directory: desktop/frontend
-        run: npm run build
-
-      - name: Check formatting (beamsync)
-        working-directory: beamsync
-        run: test -z "$(gofmt -l .)"
-
-      - name: Test core Go module
-        working-directory: beamsync
-        run: go test ./...
-
-      - name: Vet core Go module
-        working-directory: beamsync
-        run: go vet ./...
-
-      - name: Build core Go module
-        working-directory: beamsync
-        run: go build ./...
-
-      - name: Check formatting (desktop)
-        working-directory: desktop
-        run: test -z "$(gofmt -l .)"
-
-      - name: Test desktop Go module
-        working-directory: desktop
-        run: go test ./...
-
-      - name: Vet desktop Go module
-        working-directory: desktop
-        run: go vet ./...
-
-      - name: Build desktop Go module
-        working-directory: desktop
-        run: go build ./...
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint-go, lint-svelte, test-go, test-svelte]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.25' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: cd desktop/frontend && npm ci && npm run build
+      - run: (cd beamsync && go build ./...)
+      - run: (cd desktop && go build ./...)

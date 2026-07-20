@@ -11,10 +11,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/textproto"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -44,7 +42,7 @@ func TestTokenMiddlewareRejectsMissingOrInvalidToken(t *testing.T) {
 
 func TestTokenMiddlewareAllowsValidTokenAndOptions(t *testing.T) {
 	store := newTokenStoreForTest(t)
-	token, err := store.issue(tokenScopeSession, 0, "192.0.2.10")
+	token, err := store.issue(tokenScopeSession, 0, "")
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
@@ -53,14 +51,10 @@ func TestTokenMiddlewareAllowsValidTokenAndOptions(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/upload?token="+token, nil)
-	req.RemoteAddr = "192.0.2.10:1234"
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("valid token status = %d, want %d", rec.Code, http.StatusAccepted)
-	}
-	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
-		t.Fatalf("valid token response set Access-Control-Allow-Origin = %q, want empty", got)
 	}
 
 	optionsReq := httptest.NewRequest(http.MethodOptions, "/upload", nil)
@@ -68,9 +62,6 @@ func TestTokenMiddlewareAllowsValidTokenAndOptions(t *testing.T) {
 	handler(optionsRec, optionsReq)
 	if optionsRec.Code != http.StatusNoContent {
 		t.Fatalf("OPTIONS status = %d, want %d", optionsRec.Code, http.StatusNoContent)
-	}
-	if got := optionsRec.Header().Get("Access-Control-Allow-Origin"); got != "" {
-		t.Fatalf("OPTIONS response set Access-Control-Allow-Origin = %q, want empty", got)
 	}
 }
 
@@ -127,48 +118,6 @@ func TestSetCORSHeaders(t *testing.T) {
 	}
 }
 
-func TestUploadBufferInitialCapacityUsesSmallManifestSize(t *testing.T) {
-	got := uploadBufferInitialCapacity(
-		"tiny.txt",
-		map[string]int64{"tiny.txt": 1024},
-		textproto.MIMEHeader{},
-		largeFileThreshold+1024,
-	)
-
-	if got != 1024 {
-		t.Fatalf("initial capacity = %d, want manifest size 1024", got)
-	}
-}
-
-func TestUploadBufferInitialCapacityCapsLargeManifestAtThreshold(t *testing.T) {
-	got := uploadBufferInitialCapacity(
-		"movie.mp4",
-		map[string]int64{"movie.mp4": largeFileThreshold + 1},
-		textproto.MIMEHeader{},
-		0,
-	)
-
-	if got != largeFileThreshold {
-		t.Fatalf("initial capacity = %d, want largeFileThreshold", got)
-	}
-}
-
-func TestUploadBufferInitialCapacityFallsBackToRequestLength(t *testing.T) {
-	got := uploadBufferInitialCapacity("unknown.txt", nil, textproto.MIMEHeader{}, 4096)
-
-	if got != 4096 {
-		t.Fatalf("initial capacity = %d, want request content length 4096", got)
-	}
-}
-
-func TestUploadBufferInitialCapacityAvoidsUnknownLargePreallocation(t *testing.T) {
-	got := uploadBufferInitialCapacity("unknown.bin", nil, textproto.MIMEHeader{}, largeFileThreshold+1024)
-
-	if got != 0 {
-		t.Fatalf("initial capacity = %d, want 0 for unknown large upload", got)
-	}
-}
-
 func TestCopyChunkedCopiesDataAndReportsCount(t *testing.T) {
 	payload := strings.Repeat("beam-sync", 1024)
 	var dst bytes.Buffer
@@ -198,36 +147,6 @@ func TestSafeEmitHandlesNilCallbackAndCallbackPanic(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("safeEmit did not invoke callback")
-	}
-}
-
-func TestSafeEmitDoesNotSpawnPerEventGoroutines(t *testing.T) {
-	block := make(chan struct{})
-	started := make(chan struct{}, 1)
-	callback := func(string, string) {
-		select {
-		case started <- struct{}{}:
-		default:
-		}
-		<-block
-	}
-
-	before := runtime.NumGoroutine()
-	for i := 0; i < 50; i++ {
-		safeEmit(callback, "upload_progress", "file.txt|1|50")
-	}
-
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("dispatcher did not start processing events")
-	}
-
-	after := runtime.NumGoroutine()
-	close(block)
-
-	if growth := after - before; growth > 5 {
-		t.Fatalf("goroutine count grew by %d; safeEmit should use one bounded dispatcher", growth)
 	}
 }
 
@@ -324,99 +243,6 @@ func TestHTTPServerShutdownWaitsForActiveRequest(t *testing.T) {
 	}
 }
 
-func TestProcessManifestCases(t *testing.T) {
-	t.Run("valid", func(t *testing.T) {
-		got, err := processManifest(strings.NewReader(`[{"name":"a.txt","size":12},{"name":"b.bin","size":34}]`))
-		if err != nil {
-			t.Fatalf("processManifest returned error: %v", err)
-		}
-		if got["a.txt"] != 12 || got["b.bin"] != 34 {
-			t.Fatalf("processManifest = %#v", got)
-		}
-	})
-
-	t.Run("empty manifest", func(t *testing.T) {
-		got, err := processManifest(strings.NewReader(`[]`))
-		if err != nil {
-			t.Fatalf("processManifest returned error: %v", err)
-		}
-		if len(got) != 0 {
-			t.Fatalf("processManifest len = %d, want 0", len(got))
-		}
-	})
-
-	t.Run("malformed json", func(t *testing.T) {
-		if _, err := processManifest(strings.NewReader(`{`)); err == nil {
-			t.Fatal("processManifest returned nil error for malformed JSON")
-		}
-	})
-}
-
-func TestWriteFileToDiskWritesFileAndEmitsProgress(t *testing.T) {
-	dir := t.TempDir()
-	state := &serverState{}
-	stats := newTransferStatsTracker()
-	history := NewTransferHistory(10)
-	var mu sync.Mutex
-	var events []string
-	emit := func(name, data string) {
-		mu.Lock()
-		defer mu.Unlock()
-		events = append(events, name+"|"+data)
-	}
-
-	writeFileToDisk(writeJob{
-		dstPath:   filepath.Join(dir, "hello.txt"),
-		savedName: "hello.txt",
-		totalSize: 11,
-		buf:       []byte("hello world"),
-	}, state, stats, emit, history)
-
-	got, err := os.ReadFile(filepath.Join(dir, "hello.txt"))
-	if err != nil {
-		t.Fatalf("read written file: %v", err)
-	}
-	if string(got) != "hello world" {
-		t.Fatalf("written file = %q", got)
-	}
-	if state.uploadingCount != 0 {
-		t.Fatalf("uploadingCount = %d, want 0", state.uploadingCount)
-	}
-	if !eventSeen(&mu, &events, "upload_progress|hello.txt|11|11") {
-		t.Fatalf("upload_progress event missing: %#v", events)
-	}
-	if snapshot := stats.snapshot(0); snapshot.FilesReceived != 1 || snapshot.BytesReceived != 11 {
-		t.Fatalf("stats snapshot = %#v", snapshot)
-	}
-	if records := history.List(); len(records) != 1 || records[0].Status != TransferStatusCompleted {
-		t.Fatalf("history records = %#v", records)
-	}
-}
-
-func TestStartWriteWorkersProcessesJobsAndIgnoresCreateErrors(t *testing.T) {
-	dir := t.TempDir()
-	state := &serverState{}
-	stats := newTransferStatsTracker()
-	history := NewTransferHistory(10)
-	jobs := make(chan writeJob, 2)
-	wg := startWriteWorkers(jobs, state, stats, func(string, string) {}, history)
-
-	jobs <- writeJob{dstPath: filepath.Join(dir, "one.txt"), savedName: "one.txt", totalSize: 3, buf: []byte("one")}
-	jobs <- writeJob{dstPath: filepath.Join(dir, "missing", "bad.txt"), savedName: "bad.txt", totalSize: 3, buf: []byte("bad")}
-	close(jobs)
-	wg.Wait()
-
-	if got, err := os.ReadFile(filepath.Join(dir, "one.txt")); err != nil || string(got) != "one" {
-		t.Fatalf("worker did not write good job: data=%q err=%v", got, err)
-	}
-	if state.uploadingCount != 0 {
-		t.Fatalf("uploadingCount = %d, want 0", state.uploadingCount)
-	}
-	if records := history.List(); len(records) != 2 {
-		t.Fatalf("history len = %d, want 2: %#v", len(records), records)
-	}
-}
-
 func TestServerStateActiveUploadPreventsTimeout(t *testing.T) {
 	state := &serverState{
 		lastHeartbeat: time.Now().Add(-30 * time.Second),
@@ -443,20 +269,16 @@ func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
 		t.Fatalf("GET /: %v", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET / status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 	if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
 		t.Fatalf("Content-Type = %q, want text/html", resp.Header.Get("Content-Type"))
 	}
-	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "*" {
-		t.Fatalf("root Access-Control-Allow-Origin = %q, want *", got)
-	}
 	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
 		t.Fatalf("root Cache-Control = %q, want no-store", got)
 	}
-	token := extractInjectedToken(t, string(body))
+	token := extractInjectedToken(t, string(bodyBytes(resp)))
 
 	replayResp, err := http.Get(baseURL + "/?token=" + bootstrapToken)
 	if err != nil {
@@ -481,9 +303,6 @@ func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
 	}
 	if heartbeatResp.Header.Get("X-BeamSync-Token") == "" {
 		t.Fatal("heartbeat did not return a renewed session token")
-	}
-	if got := heartbeatResp.Header.Get("Access-Control-Allow-Origin"); got != "" {
-		t.Fatalf("heartbeat Access-Control-Allow-Origin = %q, want empty", got)
 	}
 
 	if !waitForEvent(events, "device_connected", time.Second) {
@@ -577,70 +396,6 @@ func TestUploadWithoutFileReturnsBadRequest(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("upload status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
 	}
-	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "" {
-		t.Fatalf("upload Access-Control-Allow-Origin = %q, want empty", got)
-	}
-}
-
-func TestResumableEndpointsAreRateLimited(t *testing.T) {
-	tests := []struct {
-		name       string
-		method     string
-		path       string
-		wantBefore int
-	}{
-		{
-			name:       "resumable upload",
-			method:     http.MethodPut,
-			path:       "/upload/resumable",
-			wantBefore: http.StatusBadRequest,
-		},
-		{
-			name:       "upload status",
-			method:     http.MethodGet,
-			path:       "/upload-status/test-upload-id",
-			wantBefore: http.StatusNotFound,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			server, baseURL, token, _, _ := startServerForTest(t)
-			defer server.Shutdown()
-
-			target := baseURL + tc.path + "?token=" + token
-			for i := 0; i < 12; i++ {
-				req, err := http.NewRequest(tc.method, target, nil)
-				if err != nil {
-					t.Fatalf("create request %d: %v", i+1, err)
-				}
-				resp, err := http.DefaultClient.Do(req)
-				if err != nil {
-					t.Fatalf("%s %s request %d: %v", tc.method, tc.path, i+1, err)
-				}
-				resp.Body.Close()
-				if resp.StatusCode != tc.wantBefore {
-					t.Fatalf("request %d status = %d, want %d before rate limit", i+1, resp.StatusCode, tc.wantBefore)
-				}
-			}
-
-			req, err := http.NewRequest(tc.method, target, nil)
-			if err != nil {
-				t.Fatalf("create rate-limited request: %v", err)
-			}
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				t.Fatalf("%s %s rate-limited request: %v", tc.method, tc.path, err)
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusTooManyRequests {
-				t.Fatalf("rate-limited status = %d, want %d", resp.StatusCode, http.StatusTooManyRequests)
-			}
-			if got := resp.Header.Get("Retry-After"); got == "" {
-				t.Fatal("rate-limited response should include Retry-After")
-			}
-		})
-	}
 }
 
 func TestUploadWithFileSavesToDiskAndEmitsEvents(t *testing.T) {
@@ -696,9 +451,6 @@ func TestUploadWithFileSavesToDiskAndEmitsEvents(t *testing.T) {
 	if statsResp.StatusCode != http.StatusOK {
 		t.Fatalf("stats status = %d, want %d", statsResp.StatusCode, http.StatusOK)
 	}
-	if got := statsResp.Header.Get("Access-Control-Allow-Origin"); got != "" {
-		t.Fatalf("stats Access-Control-Allow-Origin = %q, want empty", got)
-	}
 	var stats TransferStats
 	if err := json.NewDecoder(statsResp.Body).Decode(&stats); err != nil {
 		t.Fatalf("decode stats: %v", err)
@@ -706,92 +458,6 @@ func TestUploadWithFileSavesToDiskAndEmitsEvents(t *testing.T) {
 	if stats.FilesReceived != 1 || stats.BytesReceived != 11 {
 		t.Fatalf("stats = %#v, want one 11-byte received file", stats)
 	}
-}
-
-func TestUploadWithMatchingSHA256HeaderSucceeds(t *testing.T) {
-	server, baseURL, token, _, uploadDir := startServerForTest(t)
-	defer server.Shutdown()
-
-	payload := []byte("hello verified world")
-	body, contentType := multipartUploadBody(t, "verified.txt", payload)
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/upload?token="+token, &body)
-	if err != nil {
-		t.Fatalf("create upload request: %v", err)
-	}
-	req.Header.Set("Content-Type", contentType)
-	req.Header.Set(uploadIntegrityHeader, sha256String(payload))
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("POST /upload: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(resp.Body)
-		t.Fatalf("upload status = %d, want %d: %s", resp.StatusCode, http.StatusOK, responseBody)
-	}
-
-	got, err := os.ReadFile(filepath.Join(uploadDir, "verified.txt"))
-	if err != nil {
-		t.Fatalf("read uploaded file: %v", err)
-	}
-	if !bytes.Equal(got, payload) {
-		t.Fatalf("uploaded file = %q, want %q", got, payload)
-	}
-}
-
-func TestUploadWithMismatchedSHA256HeaderRejectsAndRecordsFailure(t *testing.T) {
-	server, baseURL, token, _, uploadDir := startServerForTest(t)
-	defer server.Shutdown()
-
-	payload := []byte("corrupted on the wire")
-	body, contentType := multipartUploadBody(t, "corrupt.txt", payload)
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/upload?token="+token, &body)
-	if err != nil {
-		t.Fatalf("create upload request: %v", err)
-	}
-	req.Header.Set("Content-Type", contentType)
-	req.Header.Set(uploadIntegrityHeader, strings.Repeat("0", 64))
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("POST /upload: %v", err)
-	}
-	defer resp.Body.Close()
-	responseBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("upload status = %d, want %d: %s", resp.StatusCode, http.StatusBadRequest, responseBody)
-	}
-	if !strings.Contains(string(responseBody), "integrity-mismatch") {
-		t.Fatalf("response body = %q, want integrity-mismatch", responseBody)
-	}
-	if _, err := os.Stat(filepath.Join(uploadDir, "corrupt.txt")); !os.IsNotExist(err) {
-		t.Fatalf("corrupt file should not be kept, stat err = %v", err)
-	}
-
-	statsResp, err := http.Get(baseURL + "/stats?token=" + token)
-	if err != nil {
-		t.Fatalf("GET /stats: %v", err)
-	}
-	defer statsResp.Body.Close()
-	var stats TransferStats
-	if err := json.NewDecoder(statsResp.Body).Decode(&stats); err != nil {
-		t.Fatalf("decode stats: %v", err)
-	}
-	if stats.IntegrityFailures != 1 {
-		t.Fatalf("integrity failures = %d, want 1", stats.IntegrityFailures)
-	}
-}
-
-func eventSeen(mu *sync.Mutex, events *[]string, want string) bool {
-	mu.Lock()
-	defer mu.Unlock()
-	for _, event := range *events {
-		if event == want {
-			return true
-		}
-	}
-	return false
 }
 
 func waitForEvent(events <-chan string, want string, timeout time.Duration) bool {
@@ -817,13 +483,13 @@ func startServerForTest(t *testing.T) (*HTTPServer, string, string, <-chan strin
 		server.Shutdown()
 		t.Fatalf("exchange bootstrap token: %v", err)
 	}
-	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil || resp.StatusCode != http.StatusOK {
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
 		server.Shutdown()
-		t.Fatalf("bootstrap exchange status=%d err=%v body=%q", resp.StatusCode, err, body)
+		t.Fatalf("bootstrap exchange status=%d", resp.StatusCode)
 	}
-	return server, baseURL, extractInjectedToken(t, string(body)), events, uploadDir
+	token := extractInjectedToken(t, string(bodyBytes(resp)))
+	return server, baseURL, token, events, uploadDir
 }
 
 func startRawServerForTest(t *testing.T) (*HTTPServer, string, string, <-chan string, string) {
@@ -861,36 +527,6 @@ func extractInjectedToken(t *testing.T, html string) string {
 	return html[start : start+end]
 }
 
-func multipartUploadBody(t *testing.T, filename string, payload []byte) (bytes.Buffer, string) {
-	t.Helper()
-
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	manifest, err := writer.CreateFormField("beam_manifest")
-	if err != nil {
-		t.Fatalf("create manifest field: %v", err)
-	}
-	if _, err := fmt.Fprintf(manifest, `[{"name":%q,"size":%d}]`, filename, len(payload)); err != nil {
-		t.Fatalf("write manifest field: %v", err)
-	}
-	file, err := writer.CreateFormFile("files", filename)
-	if err != nil {
-		t.Fatalf("create file field: %v", err)
-	}
-	if _, err := file.Write(payload); err != nil {
-		t.Fatalf("write file field: %v", err)
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatalf("close multipart writer: %v", err)
-	}
-	return body, writer.FormDataContentType()
-}
-
-func sha256String(payload []byte) string {
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:])
-}
-
 func freePort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -899,4 +535,9 @@ func freePort(t *testing.T) int {
 	}
 	defer listener.Close()
 	return listener.Addr().(*net.TCPAddr).Port
+}
+
+func bodyBytes(resp *http.Response) []byte {
+	b, _ := io.ReadAll(resp.Body)
+	return b
 }

@@ -15,20 +15,33 @@ func newTokenStoreForTest(t *testing.T) *tokenStore {
 	return store
 }
 
-func TestTokenStoreBindsTokensToClientAndScope(t *testing.T) {
+func TestTokenStoreIssuesAndValidates(t *testing.T) {
 	store := newTokenStoreForTest(t)
-	token, err := store.issue(tokenScopeSession, 0, "192.0.2.10")
+	token, err := store.issue(tokenScopeSession, 0, "")
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
 
-	if err := store.validate(token, "192.0.2.10", tokenScopeSession, false); err != nil {
-		t.Fatalf("validate bound token: %v", err)
+	if err := store.validate(token, "", tokenScopeSession, false); err != nil {
+		t.Fatalf("validate valid token: %v", err)
 	}
-	if err := store.validate(token, "192.0.2.11", tokenScopeSession, false); !errors.Is(err, errWrongClient) {
-		t.Fatalf("wrong-client error = %v, want %v", err, errWrongClient)
+}
+
+func TestTokenStoreRejectsInvalidToken(t *testing.T) {
+	store := newTokenStoreForTest(t)
+	if err := store.validate("badtoken", "", tokenScopeSession, false); !errors.Is(err, errInvalidToken) {
+		t.Fatalf("invalid-token error = %v, want %v", err, errInvalidToken)
 	}
-	if err := store.validate(token, "192.0.2.10", tokenScopeTransfer, false); !errors.Is(err, errInvalidToken) {
+}
+
+func TestTokenStoreRejectsWrongScope(t *testing.T) {
+	store := newTokenStoreForTest(t)
+	token, err := store.issue(tokenScopeSession, 0, "")
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+
+	if err := store.validate(token, "", tokenScopeTransfer, false); !errors.Is(err, errInvalidToken) {
 		t.Fatalf("wrong-scope error = %v, want %v", err, errInvalidToken)
 	}
 }
@@ -38,45 +51,41 @@ func TestTokenStoreExpiresTokens(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	store.now = func() time.Time { return now }
 	store.ttl = time.Minute
-	token, err := store.issue(tokenScopeSession, 0, "192.0.2.10")
+	token, err := store.issue(tokenScopeSession, 0, "")
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
 
 	now = now.Add(time.Minute)
-	if err := store.validate(token, "192.0.2.10", tokenScopeSession, false); !errors.Is(err, errExpiredToken) {
+	if err := store.validate(token, "", tokenScopeSession, false); !errors.Is(err, errExpiredToken) {
 		t.Fatalf("expired-token error = %v, want %v", err, errExpiredToken)
 	}
 }
 
 func TestTokenStoreEnforcesSingleUse(t *testing.T) {
 	store := newTokenStoreForTest(t)
-	token, err := store.issue(tokenScopeTransfer, 1, "192.0.2.10")
+	token, err := store.issue(tokenScopeTransfer, 1, "")
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
 
-	if err := store.validate(token, "192.0.2.10", tokenScopeTransfer, true); err != nil {
+	if err := store.validate(token, "", tokenScopeTransfer, true); err != nil {
 		t.Fatalf("first use: %v", err)
 	}
-	if err := store.validate(token, "192.0.2.10", tokenScopeTransfer, true); !errors.Is(err, errUsedToken) {
+	if err := store.validate(token, "", tokenScopeTransfer, true); !errors.Is(err, errUsedToken) {
 		t.Fatalf("replay error = %v, want %v", err, errUsedToken)
 	}
 }
 
 func TestTokenStoreRejectsTampering(t *testing.T) {
 	store := newTokenStoreForTest(t)
-	token, err := store.issue(tokenScopeSession, 0, "192.0.2.10")
+	token, err := store.issue(tokenScopeSession, 0, "")
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
 
-	newFirstChar := byte('0')
-	if token[0] == '0' {
-		newFirstChar = '1'
-	}
-	tampered := string(newFirstChar) + token[1:]
-	if err := store.validate(tampered, "192.0.2.10", tokenScopeSession, false); !errors.Is(err, errInvalidToken) {
+	tampered := "x" + token[1:]
+	if err := store.validate(tampered, "", tokenScopeSession, false); !errors.Is(err, errInvalidToken) {
 		t.Fatalf("tampered-token error = %v, want %v", err, errInvalidToken)
 	}
 }

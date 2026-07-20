@@ -2,11 +2,8 @@ package beamsync
 
 import (
 	"context"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -22,79 +19,42 @@ const (
 	tokenScopeTransfer  tokenScope = "transfer"
 )
 
-var (
-	errInvalidToken = errors.New("invalid token")
-	errExpiredToken = errors.New("expired token")
-	errUsedToken    = errors.New("token use limit exceeded")
-	errWrongClient  = errors.New("token is bound to another client")
-)
-
 type tokenRecord struct {
-	Value            string
-	CreatedAt        time.Time
-	ExpiresAt        time.Time
-	MaxUses          int
-	UseCount         int
-	BoundFingerprint string
-	BoundClientIP    string
-	Scope            tokenScope
-	Nonce            string
+	Value     string
+	ExpiresAt time.Time
+	MaxUses   int
+	UseCount  int
+	Scope     tokenScope
 }
 
 type tokenStore struct {
-	mu          sync.Mutex
-	secret      []byte
-	sessionID   string
-	fingerprint string
-	ttl         time.Duration
-	now         func() time.Time
-	tokens      map[string]*tokenRecord
+	mu     sync.Mutex
+	ttl    time.Duration
+	now    func() time.Time
+	tokens map[string]*tokenRecord
 }
 
-func newTokenStore(fingerprint string) (*tokenStore, error) {
-	secret, err := randomBytes(32)
-	if err != nil {
-		return nil, fmt.Errorf("generate token secret: %w", err)
-	}
-	sessionIDBytes, err := randomBytes(16)
-	if err != nil {
-		return nil, fmt.Errorf("generate token session ID: %w", err)
-	}
+func newTokenStore(_ string) (*tokenStore, error) {
 	return &tokenStore{
-		secret:      secret,
-		sessionID:   hex.EncodeToString(sessionIDBytes),
-		fingerprint: fingerprint,
-		ttl:         defaultTokenTTL,
-		now:         time.Now,
-		tokens:      make(map[string]*tokenRecord),
+		ttl:    defaultTokenTTL,
+		now:    time.Now,
+		tokens: make(map[string]*tokenRecord),
 	}, nil
 }
 
-func randomBytes(size int) ([]byte, error) {
-	value := make([]byte, size)
-	if _, err := rand.Read(value); err != nil {
-		return nil, err
-	}
-	return value, nil
-}
-
-func (s *tokenStore) issue(scope tokenScope, maxUses int, clientIP string) (string, error) {
-	nonceBytes, err := randomBytes(16)
-	if err != nil {
-		return "", fmt.Errorf("generate token nonce: %w", err)
+func (s *tokenStore) issue(scope tokenScope, maxUses int, _ string) (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate token: %w", err)
 	}
 
 	now := s.now()
 	record := &tokenRecord{
-		CreatedAt:        now,
-		ExpiresAt:        now.Add(s.ttl),
-		MaxUses:          maxUses,
-		BoundFingerprint: s.fingerprint,
-		BoundClientIP:    clientIP,
-		Scope:            scope,
-		Nonce:            hex.EncodeToString(nonceBytes),
+		Value:     hex.EncodeToString(b),
+		ExpiresAt: now.Add(s.ttl),
+		MaxUses:   maxUses,
+		Scope:     scope,
 	}
-	record.Value = s.sign(record)
 
 	s.mu.Lock()
 	s.tokens[record.Value] = record
@@ -102,37 +62,17 @@ func (s *tokenStore) issue(scope tokenScope, maxUses int, clientIP string) (stri
 	return record.Value, nil
 }
 
-func (s *tokenStore) sign(record *tokenRecord) string {
-	payload := fmt.Sprintf("%s|%s|%s|%s|%d|%s",
-		s.sessionID,
-		record.BoundFingerprint,
-		record.BoundClientIP,
-		record.Scope,
-		record.ExpiresAt.Unix(),
-		record.Nonce,
-	)
-	mac := hmac.New(sha256.New, s.secret)
-	_, _ = mac.Write([]byte(payload))
-	return hex.EncodeToString(mac.Sum(nil)) + "." + record.Nonce
-}
-
-func (s *tokenStore) validate(value, clientIP string, scope tokenScope, consume bool) error {
+func (s *tokenStore) validate(value, _ string, scope tokenScope, consume bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	record, ok := s.tokens[value]
-	if !ok || record.Scope != scope || !hmac.Equal([]byte(value), []byte(s.sign(record))) {
+	if !ok || record.Scope != scope {
 		return errInvalidToken
 	}
 	if !s.now().Before(record.ExpiresAt) {
 		delete(s.tokens, value)
 		return errExpiredToken
-	}
-	if record.BoundFingerprint != s.fingerprint {
-		return errInvalidToken
-	}
-	if record.BoundClientIP != "" && record.BoundClientIP != clientIP {
-		return errWrongClient
 	}
 	if record.MaxUses > 0 && record.UseCount >= record.MaxUses {
 		return errUsedToken

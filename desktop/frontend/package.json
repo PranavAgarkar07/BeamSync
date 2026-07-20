@@ -6,12 +6,24 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint src/",
+    "format": "prettier --write src/",
+    "test": "vitest run",
+    "check": "svelte-check"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^1.0.1",
     "svelte": "^3.49.0",
-    "vite": "^3.0.7"
+    "vite": "^3.0.7",
+    "eslint": "^8.0.0",
+    "eslint-plugin-svelte3": "^4.0.0",
+    "prettier": "^3.0.0",
+    "prettier-plugin-svelte": "^3.0.0",
+    "vitest": "^1.0.0",
+    "@testing-library/svelte": "^4.0.0",
+    "jsdom": "^24.0.0",
+    "svelte-check": "^3.0.0"
   },
   "dependencies": {
     "qrcode": "^1.5.4"

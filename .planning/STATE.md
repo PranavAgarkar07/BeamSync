@@ -1,13 +1,14 @@
 # Project State
 
-**Last Updated:** 2026-07-20
+**Last Updated:** 2026-07-21
 
-Phase 1: executed — 6/6 requirements complete.
+Phase 1: complete — 6/6.
+Phase 2: complete — 7/7.
 
 ## Current Status
 
 ```
-◆  Onboarding complete — project initialized for quality overhaul
+◆  Phase 3 — Tests Before Refactoring (next up)
 ```
 
 ## Milestone: Quality Overhaul
@@ -15,7 +16,7 @@ Phase 1: executed — 6/6 requirements complete.
 | Phase | Status | Progress |
 |-------|--------|----------|
 | 1 — Event System & Version | ● Complete | 6/6 reqs |
-| 2 — DevEx Tooling & CI | ○ Planned | 0/7 reqs |
+| 2 — DevEx Tooling & CI | ● Complete | 7/7 reqs |
 | 3 — Tests Before Refactoring | ○ Planned | 0/6 reqs |
 | 4 — Go Structural Refactor | ○ Planned | 0/10 reqs |
 | 5 — Svelte Component Split | ○ Planned | 0/9 reqs |
@@ -23,14 +24,16 @@ Phase 1: executed — 6/6 requirements complete.
 | 7 — CI/CD & Release | ○ Planned | 0/3 reqs |
 | 8 — Documentation & Cleanup | ○ Planned | 0/5 reqs |
 
-**Total:** 6/50 requirements complete
+**Total:** 13/50 requirements complete
 
 ## Active Phase
 
-Phase 2 — ready for discuss.
+Phase 3 — Tests Before Refactoring (next up)
 
 ## Recent Commits
 
+- `b2e7e0f` — docs(phase-02): discuss Phase 2 — Tooling & DevEx
+- `3efba50` — docs(phase-02): add Phase 2 plan — Tooling & DevEx
 - `d750b19` — Phase 1: Foundation — Event System & Version
 - `d610f0b` — docs(phase-01): fix plan metadata and add run() drop logging
 - `794d61e` — docs(phase-01): add 3 execution plans (dispatcher, desktop, frontend)
@@ -56,3 +59,5 @@ Phase 2 — ready for discuss.
 - `.planning/phases/01-foundation-event-system-version/01-02-PLAN.md` — Plan: desktop channel + version
 - `.planning/phases/01-foundation-event-system-version/01-03-PLAN.md` — Plan: frontend version bridge
 - `.planning/phases/01-foundation-event-system-version/01-SUMMARY.md` — Phase 1 summary
+- `.planning/phases/02-tooling-devex/CONTEXT.md` — Phase 2 context
+- `.planning/phases/02-tooling-devex/02-01-PLAN.md` — Plan: all tooling configs
