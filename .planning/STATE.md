@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-07-20
 
-Phase 1: planned — 3 PLAN.md files written, plan-checker PASS (0 blockers).
+Phase 1: executed — 6/6 requirements complete.
 
 ## Current Status
 
@@ -14,7 +14,7 @@ Phase 1: planned — 3 PLAN.md files written, plan-checker PASS (0 blockers).
 
 | Phase | Status | Progress |
 |-------|--------|----------|
-| 1 — Event System & Version | ◐ Planned | 0/6 reqs |
+| 1 — Event System & Version | ● Complete | 6/6 reqs |
 | 2 — DevEx Tooling & CI | ○ Planned | 0/7 reqs |
 | 3 — Tests Before Refactoring | ○ Planned | 0/6 reqs |
 | 4 — Go Structural Refactor | ○ Planned | 0/10 reqs |
@@ -23,14 +23,15 @@ Phase 1: planned — 3 PLAN.md files written, plan-checker PASS (0 blockers).
 | 7 — CI/CD & Release | ○ Planned | 0/3 reqs |
 | 8 — Documentation & Cleanup | ○ Planned | 0/5 reqs |
 
-**Total:** 0/50 requirements complete
+**Total:** 6/50 requirements complete
 
 ## Active Phase
 
-None — ready to begin Phase 1.
+Phase 2 — ready for discuss.
 
 ## Recent Commits
 
+- `d750b19` — Phase 1: Foundation — Event System & Version
 - `d610f0b` — docs(phase-01): fix plan metadata and add run() drop logging
 - `794d61e` — docs(phase-01): add 3 execution plans (dispatcher, desktop, frontend)
 - `400ff86` — docs: Phase 1 research — event dispatch hardening, version unification
@@ -54,3 +55,4 @@ None — ready to begin Phase 1.
 - `.planning/phases/01-foundation-event-system-version/01-01-PLAN.md` — Plan: dispatcher hardening
 - `.planning/phases/01-foundation-event-system-version/01-02-PLAN.md` — Plan: desktop channel + version
 - `.planning/phases/01-foundation-event-system-version/01-03-PLAN.md` — Plan: frontend version bridge
+- `.planning/phases/01-foundation-event-system-version/01-SUMMARY.md` — Phase 1 summary

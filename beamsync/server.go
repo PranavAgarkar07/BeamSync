@@ -22,12 +22,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type EventCallback func(eventName string, data string)
 
-const eventDispatcherBufferSize = 256
+const eventDispatcherBufferSize = 1024
 
 type eventDispatchJob struct {
 	emit  EventCallback
@@ -36,7 +37,8 @@ type eventDispatchJob struct {
 }
 
 type eventDispatcher struct {
-	queue chan eventDispatchJob
+	queue   chan eventDispatchJob
+	dropped atomic.Int64
 }
 
 func newEventDispatcher(bufferSize int) *eventDispatcher {
@@ -73,8 +75,13 @@ func (d *eventDispatcher) emit(job eventDispatchJob) bool {
 	case d.queue <- job:
 		return true
 	default:
+		d.dropped.Add(1)
 		return false
 	}
+}
+
+func (d *eventDispatcher) DroppedCount() int64 {
+	return d.dropped.Load()
 }
 
 var defaultEventDispatcher = newEventDispatcher(eventDispatcherBufferSize)
