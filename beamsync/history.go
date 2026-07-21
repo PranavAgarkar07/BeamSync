@@ -43,7 +43,10 @@ func NewTransferHistory(maxEntries int) *TransferHistory {
 	if maxEntries <= 0 {
 		maxEntries = defaultTransferHistoryLimit
 	}
-	return &TransferHistory{maxEntries: maxEntries}
+	return &TransferHistory{
+		maxEntries: maxEntries,
+		entries:    make([]TransferRecord, maxEntries),
+	}
 }
 
 func (h *TransferHistory) Add(record TransferRecord) TransferRecord {
