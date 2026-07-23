@@ -82,7 +82,7 @@ const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)
 function animateCounter(el) {
   const raw = el.dataset.target;
   const suffix = el.dataset.suffix || '';
-  if (prefersReducedMotion) { el.textContent = el.dataset.suffix || raw + suffix; return; }
+    if (prefersReducedMotion) { el.textContent = raw + suffix; return; }
   const target = parseInt(raw, 10);
   const duration = 1400;
   const start = performance.now();
@@ -186,8 +186,11 @@ sections.forEach(s => sectionObserver.observe(s));
 
   function startAuto() { autoTimer = setInterval(() => goTo(current + 1), 4000); }
   function resetAuto() { clearInterval(autoTimer); startAuto(); }
-  track.closest('.carousel').addEventListener('mouseenter', () => clearInterval(autoTimer));
-  track.closest('.carousel').addEventListener('mouseleave', startAuto);
+  const carousel = track.closest('.carousel');
+  if (carousel) {
+    carousel.addEventListener('mouseenter', () => clearInterval(autoTimer));
+    carousel.addEventListener('mouseleave', startAuto);
+  }
   startAuto();
 })();
 
