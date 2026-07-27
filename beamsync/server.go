@@ -292,6 +292,21 @@ func tokenMiddleware(tokens *tokenStore, scope tokenScope, consume bool, next ht
 	}
 }
 
+func tokenMiddlewareAny(tokens *tokenStore, scopes []tokenScope, consume bool, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if err := tokens.validateAny(r.URL.Query().Get("token"), scopes, consume); err != nil {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "403 Forbidden: invalid token", http.StatusForbidden)
+			return
+		}
+		next(w, r)
+	}
+}
+
 func setCORSHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -409,7 +424,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/heartbeat", tokenMiddleware(tokens, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/heartbeat", tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -472,7 +487,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		w.Write(content)
 	})
 
-	mux.HandleFunc("/stats", tokenMiddleware(tokens, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/stats", tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -483,7 +498,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		w.Write([]byte(transferStatsJSON(snapshot)))
 	}))
 
-	mux.HandleFunc("/request-transfer", tokenMiddleware(tokens, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/request-transfer", tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -574,7 +589,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		}
 	}))
 
-	mux.HandleFunc("/upload", tokenMiddleware(tokens, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/upload", tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if r := recover(); r != nil {
 				fmt.Printf("PANIC in upload handler: %v\n%s\n", r, debug.Stack())

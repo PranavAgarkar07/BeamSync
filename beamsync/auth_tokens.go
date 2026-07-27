@@ -89,6 +89,37 @@ func (s *tokenStore) validate(value, _ string, scope tokenScope, consume bool) e
 	return nil
 }
 
+func (s *tokenStore) validateAny(value string, scopes []tokenScope, consume bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	record, ok := s.tokens[value]
+	if !ok {
+		return errInvalidToken
+	}
+	scopeOK := false
+	for _, scope := range scopes {
+		if record.Scope == scope {
+			scopeOK = true
+			break
+		}
+	}
+	if !scopeOK {
+		return errInvalidToken
+	}
+	if !s.now().Before(record.ExpiresAt) {
+		delete(s.tokens, value)
+		return errExpiredToken
+	}
+	if record.MaxUses > 0 && record.UseCount >= record.MaxUses {
+		return errUsedToken
+	}
+	if consume {
+		record.UseCount++
+	}
+	return nil
+}
+
 func (s *tokenStore) cleanupExpired() {
 	now := s.now()
 	s.mu.Lock()
