@@ -9,6 +9,12 @@ import (
 	"time"
 )
 
+var (
+	errInvalidToken = fmt.Errorf("invalid token")
+	errExpiredToken = fmt.Errorf("expired token")
+	errUsedToken    = fmt.Errorf("token already used")
+)
+
 const defaultTokenTTL = 5 * time.Minute
 
 type tokenScope string

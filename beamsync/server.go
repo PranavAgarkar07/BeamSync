@@ -2,7 +2,6 @@ package beamsync
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -15,11 +14,9 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
-	"net/textproto"
 	"os"
 	"path/filepath"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -754,7 +751,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		IdleTimeout:  60 * time.Second,
 	}
 	httpServer.server = srv
-	serveListener, tlsEnabled, tlsErr := maybeTLSListener(listener)
+	serveListener, _, tlsErr := maybeTLSListener(listener)
 	if tlsErr != nil {
 		cancel()
 		listener.Close()
@@ -767,10 +764,6 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 				fmt.Printf("Server panic: %v\n", r)
 			}
 		}()
-		protocol := "HTTP"
-		if tlsEnabled {
-			protocol = "HTTPS"
-		}
 		if err := srv.Serve(serveListener); err != nil && err != http.ErrServerClosed {
 			fmt.Printf("Server error: %v\n", err)
 		}
@@ -1093,7 +1086,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		IdleTimeout:  60 * time.Second,
 	}
 	httpServer.server = srv
-	serveListener, tlsEnabled, tlsErr := maybeTLSListener(listener)
+	serveListener, _, tlsErr := maybeTLSListener(listener)
 	if tlsErr != nil {
 		cancel()
 		listener.Close()
@@ -1101,10 +1094,6 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	}
 
 	go func() {
-		protocol := "HTTP"
-		if tlsEnabled {
-			protocol = "HTTPS"
-		}
 		if err := srv.Serve(serveListener); err != nil && err != http.ErrServerClosed {
 			fmt.Println("Sender error:", err)
 		}
