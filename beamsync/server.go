@@ -816,7 +816,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/heartbeat", tokenMiddleware(tokens, tokenScopeSession, false, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/heartbeat", tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -946,7 +946,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	if len(filePaths) == 1 {
 		filePath := filePaths[0]
 		filename := filepath.Base(filePath)
-		mux.HandleFunc("/download", tokenMiddleware(tokens, tokenScopeTransfer, true, func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/download", tokenMiddlewareAny(tokens, []tokenScope{tokenScopeTransfer, tokenScopeBootstrap}, true, func(w http.ResponseWriter, r *http.Request) {
 			activeDownloads := state.beginUpload()
 			emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
 			defer func() {
@@ -1011,7 +1011,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		for i, path := range filePaths {
 			idx := i
 			filePath := path
-			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), tokenMiddleware(tokens, tokenScopeTransfer, true, func(w http.ResponseWriter, r *http.Request) {
+			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), tokenMiddlewareAny(tokens, []tokenScope{tokenScopeTransfer, tokenScopeBootstrap}, true, func(w http.ResponseWriter, r *http.Request) {
 				realName := filepath.Base(filePath)
 				activeDownloads := state.beginUpload()
 				emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
