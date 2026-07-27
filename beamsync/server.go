@@ -283,7 +283,9 @@ func tokenMiddleware(tokens *tokenStore, scope tokenScope, consume bool, next ht
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if err := tokens.validate(r.URL.Query().Get("token"), "", scope, consume); err != nil {
+		token := r.URL.Query().Get("token")
+		if err := tokens.validate(token, "", scope, consume); err != nil {
+			fmt.Printf("🔑 TOKEN REJECTED: path=%s token=%q reason=%v\n", r.URL.Path, token, err)
 			w.Header().Set("Cache-Control", "no-store")
 			http.Error(w, "403 Forbidden: invalid token", http.StatusForbidden)
 			return
@@ -298,7 +300,9 @@ func tokenMiddlewareAny(tokens *tokenStore, scopes []tokenScope, consume bool, n
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if err := tokens.validateAny(r.URL.Query().Get("token"), scopes, consume); err != nil {
+		token := r.URL.Query().Get("token")
+		if err := tokens.validateAny(token, scopes, consume); err != nil {
+			fmt.Printf("🔑 TOKEN REJECTED: path=%s token=%q reason=%v auth=%q\n", r.URL.Path, token, err, r.Header.Get("Authorization"))
 			w.Header().Set("Cache-Control", "no-store")
 			http.Error(w, "403 Forbidden: invalid token", http.StatusForbidden)
 			return
