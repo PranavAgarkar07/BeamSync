@@ -282,8 +282,8 @@ func TestStartServerLifecycleRootAndHeartbeat(t *testing.T) {
 		t.Fatalf("replay bootstrap token: %v", err)
 	}
 	replayResp.Body.Close()
-	if replayResp.StatusCode != http.StatusForbidden {
-		t.Fatalf("replayed bootstrap status = %d, want %d", replayResp.StatusCode, http.StatusForbidden)
+	if replayResp.StatusCode != http.StatusOK {
+		t.Fatalf("replayed bootstrap status = %d, want %d; bootstrap token is no longer consumed on page load for Android app compat", replayResp.StatusCode, http.StatusOK)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, baseURL+"/heartbeat?token="+token, nil)
@@ -339,8 +339,8 @@ func TestStartSenderIssuesClientBoundSingleUseDownloadToken(t *testing.T) {
 		t.Fatalf("replay sender bootstrap: %v", err)
 	}
 	replayRootResp.Body.Close()
-	if replayRootResp.StatusCode != http.StatusForbidden {
-		t.Fatalf("replayed sender bootstrap status=%d, want %d", replayRootResp.StatusCode, http.StatusForbidden)
+	if replayRootResp.StatusCode != http.StatusOK {
+		t.Fatalf("replayed sender bootstrap status=%d, want %d; bootstrap token is no longer consumed on page load for Android app compat", replayRootResp.StatusCode, http.StatusOK)
 	}
 
 	const linkPrefix = "/download?token="

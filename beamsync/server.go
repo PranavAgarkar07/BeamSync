@@ -448,7 +448,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			http.NotFound(w, r)
 			return
 		}
-		if err := tokens.validate(r.URL.Query().Get("token"), "", tokenScopeBootstrap, true); err != nil {
+		if err := tokens.validate(r.URL.Query().Get("token"), "", tokenScopeBootstrap, false); err != nil {
 			http.Error(w, "403 Forbidden: reconnect by scanning the current QR code", http.StatusForbidden)
 			return
 		}
@@ -903,7 +903,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			http.NotFound(w, r)
 			return
 		}
-		if err := tokens.validate(r.URL.Query().Get("token"), "", tokenScopeBootstrap, true); err != nil {
+		if err := tokens.validate(r.URL.Query().Get("token"), "", tokenScopeBootstrap, false); err != nil {
 			http.Error(w, "403 Forbidden: reconnect by scanning the current QR code", http.StatusForbidden)
 			return
 		}
