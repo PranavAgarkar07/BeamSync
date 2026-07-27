@@ -277,13 +277,26 @@ func generateID() string {
 	return hex.EncodeToString(b)
 }
 
+func extractToken(r *http.Request) string {
+	if t := r.URL.Query().Get("token"); t != "" {
+		return t
+	}
+	if t := r.Header.Get("X-BeamSync-Token"); t != "" {
+		return t
+	}
+	if t := r.Header.Get("Authorization"); strings.HasPrefix(t, "Bearer ") {
+		return t[7:]
+	}
+	return ""
+}
+
 func tokenMiddleware(tokens *tokenStore, scope tokenScope, consume bool, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		token := r.URL.Query().Get("token")
+		token := extractToken(r)
 		if err := tokens.validate(token, "", scope, consume); err != nil {
 			fmt.Printf("🔑 TOKEN REJECTED: path=%s token=%q reason=%v\n", r.URL.Path, token, err)
 			w.Header().Set("Cache-Control", "no-store")
@@ -300,9 +313,9 @@ func tokenMiddlewareAny(tokens *tokenStore, scopes []tokenScope, consume bool, n
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		token := r.URL.Query().Get("token")
+		token := extractToken(r)
 		if err := tokens.validateAny(token, scopes, consume); err != nil {
-			fmt.Printf("🔑 TOKEN REJECTED: path=%s token=%q reason=%v auth=%q\n", r.URL.Path, token, err, r.Header.Get("Authorization"))
+			fmt.Printf("🔑 TOKEN REJECTED: path=%s token=%q reason=%v auth=%q x-bst=%q\n", r.URL.Path, token, err, r.Header.Get("Authorization"), r.Header.Get("X-BeamSync-Token"))
 			w.Header().Set("Cache-Control", "no-store")
 			http.Error(w, "403 Forbidden: invalid token", http.StatusForbidden)
 			return
@@ -452,7 +465,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			http.NotFound(w, r)
 			return
 		}
-		if err := tokens.validate(r.URL.Query().Get("token"), "", tokenScopeBootstrap, false); err != nil {
+		if err := tokens.validate(extractToken(r), "", tokenScopeBootstrap, false); err != nil {
 			http.Error(w, "403 Forbidden: reconnect by scanning the current QR code", http.StatusForbidden)
 			return
 		}
@@ -907,7 +920,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			http.NotFound(w, r)
 			return
 		}
-		if err := tokens.validate(r.URL.Query().Get("token"), "", tokenScopeBootstrap, false); err != nil {
+		if err := tokens.validate(extractToken(r), "", tokenScopeBootstrap, false); err != nil {
 			http.Error(w, "403 Forbidden: reconnect by scanning the current QR code", http.StatusForbidden)
 			return
 		}
