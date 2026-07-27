@@ -180,6 +180,7 @@ const slides = [
     function resetAuto() { clearInterval(autoTimer); startAuto(); }
 
     const carousel = track.closest('.carousel');
+    if (!carousel) return;
     carousel.addEventListener('mouseenter', () => clearInterval(autoTimer));
     carousel.addEventListener('mouseleave', startAuto);
     startAuto();

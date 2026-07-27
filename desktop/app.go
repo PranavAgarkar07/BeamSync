@@ -100,6 +100,14 @@ func loadConfig() configData {
 		return cfg
 	}
 	_ = json.Unmarshal(data, &cfg)
+
+	if cfg.SavePath != "" {
+		home, _ := os.UserHomeDir()
+		if home != "" && !strings.HasPrefix(filepath.Clean(cfg.SavePath), filepath.Clean(home)) {
+			cfg.SavePath = ""
+		}
+	}
+
 	return cfg
 }
 
@@ -112,7 +120,7 @@ func saveConfig(cfg configData) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, data, 0644)
+	return os.WriteFile(p, data, 0600)
 }
 
 func defaultSavePath() string {
