@@ -449,6 +449,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			return
 		}
 		html := strings.Replace(string(content), "{{TOKEN}}", sessionToken, 1)
+		w.Header().Set("X-BeamSync-Token", sessionToken)
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(html))
@@ -911,6 +912,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		}
 		html := strings.Replace(string(content), "{{FILES}}", fileBlock, 1)
 		html = strings.Replace(html, "{{TOKEN}}", sessionToken, 1)
+		w.Header().Set("X-BeamSync-Token", sessionToken)
 		w.Write([]byte(html))
 	})
 
