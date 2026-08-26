@@ -25,7 +25,6 @@
   import QRCode from "qrcode";
   import { onMount, onDestroy } from "svelte";
   import { fly } from "svelte/transition";
-  import Typewriter from "./Typewriter.svelte";
   import SplashScreen from "./SplashScreen.svelte";
 
   // ── Splash screen ─────────────────────────────────────────────────────────
@@ -34,9 +33,7 @@
   import {
     TopNavBar,
     FileDropZone,
-    TransferProgressBar,
     TransferComplete,
-    ConnectedDevicesPanel,
     ActivityPanel,
     TransferStatsDashboard,
   } from "./design-system/index.js";
@@ -124,11 +121,6 @@
 
   // ── Sound toggle ────────────────────────────────────────────────────────
   let soundEnabled = localStorage.getItem("beamsync_sound") !== "false";
-  function toggleSound() {
-    soundEnabled = !soundEnabled;
-    localStorage.setItem("beamsync_sound", soundEnabled ? "true" : "false");
-    if (soundEnabled) PlaySound("blip"); // confirm it's on
-  }
 
   // ── Theme switcher (light/dark) ─────────────────────────────────────────
   let theme = localStorage.getItem("beamsync_theme") || "light";
@@ -264,7 +256,7 @@
   }
 
   // ── Cursor glow ─────────────────────────────────────────────────────────
-  function handleMouseMove(e) {
+  function handleMouseMove() {
     // legacy mouse glow removed
   }
 
@@ -284,7 +276,7 @@
     // Load settings
     try {
       settings = await GetTransferSettings();
-    } catch {}
+    } catch (_e) { /* settings not yet persisted */ }
 
     EventsOn("device_connected", () => {
       connectionState = "CONNECTED";
