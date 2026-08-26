@@ -131,6 +131,24 @@ func defaultSavePath() string {
 	return filepath.Join(home, "Downloads", "BeamSync")
 }
 
+func ensureSaveDir(path string) error {
+	if path == "" {
+		return fmt.Errorf("empty save path")
+	}
+	info, err := os.Stat(path)
+	if err == nil && !info.IsDir() {
+		backup := path + ".bin.bak"
+		if err := os.Rename(path, backup); err != nil {
+			// Rename failed (e.g. backup exists) — remove stray file and recreate
+			_ = os.Remove(path)
+			fmt.Printf("⚠️ Save path was a file, removed %s (backup %s exists)\n", path, backup)
+		} else {
+			fmt.Printf("⚠️ Save path was a file, moved to %s\n", backup)
+		}
+	}
+	return os.MkdirAll(path, 0755)
+}
+
 // startup is called when the app starts
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
@@ -305,7 +323,7 @@ func (a *App) SetSavePath() string {
 		a.serverApp = nil
 	}
 
-	if err := os.MkdirAll(selection, 0755); err != nil {
+	if err := ensureSaveDir(selection); err != nil {
 		fmt.Println("⚠️ Failed to create save directory:", err)
 		return "Error: Could not create save directory"
 	}
@@ -335,7 +353,7 @@ func (a *App) StartReceiverDefault() string {
 	savePath := a.GetSavePath()
 	a.lastSavePath = savePath
 
-	if err := os.MkdirAll(savePath, 0755); err != nil {
+	if err := ensureSaveDir(savePath); err != nil {
 		fmt.Println("⚠️ Failed to create save directory:", err)
 		return "Error: Could not create save directory"
 	}

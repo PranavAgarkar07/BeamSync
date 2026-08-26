@@ -1235,7 +1235,7 @@
               </div>
               <div style="margin-top: 0.5rem;">
                 {#each settings.blockedExtensions as ext}
-                  <span class="nb-badge" on:click={() => removeBlockedExt(ext)} style="cursor: pointer;">{ext} ✕</span>
+                  <span class="nb-badge" role="button" tabindex="0" on:click={() => removeBlockedExt(ext)} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); removeBlockedExt(ext); } }} style="cursor: pointer;">{ext} ✕</span>
                 {/each}
               </div>
             </div>
