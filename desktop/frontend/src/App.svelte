@@ -130,6 +130,22 @@
     if (soundEnabled) PlaySound("blip"); // confirm it's on
   }
 
+  // ── Theme switcher (light/dark) ─────────────────────────────────────────
+  let theme = localStorage.getItem("beamsync_theme") || "light";
+  function applyTheme(t) {
+    theme = t;
+    localStorage.setItem("beamsync_theme", t);
+    if (typeof document !== "undefined") {
+      document.documentElement.classList.toggle("dark", t === "dark");
+      document.documentElement.setAttribute("data-theme", t);
+    }
+  }
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    applyTheme(next);
+    playSound("blip");
+  }
+
   // ── Update banner ───────────────────────────────────────────────────────
   let updateInfo = null; // { latestVersion, releaseUrl, releaseNotes }
   let updateDismissed = false;
@@ -254,6 +270,8 @@
 
   // ── Mount / Unmount ─────────────────────────────────────────────────────
   onMount(async () => {
+    // Apply persisted theme before anything renders
+    applyTheme(theme);
     EventsOffAll();
     transferStatsTimer = setInterval(() => {
       transferStatsNow = Date.now();
@@ -1148,6 +1166,29 @@
         <div class="mode-wrapper" in:fly={{ y: 15, duration: 250 }}>
           <div class="nb-card" style="padding: 2rem;">
             <h2 style="margin-top: 0;">Transfer Settings</h2>
+
+            <div style="margin-bottom: 2rem;">
+              <h3 style="display:flex; align-items:center; gap:0.5rem;">Appearance <span class="nb-badge" style="font-size:0.65rem;">{theme === 'dark' ? '🌙 DARK' : '☀️ LIGHT'}</span></h3>
+              <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; border: 2px solid var(--nb-border-color); background: var(--nb-bg); padding: 1rem;">
+                <span style="font-weight:700; font-family: var(--nb-font-display); font-size:0.85rem; letter-spacing:0.04em; text-transform:uppercase;">Theme</span>
+                <div role="group" aria-label="Theme switcher" style="display:flex; border:3px solid var(--nb-border-color); box-shadow:4px 4px 0 var(--nb-border-color); overflow:hidden;">
+                  <button
+                    class="theme-opt"
+                    aria-pressed={theme === 'light'}
+                    on:click={() => applyTheme('light')}
+                    style="padding:0.6rem 1.4rem; font-family:var(--nb-font-display); font-weight:800; font-size:0.85rem; letter-spacing:0.04em; text-transform:uppercase; border:none; border-right:3px solid var(--nb-border-color); cursor:pointer; background:{theme === 'light' ? 'var(--nb-primary)' : 'var(--nb-surface)'}; color:{theme === 'light' ? '#fff' : 'var(--nb-text)'}; transition: background 120ms ease;"
+                  >☀️ LIGHT</button>
+                  <button
+                    class="theme-opt"
+                    aria-pressed={theme === 'dark'}
+                    on:click={() => applyTheme('dark')}
+                    style="padding:0.6rem 1.4rem; font-family:var(--nb-font-display); font-weight:800; font-size:0.85rem; letter-spacing:0.04em; text-transform:uppercase; border:none; cursor:pointer; background:{theme === 'dark' ? 'var(--nb-primary)' : 'var(--nb-surface)'}; color:{theme === 'dark' ? '#fff' : 'var(--nb-text)'}; transition: background 120ms ease;"
+                  >🌙 DARK</button>
+                </div>
+                <button class="nb-btn nb-btn--ghost" style="margin-left:auto; padding:0.4rem 0.8rem; font-size:0.8rem;" on:click={toggleTheme} aria-label="Toggle theme">TOGGLE</button>
+                <span style="font-size:0.75rem; color:var(--nb-text-muted); font-family:var(--nb-font-mono);">Stored in localStorage</span>
+              </div>
+            </div>
 
             <div style="margin-bottom: 2rem;">
               <h3>Save Location</h3>
