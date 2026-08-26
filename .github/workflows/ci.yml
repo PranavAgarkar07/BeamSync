@@ -16,11 +16,13 @@ jobs:
           version: v1.64
           args: ./...
           working-directory: beamsync
+          install-mode: goinstall
       - uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64
           args: ./...
           working-directory: desktop
+          install-mode: goinstall
 
   lint-svelte:
     runs-on: ubuntu-latest
