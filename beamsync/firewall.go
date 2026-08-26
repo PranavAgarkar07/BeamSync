@@ -22,14 +22,14 @@ func RunFirewallSetup() error {
 	defer os.RemoveAll(tmpDir)
 
 	scriptPath := filepath.Join(tmpDir, "firewall_setup.sh")
-	if err := os.WriteFile(scriptPath, firewallScript, 0755); err != nil {
+	if err := os.WriteFile(scriptPath, firewallScript, 0755); err != nil { //nolint:gosec // script needs exec
 		return fmt.Errorf("cannot write firewall script: %w", err)
 	}
 
 	cmd := exec.Command("pkexec", scriptPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("firewall setup failed: %v\nOutput: %s", err, string(output))
+		return fmt.Errorf("firewall setup failed: %w\nOutput: %s", err, string(output)) //nolint:errorlint // output is additional context
 	}
 
 	fmt.Println("✅ Firewall Setup Output:\n", string(output))

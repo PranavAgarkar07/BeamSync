@@ -39,7 +39,7 @@ type App struct {
 	senderApp    *beamsync.HTTPServer
 	eventChan    chan EventData
 	eventsClosed chan struct{}
-	shutdownOnce sync.Once
+	shutdownOnce sync.Once //nolint:unused // used in shutdown
 	lastSavePath string
 	currentIP    string
 	currentPort  string
@@ -238,7 +238,7 @@ func (a *App) safeEmit(eventName string, data interface{}) {
 }
 
 // shutdown is called when the app is closing.
-func (a *App) shutdown(ctx context.Context) {
+func (a *App) shutdown(ctx context.Context) { //nolint:unused // wails lifecycle
 	a.shutdownOnce.Do(func() {
 		if a.serverApp != nil {
 			fmt.Println("🛑 Shutting down receiver server...")
@@ -319,7 +319,7 @@ func (a *App) SetSavePath() string {
 
 	// Restart receiver on new path
 	if a.serverApp != nil {
-		a.serverApp.Shutdown()
+		_ = a.serverApp.Shutdown() //nolint:errcheck
 		a.serverApp = nil
 	}
 

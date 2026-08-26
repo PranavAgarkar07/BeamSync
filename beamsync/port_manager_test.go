@@ -6,7 +6,7 @@ import (
 )
 
 func TestFindAvailablePortSkipsBusyPorts(t *testing.T) {
-	busy, err := net.Listen("tcp", ":0")
+	busy, err := net.Listen("tcp", "127.0.0.1:0") //nolint:gosec // test on localhost
 	if err != nil {
 		t.Fatalf("listen on random port: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestFindAvailablePortSkipsBusyPorts(t *testing.T) {
 }
 
 func TestFindAvailablePortReportsExhaustion(t *testing.T) {
-	busy, err := net.Listen("tcp", ":0")
+	busy, err := net.Listen("tcp", "127.0.0.1:0") //nolint:gosec // test on localhost
 	if err != nil {
 		t.Fatalf("listen on random port: %v", err)
 	}

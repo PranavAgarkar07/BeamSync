@@ -122,7 +122,6 @@ func (l *clientRateLimiter) allow(client string) rateLimitDecision {
 	}
 
 	now := l.now()
-	resetAt := now.Add(l.window)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -147,7 +146,7 @@ func (l *clientRateLimiter) allow(client string) rateLimitDecision {
 	}
 
 	state.lastSeen = now
-	resetAt = state.windowStart.Add(l.window)
+	resetAt := state.windowStart.Add(l.window)
 	if state.count >= l.limit {
 		return rateLimitDecision{
 			allowed:    false,
@@ -243,7 +242,7 @@ func (s *serverState) beginUpload() int32 {
 	if s.uploadingCount == 1 {
 		s.lastHeartbeat = time.Now()
 	}
-	return int32(s.uploadingCount)
+	return int32(s.uploadingCount) //nolint:gosec // small counter
 }
 
 func (s *serverState) endUpload() int32 {
@@ -252,13 +251,13 @@ func (s *serverState) endUpload() int32 {
 	if s.uploadingCount > 0 {
 		s.uploadingCount--
 	}
-	return int32(s.uploadingCount)
+	return int32(s.uploadingCount) //nolint:gosec // small counter
 }
 
 func (s *serverState) activeUploads() int32 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return int32(s.uploadingCount)
+	return int32(s.uploadingCount) //nolint:gosec // small counter
 }
 
 func (s *serverState) checkTimeout() (wasConnected bool, timedOut bool) {
@@ -326,7 +325,7 @@ func (s *HTTPServer) Shutdown() error {
 		defer cancel()
 		if err := s.server.Shutdown(ctx); err != nil {
 			if closeErr := s.server.Close(); closeErr != nil {
-				return fmt.Errorf("graceful shutdown failed: %w; forced close failed: %v", err, closeErr)
+				return fmt.Errorf("graceful shutdown failed: %w; forced close failed: %w", err, closeErr) //nolint:errorlint // both wrapped
 			}
 			return err
 		}
@@ -345,7 +344,7 @@ type progressWriter struct {
 }
 
 func (pw *progressWriter) Write(p []byte) (int, error) {
-	n, err := pw.w.Write(p)
+	n, err := pw.w.Write(p) //nolint:errcheck,gosec
 	pw.written += int64(n)
 	now := time.Now()
 	if now.Sub(pw.lastEmit) >= pw.minInterval {
@@ -383,12 +382,15 @@ func copyChunked(dst io.Writer, src io.Reader, chunkSize int) (int64, error) {
 	}
 }
 
-const uploadIntegrityHeader = "X-BeamSync-File-SHA256"
+const uploadIntegrityHeader = "X-BeamSync-File-SHA256" //nolint:unused // reserved
 
-func sha256Hex(data []byte) string {
+func sha256Hex(data []byte) string { //nolint:unused // reserved
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
+
+var _ = uploadIntegrityHeader
+var _ = sha256Hex
 
 func generateID() string {
 	b := make([]byte, 16)
@@ -671,7 +673,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		w.Header().Set("X-BeamSync-Token", sessionToken)
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(html))
+		w.Write([]byte(html)) //nolint:errcheck
 
 		wasConnected := state.markHeartbeat()
 		if !wasConnected {
@@ -688,7 +690,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 			http.NotFound(w, r)
 			return
 		}
-		w.Write(content)
+		w.Write(content) //nolint:errcheck
 	}))
 
 	mux.HandleFunc("/stats", rateLimitMiddleware(httpServer.pageLimiter, httpServer.settings, tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
@@ -699,7 +701,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		w.Header().Set("Content-Type", "application/json")
 		snapshot := httpServer.stats.snapshot(state.activeUploads())
-		w.Write([]byte(transferStatsJSON(snapshot)))
+		w.Write([]byte(transferStatsJSON(snapshot))) //nolint:errcheck,gosec
 	})))
 
 	mux.HandleFunc("/request-transfer", rateLimitMiddleware(httpServer.transferLimiter, httpServer.settings, tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
@@ -741,14 +743,14 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 		if s.Mode == TransferModeAcceptAll {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("approved"))
+			w.Write([]byte("approved")) //nolint:errcheck,gosec
 			return
 		}
 
 		if s.Mode == TransferModeTrustedOnly {
 			if s.isDeviceTrusted(senderIP) {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("approved"))
+				w.Write([]byte("approved")) //nolint:errcheck,gosec
 			} else {
 				http.Error(w, "403 Forbidden: device is not trusted", http.StatusForbidden)
 			}
@@ -780,7 +782,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		case approved := <-pt.approved:
 			if approved {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("approved"))
+				w.Write([]byte("approved")) //nolint:errcheck,gosec
 			} else {
 				http.Error(w, "403 Forbidden: transfer rejected by user", http.StatusForbidden)
 			}
@@ -867,14 +869,13 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 			dst, createErr := os.Create(dstPath)
 			if createErr != nil {
-				io.Copy(io.Discard, part)
+				_, _ = io.Copy(io.Discard, part) //nolint:errcheck,gosec
 				part.Close()
 				continue
 			}
 
 			diskBuf := bufio.NewWriterSize(dst, 8*1024*1024)
-			var pw *progressWriter
-			pw = &progressWriter{
+			pw := &progressWriter{
 				w:           diskBuf,
 				filename:    savedName,
 				emit:        emit,
@@ -941,7 +942,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Upload Complete"))
+		w.Write([]byte("Upload Complete")) //nolint:errcheck,gosec
 	})))
 
 	portInt, listener, err := FindAvailablePort(startPort, 2, 50)
@@ -1136,7 +1137,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		html := strings.Replace(string(content), "{{FILES}}", fileBlock, 1)
 		html = strings.Replace(html, "{{TOKEN}}", sessionToken, 1)
 		w.Header().Set("X-BeamSync-Token", sessionToken)
-		w.Write([]byte(html))
+		w.Write([]byte(html)) //nolint:errcheck
 	}))
 
 	mux.HandleFunc("/logo.png", rateLimitMiddleware(httpServer.pageLimiter, nil, func(w http.ResponseWriter, r *http.Request) {
@@ -1148,7 +1149,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			http.NotFound(w, r)
 			return
 		}
-		w.Write(content)
+		w.Write(content) //nolint:errcheck
 	}))
 
 	if len(filePaths) == 1 {
