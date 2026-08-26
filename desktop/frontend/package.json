@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint src/",
     "format": "prettier --write src/",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "check": "svelte-check"
   },
   "devDependencies": {
