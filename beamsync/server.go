@@ -81,7 +81,130 @@ func (d *eventDispatcher) DroppedCount() int64 {
 	return d.dropped.Load()
 }
 
-var defaultEventDispatcher = newEventDispatcher(eventDispatcherBufferSize)
+type rateLimitState struct {
+	windowStart time.Time
+	count       int
+	lastSeen    time.Time
+}
+
+type rateLimitDecision struct {
+	allowed    bool
+	retryAfter time.Duration
+	limit      int
+	remaining  int
+	resetAt    time.Time
+}
+
+type clientRateLimiter struct {
+	mu         sync.Mutex
+	limit      int
+	window     time.Duration
+	maxClients int
+	clients    map[string]*rateLimitState
+	now        func() time.Time
+}
+
+func newClientRateLimiter(limit int, window time.Duration) *clientRateLimiter {
+	return &clientRateLimiter{
+		limit:      limit,
+		window:     window,
+		maxClients: 4096,
+		clients:    make(map[string]*rateLimitState),
+		now:        time.Now,
+	}
+}
+
+func (l *clientRateLimiter) allow(client string) rateLimitDecision {
+	if l == nil || l.limit <= 0 || l.window <= 0 {
+		return rateLimitDecision{allowed: true}
+	}
+
+	now := l.now()
+	resetAt := now.Add(l.window)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.prune(now)
+
+	state, ok := l.clients[client]
+	if !ok || now.Sub(state.windowStart) >= l.window {
+		if !ok {
+			l.evictOldestIfFull()
+		}
+		l.clients[client] = &rateLimitState{
+			windowStart: now,
+			count:       1,
+			lastSeen:    now,
+		}
+		return rateLimitDecision{
+			allowed:   true,
+			limit:     l.limit,
+			remaining: l.limit - 1,
+			resetAt:   now.Add(l.window),
+		}
+	}
+
+	state.lastSeen = now
+	resetAt = state.windowStart.Add(l.window)
+	if state.count >= l.limit {
+		return rateLimitDecision{
+			allowed:    false,
+			retryAfter: l.window - now.Sub(state.windowStart),
+			limit:      l.limit,
+			remaining:  0,
+			resetAt:    resetAt,
+		}
+	}
+
+	state.count++
+	return rateLimitDecision{
+		allowed:   true,
+		limit:     l.limit,
+		remaining: l.limit - state.count,
+		resetAt:   resetAt,
+	}
+}
+
+func (l *clientRateLimiter) prune(now time.Time) {
+	for client, state := range l.clients {
+		if now.Sub(state.lastSeen) > 2*l.window {
+			delete(l.clients, client)
+		}
+	}
+}
+
+func (l *clientRateLimiter) evictOldestIfFull() {
+	if l.maxClients <= 0 || len(l.clients) < l.maxClients {
+		return
+	}
+
+	var oldestClient string
+	var oldestSeen time.Time
+	for client, state := range l.clients {
+		if oldestClient == "" ||
+			state.lastSeen.Before(oldestSeen) ||
+			(state.lastSeen.Equal(oldestSeen) && client < oldestClient) {
+			oldestClient = client
+			oldestSeen = state.lastSeen
+		}
+	}
+
+	if oldestClient != "" {
+		delete(l.clients, oldestClient)
+	}
+}
+
+// PendingTransfer holds a blocked transfer awaiting user approval.
+type PendingTransfer struct {
+	ID         string `json:"id"`
+	Filename   string `json:"filename"`
+	SizeMB     string `json:"sizeMB"`
+	SizeBytes  int64  `json:"sizeBytes"`
+	MimeType   string `json:"mimeType"`
+	SenderIP   string `json:"senderIP"`
+	SenderName string `json:"senderName"`
+	approved   chan bool
+}
 
 //go:embed ui/*.html ui/*.png
 var uiFS embed.FS
@@ -144,16 +267,6 @@ func (s *serverState) checkTimeout() (wasConnected bool, timedOut bool) {
 	return s.isConnected, false
 }
 
-type PendingTransfer struct {
-	ID         string `json:"id"`
-	Filename   string `json:"filename"`
-	SizeMB     string `json:"sizeMB"`
-	SizeBytes  int64  `json:"sizeBytes"`
-	MimeType   string `json:"mimeType"`
-	SenderIP   string `json:"senderIP"`
-	SenderName string `json:"senderName"`
-	approved   chan bool
-}
 
 type HTTPServer struct {
 	server           *http.Server
@@ -164,6 +277,7 @@ type HTTPServer struct {
 	history          *TransferHistory
 	stats            *transferStatsTracker
 	tokens           *tokenStore
+	rateLimiter      *clientRateLimiter
 }
 
 func (s *HTTPServer) RespondToTransfer(id string, approved bool) {
@@ -324,6 +438,39 @@ func tokenMiddlewareAny(tokens *tokenStore, scopes []tokenScope, consume bool, n
 	}
 }
 
+func rateLimitMiddleware(lim *clientRateLimiter, settings *TransferSettings, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if settings == nil || settings.Mode == TransferModeAcceptAll {
+			next(w, r)
+			return
+		}
+
+		clientIP := clientIP(r)
+		if settings.Mode == TransferModeTrustedOnly {
+			if isDeviceTrusted(settings, clientIP) {
+				next(w, r)
+				return
+			}
+		}
+
+		decision := lim.allow(clientIP)
+		if !decision.allowed {
+			w.Header().Set("Retry-After", fmt.Sprintf("%.0f", decision.reviewAfter.Seconds()))
+			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", decision.limit))
+			w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", decision.remaining))
+			w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", decision.resetAt.Unix()))
+			http.Error(w, "429 Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+
+		next(w, r)
+	}
+}
+
+func isDeviceTrusted(settings *TransferSettings, ip string) bool {
+	return settings.isDeviceTrusted(ip)
+}
+
 func setCORSHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -437,6 +584,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		history:          NewTransferHistory(defaultTransferHistoryLimit),
 		stats:            newTransferStatsTracker(),
 		tokens:           tokens,
+		rateLimiter:      newClientRateLimiter(100, 1*time.Minute),
 	}
 
 	mux := http.NewServeMux()
@@ -518,6 +666,16 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	mux.HandleFunc("/request-transfer", tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		decision := httpServer.rateLimiter.allow(clientIP(r))
+		if !decision.allowed {
+			w.Header().Set("Retry-After", fmt.Sprintf("%.0f", decision.retryAfter.Seconds()))
+			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", decision.limit))
+			w.Header().Set("X-RateLimit-Remaining", fmt.Sprintf("%d", decision.remaining))
+			w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", decision.resetAt.Unix()))
+			http.Error(w, "429 Too Many Requests", http.StatusTooManyRequests)
 			return
 		}
 
@@ -828,6 +986,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		history: NewTransferHistory(defaultTransferHistoryLimit),
 		stats:   newTransferStatsTracker(),
 		tokens:  tokens,
+		rateLimiter: newClientRateLimiter(100, 1*time.Minute),
 	}
 	startWatchdog(ctx, state, emit)
 
