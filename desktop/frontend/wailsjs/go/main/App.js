@@ -22,6 +22,10 @@ export function GetTransferSettings() {
   return window['go']['main']['App']['GetTransferSettings']();
 }
 
+export function GetVersion() {
+  return window['go']['main']['App']['GetVersion']();
+}
+
 export function OpenFile(arg1) {
   return window['go']['main']['App']['OpenFile'](arg1);
 }

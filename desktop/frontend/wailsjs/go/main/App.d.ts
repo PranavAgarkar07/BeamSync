@@ -13,6 +13,8 @@ export function GetSavePath():Promise<string>;
 
 export function GetTransferSettings():Promise<beamsync.TransferSettings>;
 
+export function GetVersion():Promise<string>;
+
 export function OpenFile(arg1:string):Promise<string>;
 
 export function PlaySound(arg1:string):Promise<void>;
