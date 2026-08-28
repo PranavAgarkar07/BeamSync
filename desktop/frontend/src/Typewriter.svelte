@@ -2,7 +2,7 @@
     import { onMount } from "svelte";
 
     export let text = "";
-    export let speed = 50; // ms per char (approx 500ms for short string, maybe faster?)
+    export let speed = 50; // svelte-ignore unused-export-let - controlled externally if needed
 
     // User asked for "type itself out ... over 500ms".
     // If string is long, speed needs to be lower.

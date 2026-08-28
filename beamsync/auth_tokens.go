@@ -17,6 +17,23 @@ var (
 
 const defaultTokenTTL = 5 * time.Minute
 
+const bootstrapTokenTTL = 5 * time.Minute
+const sessionTokenTTL = 5 * time.Minute
+const transferTokenTTL = 30 * time.Minute
+
+func ttlForScope(scope tokenScope) time.Duration {
+	switch scope {
+	case tokenScopeBootstrap:
+		return bootstrapTokenTTL
+	case tokenScopeSession:
+		return sessionTokenTTL
+	case tokenScopeTransfer:
+		return transferTokenTTL
+	default:
+		return defaultTokenTTL
+	}
+}
+
 type tokenScope string
 
 const (
@@ -55,9 +72,15 @@ func (s *tokenStore) issue(scope tokenScope, maxUses int, _ string) (string, err
 	}
 
 	now := s.now()
+	ttl := s.ttl
+	if ttl == defaultTokenTTL {
+		ttl = ttlForScope(scope)
+	} else if ttl <= 0 {
+		ttl = ttlForScope(scope)
+	}
 	record := &tokenRecord{
 		Value:     hex.EncodeToString(b),
-		ExpiresAt: now.Add(s.ttl),
+		ExpiresAt: now.Add(ttl),
 		MaxUses:   maxUses,
 		Scope:     scope,
 	}
@@ -126,6 +149,16 @@ func (s *tokenStore) cleanupExpired() {
 	defer s.mu.Unlock()
 	for value, record := range s.tokens {
 		if !now.Before(record.ExpiresAt) || (record.MaxUses > 0 && record.UseCount >= record.MaxUses) {
+			delete(s.tokens, value)
+		}
+	}
+}
+
+func (s *tokenStore) revokeScopeExcept(scope tokenScope, keepValue string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for value, record := range s.tokens {
+		if record.Scope == scope && value != keepValue {
 			delete(s.tokens, value)
 		}
 	}

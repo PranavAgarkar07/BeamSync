@@ -53,7 +53,7 @@
   let senderUrl = "";
   let senderFiles = []; // [{name, sizeBytes}] — populated from sender_files event
   let transferHistory = [];
-  let appVersion = 'v2.4.0';
+  let appVersion = 'v2.5.0';
   let sessionLog = [];
   let transferStats = {
     startedAt: new Date().toISOString(),
@@ -463,6 +463,12 @@
       if (showSenderDialog) senderUrl = newURL;
       toast("🔄 Network changed — QR refreshed", "info");
     });
+    EventsOn("token_rotated", (newURL) => {
+      serverUrl = newURL;
+      generateQR(newURL);
+      if (showSenderDialog) senderUrl = newURL;
+      toast("🔐 Security token rotated — QR updated", "info");
+    });
     EventsOn("sender_started", (url) => {
       senderUrl = url;
       showSenderDialog = true;
@@ -688,6 +694,7 @@
   async function saveSettings() {
     playSound("click");
     settings.maxFileSizeMB = Number(settings.maxFileSizeMB) || 0;
+    // @ts-ignore - Wails generated models expect class instance, runtime accepts plain object
     await SaveTransferSettings(settings);
     settingsDirty = false;
     toast("Settings saved", "success");
@@ -777,12 +784,14 @@
       ApproveTransfer(transferRequest.id);
       if (rememberDevice) {
         settings.trustedDevices = [...settings.trustedDevices, { ip: transferRequest.senderIP, friendlyName: transferRequest.senderName }];
+        // @ts-ignore - Wails generated models expect class instance, runtime accepts plain object
         SaveTransferSettings(settings);
       }
     } else {
       RejectTransfer(transferRequest.id);
       if (rememberDevice) {
         settings.blockedDevices = [...settings.blockedDevices, { ip: transferRequest.senderIP, friendlyName: transferRequest.senderName }];
+        // @ts-ignore - Wails generated models expect class instance, runtime accepts plain object
         SaveTransferSettings(settings);
       }
     }

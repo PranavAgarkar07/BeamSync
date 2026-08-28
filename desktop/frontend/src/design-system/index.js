@@ -7,7 +7,7 @@
  *            ConnectedDevicesPanel, TopNavBar } from './design-system';
  *
  * CSS tokens must be imported separately in your root CSS/entry point:
- *   @import './design-system/tokens.css';
+ *   import './design-system/tokens.css';
  */
 
 export { default as DeviceCard           } from './DeviceCard.svelte';

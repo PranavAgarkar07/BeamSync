@@ -580,12 +580,16 @@
         let _reloading = false;
         function heartbeat() {
             if (_reloading) return;
+            // Don't treat heartbeat failure as fatal while a download is in progress
+            if (activeDownloadUrl) return;
             const url = TOKEN ? `/heartbeat?token=${TOKEN}` : '/heartbeat';
             fetch(url, { method: 'POST' })
                 .then(r => {
                     const renewedToken = r.headers.get('X-BeamSync-Token');
                     if (renewedToken) TOKEN = renewedToken;
                     if (r.status === 401 || r.status === 403) {
+                        // If a download just started between the fetch and response, ignore expiry
+                        if (activeDownloadUrl) return;
                         _reloading = true;
                         alert('Your BeamSync session expired. Re-scan the current QR code to reconnect.');
                     }

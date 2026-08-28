@@ -270,7 +270,6 @@ func (s *serverState) checkTimeout() (wasConnected bool, timedOut bool) {
 	return s.isConnected, false
 }
 
-
 type HTTPServer struct {
 	server           *http.Server
 	cancel           context.CancelFunc
@@ -284,6 +283,9 @@ type HTTPServer struct {
 	heartbeatLimiter *clientRateLimiter
 	transferLimiter  *clientRateLimiter
 	uploadLimiter    *clientRateLimiter
+	bootstrapMu      sync.Mutex
+	bootstrapToken   string
+	state            *serverState
 }
 
 func (s *HTTPServer) RespondToTransfer(id string, approved bool) {
@@ -333,13 +335,37 @@ func (s *HTTPServer) Shutdown() error {
 	return nil
 }
 
+func (s *HTTPServer) CurrentBootstrapToken() string {
+	if s == nil || s.tokens == nil {
+		return ""
+	}
+	s.bootstrapMu.Lock()
+	defer s.bootstrapMu.Unlock()
+	return s.bootstrapToken
+}
+
+func (s *HTTPServer) RotateBootstrapToken() (string, error) {
+	if s == nil || s.tokens == nil {
+		return "", fmt.Errorf("no token store")
+	}
+	newToken, err := s.tokens.issue(tokenScopeBootstrap, 1, "")
+	if err != nil {
+		return "", err
+	}
+	s.bootstrapMu.Lock()
+	s.bootstrapToken = newToken
+	s.bootstrapMu.Unlock()
+	s.tokens.revokeScopeExcept(tokenScopeBootstrap, newToken)
+	return newToken, nil
+}
+
 type progressWriter struct {
-	w         io.Writer
-	total     int64
-	written   int64
-	filename  string
-	emit      func(string, string)
-	lastEmit  time.Time
+	w           io.Writer
+	total       int64
+	written     int64
+	filename    string
+	emit        func(string, string)
+	lastEmit    time.Time
 	minInterval time.Duration
 }
 
@@ -562,6 +588,62 @@ func startWatchdog(ctx context.Context, state *serverState, emit func(string, st
 	}()
 }
 
+func getLocalIPForURL() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return "127.0.0.1"
+	}
+	defer conn.Close()
+	return conn.LocalAddr().(*net.UDPAddr).IP.String()
+}
+
+func startBootstrapRotator(ctx context.Context, hs *HTTPServer, port string, emit func(string, string)) {
+	if hs == nil || hs.tokens == nil {
+		return
+	}
+	interval := bootstrapTokenTTL - 30*time.Second
+	if interval <= 0 {
+		interval = bootstrapTokenTTL / 2
+	}
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("Bootstrap rotator panic: %v\n", r)
+			}
+		}()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if hs.state != nil && hs.state.activeUploads() > 0 {
+					// Defer rotation briefly instead of skipping a full interval
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(30 * time.Second):
+					}
+					if hs.state.activeUploads() > 0 {
+						continue
+					}
+				}
+				newToken, err := hs.RotateBootstrapToken()
+				if err != nil {
+					fmt.Printf("Failed to rotate bootstrap token: %v\n", err)
+					continue
+				}
+				ip := getLocalIPForURL()
+				newURL := fmt.Sprintf("%s://%s:%s/?token=%s", ServerScheme(), ip, port, newToken)
+				fmt.Printf("🔄 Bootstrap token rotated, new URL: %s\n", newURL)
+				emit("url_changed", newURL)
+				emit("token_rotated", newURL)
+			}
+		}
+	}()
+}
+
 func safeEmit(emit EventCallback, event, data string) {
 	if emit == nil {
 		return
@@ -622,6 +704,8 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		history:          NewTransferHistory(defaultTransferHistoryLimit),
 		stats:            newTransferStatsTracker(),
 		tokens:           tokens,
+		bootstrapToken:   token,
+		state:            state,
 		pageLimiter:      newClientRateLimiter(60, time.Minute),
 		heartbeatLimiter: newClientRateLimiter(120, time.Minute),
 		transferLimiter:  newClientRateLimiter(30, time.Minute),
@@ -990,6 +1074,8 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 		}
 	}()
 
+	startBootstrapRotator(ctx, httpServer, portStr, emit)
+
 	return httpServer, portStr, token
 }
 
@@ -1016,6 +1102,8 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 		history:          NewTransferHistory(defaultTransferHistoryLimit),
 		stats:            newTransferStatsTracker(),
 		tokens:           tokens,
+		bootstrapToken:   token,
+		state:            state,
 		pageLimiter:      newClientRateLimiter(60, time.Minute),
 		heartbeatLimiter: newClientRateLimiter(120, time.Minute),
 		transferLimiter:  newClientRateLimiter(30, time.Minute),
@@ -1207,7 +1295,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 				snapshot := httpServer.stats.recordSent(filename, written, state.activeUploads())
 				emit("transfer_stats", transferStatsJSON(snapshot))
 			}
-				logTransfer(httpServer.history, emit, TransferRecord{
+			logTransfer(httpServer.history, emit, TransferRecord{
 				Filename:  filename,
 				Direction: TransferDirectionSend,
 				Status:    status,
@@ -1324,6 +1412,8 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 			fmt.Println("Sender error:", err)
 		}
 	}()
+
+	startBootstrapRotator(ctx, httpServer, portStr, emit)
 
 	return httpServer, portStr, token
 }
