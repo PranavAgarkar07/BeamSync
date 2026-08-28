@@ -12,10 +12,10 @@ Set `BEAMSYNC_ENABLE_TLS=true` before launching BeamSync to serve the same endpo
 
 To prevent copied URLs from granting another device access, BeamSync uses short-lived HMAC credentials:
 
-1. **QR bootstrap:** Receiver and sender QR URLs contain a five-minute, single-use bootstrap credential. Loading the URL exchanges it for a session token bound to the connecting client IP.
+1. **QR bootstrap:** Receiver and sender QR URLs contain a five-minute, single-use bootstrap credential. Loading the URL exchanges it for a session token bound to the connecting client IP. The bootstrap credential **auto-rotates every ~4.5 minutes** (or when the network changes); the desktop QR and URL update instantly via `url_changed` / `token_rotated` events. The previous bootstrap is revoked immediately — stale QRs return `403`.
 2. **HMAC binding:** Tokens are signed with a per-server secret over the server session, TLS certificate fingerprint (or the explicit plaintext-HTTP context), client IP, scope, expiration, and a random nonce.
-3. **Expiry and renewal:** Credentials expire after five minutes. Successful heartbeats return a replacement session token in the `X-BeamSync-Token` response header, which the bundled web clients adopt automatically.
-4. **Transfer scope:** Download URLs use client-bound, single-use transfer tokens. Replaying a completed download URL returns `403 Forbidden`.
+3. **Expiry and renewal:** Bootstrap and session credentials expire after **five minutes**; **transfer credentials expire after 30 minutes** to allow large-file downloads without re-scanning. Successful heartbeats return a replacement session token in the `X-BeamSync-Token` response header, which the bundled web clients adopt automatically. While a file transfer is active (`activeUploads`/`activeDownloads` > 0) the watchdog does not disconnect and the active stream is allowed to complete even if the pre-transfer token would otherwise expire; bootstrap rotation is deferred until the transfer finishes.
+4. **Transfer scope:** Download URLs use client-bound, single-use transfer tokens (30-minute lifetime for big files). Replaying a completed download URL returns `403 Forbidden`.
 5. **Usage:** Clients supply their current credential as a query parameter:
    ```http
    ?token=your_hmac_credential

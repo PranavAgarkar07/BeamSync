@@ -4,46 +4,65 @@ jobs:
   lint-go:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with: { go-version: '1.25' }
-      - run: (cd beamsync && golangci-lint run ./...)
-      - run: (cd desktop && golangci-lint run ./...)
+      - uses: actions/setup-node@v5
+        with: { node-version: '24' }
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: cd desktop/frontend && npm ci && npm run build
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64
+          args: ./...
+          working-directory: beamsync
+          install-mode: goinstall
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64
+          args: ./...
+          working-directory: desktop
+          install-mode: goinstall
 
   lint-svelte:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: '24' }
       - run: cd desktop/frontend && npm ci && npm run lint
 
   test-go:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with: { go-version: '1.25' }
+      - uses: actions/setup-node@v5
+        with: { node-version: '24' }
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: cd desktop/frontend && npm ci && npm run build
       - run: (cd beamsync && go test ./...)
       - run: (cd desktop && go test ./...)
 
   test-svelte:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: '24' }
       - run: cd desktop/frontend && npm ci && npm run test
 
   build:
     runs-on: ubuntu-latest
     needs: [lint-go, lint-svelte, test-go, test-svelte]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with: { go-version: '1.25' }
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
+      - uses: actions/setup-node@v5
+        with: { node-version: '24' }
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - run: cd desktop/frontend && npm ci && npm run build
       - run: (cd beamsync && go build ./...)
       - run: (cd desktop && go build ./...)

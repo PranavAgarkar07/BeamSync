@@ -25,7 +25,6 @@
   import QRCode from "qrcode";
   import { onMount, onDestroy } from "svelte";
   import { fly } from "svelte/transition";
-  import Typewriter from "./Typewriter.svelte";
   import SplashScreen from "./SplashScreen.svelte";
 
   // ── Splash screen ─────────────────────────────────────────────────────────
@@ -34,9 +33,7 @@
   import {
     TopNavBar,
     FileDropZone,
-    TransferProgressBar,
     TransferComplete,
-    ConnectedDevicesPanel,
     ActivityPanel,
     TransferStatsDashboard,
   } from "./design-system/index.js";
@@ -56,7 +53,7 @@
   let senderUrl = "";
   let senderFiles = []; // [{name, sizeBytes}] — populated from sender_files event
   let transferHistory = [];
-  let appVersion = 'v2.4.0';
+  let appVersion = 'v2.5.0';
   let sessionLog = [];
   let transferStats = {
     startedAt: new Date().toISOString(),
@@ -124,10 +121,21 @@
 
   // ── Sound toggle ────────────────────────────────────────────────────────
   let soundEnabled = localStorage.getItem("beamsync_sound") !== "false";
-  function toggleSound() {
-    soundEnabled = !soundEnabled;
-    localStorage.setItem("beamsync_sound", soundEnabled ? "true" : "false");
-    if (soundEnabled) PlaySound("blip"); // confirm it's on
+
+  // ── Theme switcher (light/dark) ─────────────────────────────────────────
+  let theme = localStorage.getItem("beamsync_theme") || "light";
+  function applyTheme(t) {
+    theme = t;
+    localStorage.setItem("beamsync_theme", t);
+    if (typeof document !== "undefined") {
+      document.documentElement.classList.toggle("dark", t === "dark");
+      document.documentElement.setAttribute("data-theme", t);
+    }
+  }
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    applyTheme(next);
+    playSound("blip");
   }
 
   // ── Update banner ───────────────────────────────────────────────────────
@@ -248,12 +256,14 @@
   }
 
   // ── Cursor glow ─────────────────────────────────────────────────────────
-  function handleMouseMove(e) {
+  function handleMouseMove() {
     // legacy mouse glow removed
   }
 
   // ── Mount / Unmount ─────────────────────────────────────────────────────
   onMount(async () => {
+    // Apply persisted theme before anything renders
+    applyTheme(theme);
     EventsOffAll();
     transferStatsTimer = setInterval(() => {
       transferStatsNow = Date.now();
@@ -266,7 +276,7 @@
     // Load settings
     try {
       settings = await GetTransferSettings();
-    } catch {}
+    } catch (_e) { /* settings not yet persisted */ }
 
     EventsOn("device_connected", () => {
       connectionState = "CONNECTED";
@@ -452,6 +462,12 @@
       generateQR(newURL);
       if (showSenderDialog) senderUrl = newURL;
       toast("🔄 Network changed — QR refreshed", "info");
+    });
+    EventsOn("token_rotated", (newURL) => {
+      serverUrl = newURL;
+      generateQR(newURL);
+      if (showSenderDialog) senderUrl = newURL;
+      toast("🔐 Security token rotated — QR updated", "info");
     });
     EventsOn("sender_started", (url) => {
       senderUrl = url;
@@ -678,6 +694,7 @@
   async function saveSettings() {
     playSound("click");
     settings.maxFileSizeMB = Number(settings.maxFileSizeMB) || 0;
+    // @ts-ignore - Wails generated models expect class instance, runtime accepts plain object
     await SaveTransferSettings(settings);
     settingsDirty = false;
     toast("Settings saved", "success");
@@ -767,12 +784,14 @@
       ApproveTransfer(transferRequest.id);
       if (rememberDevice) {
         settings.trustedDevices = [...settings.trustedDevices, { ip: transferRequest.senderIP, friendlyName: transferRequest.senderName }];
+        // @ts-ignore - Wails generated models expect class instance, runtime accepts plain object
         SaveTransferSettings(settings);
       }
     } else {
       RejectTransfer(transferRequest.id);
       if (rememberDevice) {
         settings.blockedDevices = [...settings.blockedDevices, { ip: transferRequest.senderIP, friendlyName: transferRequest.senderName }];
+        // @ts-ignore - Wails generated models expect class instance, runtime accepts plain object
         SaveTransferSettings(settings);
       }
     }
@@ -1150,6 +1169,29 @@
             <h2 style="margin-top: 0;">Transfer Settings</h2>
 
             <div style="margin-bottom: 2rem;">
+              <h3 style="display:flex; align-items:center; gap:0.5rem;">Appearance <span class="nb-badge" style="font-size:0.65rem;">{theme === 'dark' ? '🌙 DARK' : '☀️ LIGHT'}</span></h3>
+              <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; border: 2px solid var(--nb-border-color); background: var(--nb-bg); padding: 1rem;">
+                <span style="font-weight:700; font-family: var(--nb-font-display); font-size:0.85rem; letter-spacing:0.04em; text-transform:uppercase;">Theme</span>
+                <div role="group" aria-label="Theme switcher" style="display:flex; border:3px solid var(--nb-border-color); box-shadow:4px 4px 0 var(--nb-border-color); overflow:hidden;">
+                  <button
+                    class="theme-opt"
+                    aria-pressed={theme === 'light'}
+                    on:click={() => applyTheme('light')}
+                    style="padding:0.6rem 1.4rem; font-family:var(--nb-font-display); font-weight:800; font-size:0.85rem; letter-spacing:0.04em; text-transform:uppercase; border:none; border-right:3px solid var(--nb-border-color); cursor:pointer; background:{theme === 'light' ? 'var(--nb-primary)' : 'var(--nb-surface)'}; color:{theme === 'light' ? '#fff' : 'var(--nb-text)'}; transition: background 120ms ease;"
+                  >☀️ LIGHT</button>
+                  <button
+                    class="theme-opt"
+                    aria-pressed={theme === 'dark'}
+                    on:click={() => applyTheme('dark')}
+                    style="padding:0.6rem 1.4rem; font-family:var(--nb-font-display); font-weight:800; font-size:0.85rem; letter-spacing:0.04em; text-transform:uppercase; border:none; cursor:pointer; background:{theme === 'dark' ? 'var(--nb-primary)' : 'var(--nb-surface)'}; color:{theme === 'dark' ? '#fff' : 'var(--nb-text)'}; transition: background 120ms ease;"
+                  >🌙 DARK</button>
+                </div>
+                <button class="nb-btn nb-btn--ghost" style="margin-left:auto; padding:0.4rem 0.8rem; font-size:0.8rem;" on:click={toggleTheme} aria-label="Toggle theme">TOGGLE</button>
+                <span style="font-size:0.75rem; color:var(--nb-text-muted); font-family:var(--nb-font-mono);">Stored in localStorage</span>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 2rem;">
               <h3>Save Location</h3>
               <div style="display: flex; gap: 0.5rem; align-items: center; border: 2px solid var(--nb-border-color); padding: 0.5rem; background: var(--nb-bg);">
                 <span class="nb-badge" style="background: var(--nb-border-color); color: var(--nb-surface);">Path</span>
@@ -1235,7 +1277,7 @@
               </div>
               <div style="margin-top: 0.5rem;">
                 {#each settings.blockedExtensions as ext}
-                  <span class="nb-badge" on:click={() => removeBlockedExt(ext)} style="cursor: pointer;">{ext} ✕</span>
+                  <span class="nb-badge" role="button" tabindex="0" on:click={() => removeBlockedExt(ext)} on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); removeBlockedExt(ext); } }} style="cursor: pointer;">{ext} ✕</span>
                 {/each}
               </div>
             </div>

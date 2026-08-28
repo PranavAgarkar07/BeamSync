@@ -64,7 +64,7 @@ func TestTokenMiddlewareAllowsValidTokenAndOptions(t *testing.T) {
 
 func TestAutoRenamePathFindsNonCollidingName(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "photo.png"), []byte("first"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "photo.png"), []byte("first"), 0600); err != nil { //nolint:gosec
 		t.Fatalf("write existing file: %v", err)
 	}
 
@@ -152,6 +152,7 @@ func TestHTTPServerShutdownWaitsForActiveRequest(t *testing.T) {
 	release := make(chan struct{})
 
 	httpSrv := &http.Server{
+		ReadHeaderTimeout: 5 * time.Second,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			close(started)
 			<-release
@@ -321,7 +322,7 @@ func TestStartSenderIssuesClientBoundSingleUseDownloadToken(t *testing.T) {
 	if server == nil {
 		t.Fatal("StartSender returned nil server")
 	}
-	defer server.Shutdown()
+	defer func() { _ = server.Shutdown() }() //nolint:errcheck
 	baseURL := "http://127.0.0.1:" + port
 
 	rootResp, err := http.Get(baseURL + "/?token=" + bootstrapToken)
@@ -355,7 +356,7 @@ func TestStartSenderIssuesClientBoundSingleUseDownloadToken(t *testing.T) {
 	}
 	downloadURL := baseURL + linkPrefix + string(rootBody[start:start+end])
 
-	firstResp, err := http.Get(downloadURL)
+	firstResp, err := http.Get(downloadURL) //nolint:gosec,noctx
 	if err != nil {
 		t.Fatalf("first secure download: %v", err)
 	}
@@ -365,7 +366,7 @@ func TestStartSenderIssuesClientBoundSingleUseDownloadToken(t *testing.T) {
 		t.Fatalf("first download status=%d body=%q", firstResp.StatusCode, firstBody)
 	}
 
-	replayResp, err := http.Get(downloadURL)
+	replayResp, err := http.Get(downloadURL) //nolint:gosec,noctx
 	if err != nil {
 		t.Fatalf("replayed secure download: %v", err)
 	}
@@ -377,7 +378,7 @@ func TestStartSenderIssuesClientBoundSingleUseDownloadToken(t *testing.T) {
 
 func TestUploadWithoutFileReturnsBadRequest(t *testing.T) {
 	server, baseURL, token, _, _ := startServerForTest(t)
-	defer server.Shutdown()
+	defer func() { _ = server.Shutdown() }() //nolint:errcheck
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -397,7 +398,7 @@ func TestUploadWithoutFileReturnsBadRequest(t *testing.T) {
 
 func TestUploadWithFileSavesToDiskAndEmitsEvents(t *testing.T) {
 	server, baseURL, token, events, uploadDir := startServerForTest(t)
-	defer server.Shutdown()
+	defer func() { _ = server.Shutdown() }() //nolint:errcheck
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -477,12 +478,12 @@ func startServerForTest(t *testing.T) (*HTTPServer, string, string, <-chan strin
 	server, baseURL, bootstrapToken, events, uploadDir := startRawServerForTest(t)
 	resp, err := http.Get(baseURL + "/?token=" + bootstrapToken)
 	if err != nil {
-		server.Shutdown()
+		_ = server.Shutdown() //nolint:errcheck
 		t.Fatalf("exchange bootstrap token: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		server.Shutdown()
+		_ = server.Shutdown() //nolint:errcheck
 		t.Fatalf("bootstrap exchange status=%d", resp.StatusCode)
 	}
 	token := extractInjectedToken(t, string(bodyBytes(resp)))

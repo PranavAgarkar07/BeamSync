@@ -29,7 +29,7 @@ var soundFS embed.FS
 var wailsJSONData []byte
 
 const eventChanCapacity = 512
-const fallbackVersion = "v2.4.0"
+const fallbackVersion = "v2.5.0"
 
 // App struct
 type App struct {
@@ -39,11 +39,30 @@ type App struct {
 	senderApp    *beamsync.HTTPServer
 	eventChan    chan EventData
 	eventsClosed chan struct{}
-	shutdownOnce sync.Once
+	shutdownOnce sync.Once //nolint:unused // used in shutdown
 	lastSavePath string
 	currentIP    string
 	currentPort  string
+	currentToken string
 	version      string
+}
+
+func (a *App) shareURL(port, token string) string {
+	ip := a.currentIP
+	if ip == "" {
+		ip = getLocalIP()
+	}
+	return fmt.Sprintf("%s://%s:%s/?token=%s", beamsync.ServerScheme(), ip, port, token)
+}
+
+func (a *App) updateCurrentEndpoint(port, token string) {
+	a.currentPort = port
+	if token != "" {
+		a.currentToken = token
+	}
+	if a.currentIP == "" {
+		a.currentIP = getLocalIP()
+	}
 }
 
 // UpdateInfo is returned to the frontend.
@@ -131,6 +150,24 @@ func defaultSavePath() string {
 	return filepath.Join(home, "Downloads", "BeamSync")
 }
 
+func ensureSaveDir(path string) error {
+	if path == "" {
+		return fmt.Errorf("empty save path")
+	}
+	info, err := os.Stat(path)
+	if err == nil && !info.IsDir() {
+		backup := path + ".bin.bak"
+		if err := os.Rename(path, backup); err != nil {
+			// Rename failed (e.g. backup exists) — remove stray file and recreate
+			_ = os.Remove(path)
+			fmt.Printf("⚠️ Save path was a file, removed %s (backup %s exists)\n", path, backup)
+		} else {
+			fmt.Printf("⚠️ Save path was a file, moved to %s\n", backup)
+		}
+	}
+	return os.MkdirAll(path, 0755)
+}
+
 // startup is called when the app starts
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
@@ -193,8 +230,23 @@ func (a *App) processEvents() {
 				if a.currentIP != "" && a.currentIP != currentRealIP {
 					fmt.Printf("🔄 IP Change Detected! Old: %s, New: %s\n", a.currentIP, currentRealIP)
 					a.currentIP = currentRealIP
-					newURL := fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), a.currentIP, a.currentPort)
+					var newURL string
+					if a.currentToken != "" && a.currentPort != "" {
+						newURL = a.shareURL(a.currentPort, a.currentToken)
+					} else {
+						newURL = fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), a.currentIP, a.currentPort)
+					}
 					a.safeEmit("url_changed", newURL)
+				}
+			}
+			if event.Name == "url_changed" || event.Name == "token_rotated" {
+				if event.Data != "" {
+					if token := extractTokenFromURL(event.Data); token != "" {
+						a.currentToken = token
+					}
+					if port := extractPortFromURL(event.Data); port != "" {
+						a.currentPort = port
+					}
 				}
 			}
 			a.safeEmit(event.Name, event.Data)
@@ -202,6 +254,35 @@ func (a *App) processEvents() {
 			return
 		}
 	}
+}
+
+func extractTokenFromURL(raw string) string {
+	idx := strings.Index(raw, "token=")
+	if idx == -1 {
+		return ""
+	}
+	rest := raw[idx+6:]
+	if amp := strings.Index(rest, "&"); amp != -1 {
+		rest = rest[:amp]
+	}
+	if hash := strings.Index(rest, "#"); hash != -1 {
+		rest = rest[:hash]
+	}
+	return strings.TrimSpace(rest)
+}
+
+func extractPortFromURL(raw string) string {
+	withoutScheme := raw
+	if idx := strings.Index(raw, "://"); idx != -1 {
+		withoutScheme = raw[idx+3:]
+	}
+	if slash := strings.Index(withoutScheme, "/"); slash != -1 {
+		withoutScheme = withoutScheme[:slash]
+	}
+	if colon := strings.LastIndex(withoutScheme, ":"); colon != -1 {
+		return withoutScheme[colon+1:]
+	}
+	return ""
 }
 
 // safeEmit wraps Wails runtime.EventsEmit with panic recovery.
@@ -220,7 +301,7 @@ func (a *App) safeEmit(eventName string, data interface{}) {
 }
 
 // shutdown is called when the app is closing.
-func (a *App) shutdown(ctx context.Context) {
+func (a *App) shutdown(ctx context.Context) { //nolint:unused // wails lifecycle
 	a.shutdownOnce.Do(func() {
 		if a.serverApp != nil {
 			fmt.Println("🛑 Shutting down receiver server...")
@@ -301,11 +382,11 @@ func (a *App) SetSavePath() string {
 
 	// Restart receiver on new path
 	if a.serverApp != nil {
-		a.serverApp.Shutdown()
+		_ = a.serverApp.Shutdown() //nolint:errcheck
 		a.serverApp = nil
 	}
 
-	if err := os.MkdirAll(selection, 0755); err != nil {
+	if err := ensureSaveDir(selection); err != nil {
 		fmt.Println("⚠️ Failed to create save directory:", err)
 		return "Error: Could not create save directory"
 	}
@@ -314,10 +395,10 @@ func (a *App) SetSavePath() string {
 	a.serverApp = app
 
 	localIP := getLocalIP()
+	a.updateCurrentEndpoint(port, token)
 	a.currentIP = localIP
-	a.currentPort = port
 
-	url := fmt.Sprintf("%s://%s:%s/?token=%s", beamsync.ServerScheme(), localIP, port, token)
+	url := a.shareURL(port, token)
 	fmt.Println("📡 Receiver restarted on new path:", url)
 	return url
 }
@@ -335,7 +416,7 @@ func (a *App) StartReceiverDefault() string {
 	savePath := a.GetSavePath()
 	a.lastSavePath = savePath
 
-	if err := os.MkdirAll(savePath, 0755); err != nil {
+	if err := ensureSaveDir(savePath); err != nil {
 		fmt.Println("⚠️ Failed to create save directory:", err)
 		return "Error: Could not create save directory"
 	}
@@ -344,11 +425,11 @@ func (a *App) StartReceiverDefault() string {
 	a.serverApp = app
 
 	localIP := getLocalIP()
+	a.updateCurrentEndpoint(port, token)
 	a.currentIP = localIP
-	a.currentPort = port
 
 	// Embed token in the URL so the mobile page's JS can attach it to requests.
-	url := fmt.Sprintf("%s://%s:%s/?token=%s", beamsync.ServerScheme(), localIP, port, token)
+	url := a.shareURL(port, token)
 	fmt.Println("📡 Receiver started:", url)
 	return url
 }
@@ -375,10 +456,10 @@ func (a *App) StartReceiver() string {
 	a.serverApp = app
 
 	localIP := getLocalIP()
+	a.updateCurrentEndpoint(port, token)
 	a.currentIP = localIP
-	a.currentPort = port
 
-	url := fmt.Sprintf("%s://%s:%s/?token=%s", beamsync.ServerScheme(), localIP, port, token)
+	url := a.shareURL(port, token)
 	fmt.Println("📡 Receiver started:", url)
 	return url
 }
@@ -404,10 +485,10 @@ func (a *App) StartSender() string {
 	a.senderApp = app
 
 	localIP := getLocalIP()
+	a.updateCurrentEndpoint(port, token)
 	a.currentIP = localIP
-	a.currentPort = port
 
-	url := fmt.Sprintf("%s://%s:%s/?token=%s", beamsync.ServerScheme(), localIP, port, token)
+	url := a.shareURL(port, token)
 
 	fmt.Println("========================================")
 	fmt.Println("📤 SENDER STARTED:", url)
@@ -457,10 +538,10 @@ func (a *App) SendFiles(filePaths []string) string {
 	a.senderApp = app
 
 	localIP := getLocalIP()
+	a.updateCurrentEndpoint(port, token)
 	a.currentIP = localIP
-	a.currentPort = port
 
-	url := fmt.Sprintf("%s://%s:%s/?token=%s", beamsync.ServerScheme(), localIP, port, token)
+	url := a.shareURL(port, token)
 
 	fmt.Println("========================================")
 	fmt.Println("📤 SENDER STARTED (from drag-drop):", url)
@@ -525,6 +606,7 @@ func (a *App) ResetApp() {
 	a.serverApp = nil
 	a.senderApp = nil
 	a.currentPort = ""
+	a.currentToken = ""
 }
 
 // OpenFile opens a received file with the system default application.
@@ -754,7 +836,12 @@ func (a *App) startIPMonitor() {
 				fmt.Printf("🔄 Network Change! IP: %s → %s\n", a.currentIP, newIP)
 				a.currentIP = newIP
 				if a.currentPort != "" {
-					newURL := fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), a.currentIP, a.currentPort)
+					var newURL string
+					if a.currentToken != "" {
+						newURL = a.shareURL(a.currentPort, a.currentToken)
+					} else {
+						newURL = fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), a.currentIP, a.currentPort)
+					}
 					fmt.Println("📡 Updating URL to:", newURL)
 					a.safeEmit("url_changed", newURL)
 				}

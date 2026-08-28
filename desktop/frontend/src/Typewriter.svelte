@@ -1,8 +1,8 @@
 <script>
-    import { onMount, afterUpdate } from "svelte";
+    import { onMount } from "svelte";
 
     export let text = "";
-    export let speed = 50; // ms per char (approx 500ms for short string, maybe faster?)
+    export let speed = 50; // svelte-ignore unused-export-let - controlled externally if needed
 
     // User asked for "type itself out ... over 500ms".
     // If string is long, speed needs to be lower.
@@ -24,7 +24,7 @@
 
         // Calculate speed to fit in ~500ms?
         // If text is 20 chars, 500/20 = 25ms.
-        let dynSpeed = Math.max(20, 500 / (text.length || 1));
+        const dynSpeed = Math.max(20, 500 / (text.length || 1));
 
         interval = setInterval(() => {
             if (currentIndex < text.length) {
@@ -33,7 +33,7 @@
             } else {
                 clearInterval(interval);
             }
-        }, speed);
+        }, dynSpeed);
     }
 
     onMount(() => {
