@@ -1,0 +1,183 @@
+---
+---
+
+<section class="whats-new" id="whats-new">
+  <div class="wrap">
+    <div class="section-header reveal">
+      <span class="section-tag">What's New — v2.5.0</span>
+      <h2>BeamSync v2.5.0<br />is Live.</h2>
+      <p>Secure token rotation, big-file stability, and a complete mobile overhaul — the most polished BeamSync yet.</p>
+    </div>
+
+    <div class="wn-banner reveal">
+      <div class="wn-banner-left">
+        <span class="wn-ver">v2.5.0</span>
+        <span class="wn-date">Latest Release</span>
+      </div>
+      <div class="wn-banner-mid">
+        <strong>Secure Token Rotation &amp; Big-File Stability</strong>
+        <span>QR credentials auto-rotate every ~4.5 min — desktop QR/URL refreshes instantly via <code>url_changed</code> / <code>token_rotated</code> events. No manual refresh. Previous QRs revoked immediately.</span>
+      </div>
+      <a href="https://github.com/PranavAgarkar07/BeamSync/releases" target="_blank" rel="noopener" class="wn-banner-cta">View Release →</a>
+    </div>
+
+    <div class="wn-grid">
+      <div class="wn-card wn-card--highlight reveal">
+        <span class="feat-tag feat-tag-green">Security</span>
+        <h3>🔐 Secure Token Rotation &amp; Big-File Stability</h3>
+        <p>QR bootstrap tokens now auto-rotate every ~4.5 minutes and the desktop QR updates live. Active transfers defer rotation via <code>activeUploads</code> watchdog guard (<code>beamsync/server.go:600</code>). Download tokens extended to <strong>30 min</strong> (was 5) — large files no longer fail mid-queue. Mobile heartbeat no longer kills a mid-download on 401/403.</p>
+      </div>
+      <div class="wn-card reveal">
+        <span class="feat-tag feat-tag-blue">Mobile</span>
+        <h3>📱 Complete Mobile UI Overhaul</h3>
+        <p>Radically redesigned mobile web UI with a structured layout — clear lanes for <strong>queued</strong>, <strong>uploading</strong>, and <strong>completed</strong> files.</p>
+      </div>
+      <div class="wn-card reveal">
+        <span class="feat-tag feat-tag-orange">UX</span>
+        <h3>✨ Intelligent File Lists</h3>
+        <p>Selected desktop files cascade in a staggered entrance animation. Mobile download view populates a dedicated <strong>DOWNLOADED FILES</strong> section live as downloads complete.</p>
+      </div>
+      <div class="wn-card reveal">
+        <span class="feat-tag feat-tag-blue">Design</span>
+        <h3>🎨 Rich Iconography</h3>
+        <p>Dynamic, color-coded SVG icons for dozens of types — code, video, images, scripts, text, archives and more. Instant visual scanning.</p>
+      </div>
+      <div class="wn-card reveal">
+        <span class="feat-tag feat-tag-green">Reliability</span>
+        <h3>📄 X-Filename Header Fix</h3>
+        <p>Backend now passes and respects the <code>X-Filename</code> HTTP header so the original filename is preserved correctly on every transfer — no more truncated or mangled names.</p>
+      </div>
+      <div class="wn-card reveal">
+        <span class="feat-tag feat-tag-orange">Accessibility</span>
+        <h3>♿ prefers-reduced-motion</h3>
+        <p>All animated elements — staggered lists, progress, carousel and waves — fully respect <code>prefers-reduced-motion</code> for inclusive motion handling.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .whats-new { padding: 80px 28px; background: var(--bg); border-bottom: 2px solid var(--border); }
+  .wn-banner {
+    max-width: 1140px;
+    margin: 0 auto 24px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 20px;
+    align-items: center;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    box-shadow: var(--sh-xl);
+    padding: 18px 20px;
+    border-left: 6px solid var(--green);
+  }
+  .wn-banner-left { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .wn-ver {
+    font-family: var(--fd);
+    font-weight: 800;
+    font-size: 1.4rem;
+    line-height: 1;
+    color: var(--green);
+  }
+  .wn-date {
+    font-family: var(--fm);
+    font-size: .65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+  }
+  .wn-banner-mid strong {
+    display: block;
+    font-family: var(--fd);
+    font-size: .95rem;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .wn-banner-mid span {
+    font-size: .85rem;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  .wn-banner-mid code { font-size: .78em; }
+  .wn-banner-cta {
+    font-family: var(--fd);
+    font-weight: 800;
+    font-size: .82rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text);
+    border: 2px solid var(--border);
+    padding: 10px 18px;
+    background: var(--green);
+    color: #000;
+    box-shadow: var(--sh-sm);
+    transition: var(--t);
+    white-space: nowrap;
+  }
+  .wn-banner-cta:hover { transform: translate(-2px,-2px); box-shadow: var(--sh-md); }
+
+  .wn-grid {
+    max-width: 1140px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border: 2px solid var(--border);
+    box-shadow: var(--sh-xl);
+  }
+  .wn-card {
+    background: var(--surface);
+    padding: 24px;
+    border-right: 2px solid var(--border);
+    border-bottom: 2px solid var(--border);
+    transition: var(--t);
+    position: relative;
+  }
+  .wn-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: transparent;
+    transition: background .2s ease;
+  }
+  .wn-card:hover::before { background: var(--primary); }
+  .wn-card:hover { background: var(--raised); transform: translate(-2px,-2px); box-shadow: var(--sh-md); z-index: 1; }
+  .wn-card:nth-child(3n) { border-right: none; }
+  .wn-card:nth-last-child(-n+3) { border-bottom: none; }
+  .wn-card--highlight { grid-column: span 3; border-right: none !important; background: linear-gradient(135deg, rgba(16,217,138,.06) 0%, var(--surface) 55%); }
+  .wn-card h3 { margin: 10px 0 8px; font-size: 1rem; }
+  .wn-card p { font-size: .88rem; line-height: 1.65; }
+  .wn-card p strong { color: var(--text); }
+  .feat-tag {
+    display: inline-block;
+    font-family: var(--fm);
+    font-size: .65rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    padding: 2px 8px;
+    border: 1px solid;
+  }
+  .feat-tag-blue { border-color: var(--primary); color: var(--primary); background: rgba(79,142,255,.08); }
+  .feat-tag-orange { border-color: var(--orange); color: var(--orange); background: rgba(255,138,0,.08); }
+  .feat-tag-green { border-color: var(--green); color: var(--green); background: rgba(16,217,138,.08); }
+
+  @media (max-width: 900px) {
+    .wn-banner { grid-template-columns: 1fr; gap: 14px; }
+    .wn-banner-cta { justify-self: start; }
+    .wn-grid { grid-template-columns: 1fr; }
+    .wn-card { border-right: none !important; }
+    .wn-card--highlight { grid-column: span 1; }
+    .wn-card:nth-last-child(-n+3) { border-bottom: 2px solid var(--border); }
+    .wn-card:last-child { border-bottom: none; }
+  }
+  @media (max-width: 540px) {
+    .whats-new { padding: 60px 16px; }
+    .wn-banner { padding: 14px; }
+    .wn-card { padding: 20px 16px; }
+  }
+</style>

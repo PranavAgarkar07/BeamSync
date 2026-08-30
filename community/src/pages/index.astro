@@ -3,6 +3,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import Navbar from '../components/Navbar.astro';
 import Hero from '../components/Hero.astro';
 import StatsBar from '../components/StatsBar.astro';
+import WhatsNew from '../components/WhatsNew.astro';
 import Features from '../components/Features.astro';
 import HowItWorks from '../components/HowItWorks.astro';
 import Screenshots from '../components/Screenshots.astro';
@@ -13,14 +14,15 @@ import Lightbox from '../components/Lightbox.astro';
 import CustomCursor from '../components/CustomCursor.astro';
 import ScrollReveal from '../components/ScrollReveal.astro';
 
-const title = 'BeamSync — Secure. Fast. Local.';
-const description = 'BeamSync: offline-first peer-to-peer desktop file transfer. No cloud. No accounts. Just your LAN.';
+const title = 'BeamSync v2.5.0 — Secure. Fast. Local. | New Release Live';
+const description = 'BeamSync v2.5.0 is live: secure token rotation, 30-min big-file tokens, mobile UI overhaul & rich file icons. Offline-first P2P file transfer — no cloud, no accounts, just your LAN.';
 ---
 
 <BaseLayout {title} {description}>
   <Navbar />
   <Hero />
   <StatsBar />
+  <WhatsNew />
   <Features />
   <HowItWorks />
   <Screenshots />

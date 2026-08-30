@@ -6,10 +6,11 @@ import DownloadBtn from './DownloadBtn.astro';
   <div class="hero-grid" aria-hidden="true"></div>
   <div class="hero-inner">
     <div class="hero-left">
-      <div class="hero-badge reveal">
+      <a href="#whats-new" class="hero-badge reveal" style="text-decoration:none; cursor:pointer;">
         <img src="/BeamSync/icon.png" alt="" width="16" height="16" style="object-fit:contain" />
-        Open Source · MIT · P2P Offline
-      </div>
+        <span class="hero-badge-dot"></span>
+        v2.5.0 — New Release · Secure Rotation · Mobile Overhaul
+      </a>
       <h1 class="hero-title reveal">
         Send Files at<br />
         <em>LAN Speed.</em><br />
@@ -17,6 +18,7 @@ import DownloadBtn from './DownloadBtn.astro';
       </h1>
       <p class="hero-sub reveal">
         Cross-platform desktop file transfer built with Go + Svelte + Wails. Scan a QR code, drop files, done — zero cloud, zero accounts, zero internet.
+        <span class="hero-sub-new">✦ v2.5.0: token auto-rotation, 30-min big-file tokens &amp; revamped mobile UI — <a href="#whats-new">see what's new</a>.</span>
       </p>
       <div class="hero-actions reveal">
         <DownloadBtn href="https://github.com/PranavAgarkar07/BeamSync/releases" size="lg" pulse>Download Free</DownloadBtn>
@@ -29,23 +31,35 @@ import DownloadBtn from './DownloadBtn.astro';
       </div>
     </div>
     <div class="hero-right reveal" id="hero-terminal-col">
-      <div class="terminal" id="terminal-box">
+      <div class="terminal" id="terminal-box" role="region" aria-label="BeamSync install terminal">
         <div class="terminal-bar">
-          <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+          <span class="dot dot-r" aria-hidden="true"></span><span class="dot dot-y" aria-hidden="true"></span><span class="dot dot-g" aria-hidden="true"></span>
           <span class="terminal-title">bash — beamsync</span>
+          <button class="term-copy" id="term-copy" type="button" aria-label="Copy install command" title="Copy">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="1"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            <span>Copy</span>
+          </button>
         </div>
-        <div class="terminal-body">
-          <span class="terminal-line" id="t1"></span>
-          <span class="terminal-line" id="t2"></span>
-          <span class="terminal-line" id="t3"></span>
-          <span class="cursor" id="tcursor">▋</span>
+        <div class="term-tabs" role="tablist" aria-label="Install method">
+          <button role="tab" aria-selected="true" data-tab="aur" class="term-tab active" type="button">AUR</button>
+          <button role="tab" aria-selected="false" data-tab="binary" class="term-tab" type="button">Binary</button>
+          <button role="tab" aria-selected="false" data-tab="source" class="term-tab" type="button">Source</button>
         </div>
+        <div class="terminal-body" id="terminal-body" role="log" aria-live="polite" aria-atomic="false">
+          <span class="terminal-line cmd" id="t1">yay -S beamsync-bin</span>
+          <span class="terminal-line out" id="t2">:: Resolving dependencies...</span>
+          <span class="terminal-line out success" id="t3">✓ BeamSync v2.5.0 — ready. Run: beamsync</span>
+          <span class="terminal-line hint" id="t4">hint: phone needs no app — just scan QR</span>
+          <span class="cursor" id="tcursor" aria-hidden="true">▋</span>
+        </div>
+        <div class="term-progress" aria-hidden="true"><div class="term-progress-bar" id="term-progress-bar"></div></div>
       </div>
       <div class="term-label">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
         </svg>
         Arch Linux · AUR · beamsync-bin
+        <span class="term-label-ver">v2.5.0</span>
       </div>
     </div>
   </div>
@@ -100,7 +114,14 @@ import DownloadBtn from './DownloadBtn.astro';
     margin-bottom: 24px;
     background: rgba(16,217,138,.06);
     backdrop-filter: blur(4px);
+    transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
   }
+  .hero-badge:hover { transform: translate(-1px,-1px); border-color: rgba(16,217,138,.5); box-shadow: 0 0 20px rgba(16,217,138,.15), var(--sh-green); }
+  .hero-badge-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: hero-dot-pulse 1.6s ease-in-out infinite; }
+  @keyframes hero-dot-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .7; transform: scale(.85); } }
+  .hero-sub-new { display: block; margin-top: 10px; font-size: .85rem; color: var(--green); font-weight: 600; }
+  .hero-sub-new a { color: var(--green); text-decoration: underline; text-underline-offset: 3px; }
+  .hero-sub-new a:hover { color: var(--primary); }
   .hero-title { margin-bottom: 20px; }
   .hero-title em { font-style: normal; background: linear-gradient(135deg, var(--primary), #7BB3FF); color: #fff; padding: 2px 10px; display: inline-block; box-shadow: 0 2px 12px rgba(79,142,255,.25); }
   .hero-title span { display: inline-block; position: relative; color: var(--orange); }
@@ -126,7 +147,7 @@ import DownloadBtn from './DownloadBtn.astro';
   }
   .btn-secondary:hover { transform: translate(-2px,-2px); box-shadow: var(--sh-lg); background: var(--raised); }
   .btn-secondary:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
-  .terminal { background: #060D1A; border: 2px solid var(--border); box-shadow: var(--sh-xl), 0 0 40px rgba(16,217,138,.04); position: relative; }
+  .terminal { background: #060D1A; border: 2px solid var(--border); box-shadow: var(--sh-xl), 0 0 40px rgba(16,217,138,.04); position: relative; overflow: hidden; }
   .terminal::before {
     content: '';
     position: absolute;
@@ -135,18 +156,44 @@ import DownloadBtn from './DownloadBtn.astro';
     pointer-events: none;
   }
   .terminal-bar { display: flex; align-items: center; gap: 7px; padding: 10px 16px; background: #0A1428; border-bottom: 1px solid var(--border); }
-  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
   .dot-r { background: #FF5F57; }
   .dot-y { background: #FFBD2E; }
   .dot-g { background: #28C840; }
-  .terminal-title { margin-left: auto; font-family: var(--fm); font-size: .72rem; color: var(--muted); }
-  .terminal-body { padding: 20px; display: flex; flex-direction: column; gap: 8px; min-height: 110px; }
-  .terminal-line { font-family: var(--fm); font-size: .83rem; display: block; }
+  .terminal-title { margin-right: auto; font-family: var(--fm); font-size: .72rem; color: var(--muted); }
+  .term-copy {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--fm); font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); background: transparent; border: 1px solid var(--border); padding: 4px 8px;
+    cursor: pointer; transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+  }
+  .term-copy:hover { color: var(--green); border-color: var(--green); background: rgba(16,217,138,.08); }
+  .term-copy.copied { color: var(--green); border-color: var(--green); background: rgba(16,217,138,.12); }
+  .term-copy:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+  .term-tabs { display: flex; gap: 0; background: #0A1428; border-bottom: 1px solid var(--border); }
+  .term-tab {
+    flex: 1; padding: 8px 10px; font-family: var(--fm); font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); background: transparent; border: none; border-right: 1px solid var(--border);
+    cursor: pointer; transition: background 150ms ease, color 150ms ease;
+  }
+  .term-tab:last-child { border-right: none; }
+  .term-tab:hover { background: rgba(255,255,255,.04); color: var(--text); }
+  .term-tab.active { background: var(--green); color: #000; }
+  .term-tab:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+  .terminal-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 7px; min-height: 132px; }
+  .terminal-line { font-family: var(--fm); font-size: .83rem; display: block; line-height: 1.5; min-height: 1.25em; word-break: break-all; }
   .terminal-line.cmd { color: var(--text); }
   .terminal-line.cmd::before { content: '$ '; color: var(--orange); }
   .terminal-line.out { color: var(--green); }
-  .cursor { font-family: var(--fm); font-size: .83rem; color: var(--orange); animation: blink 1s step-end infinite; }
+  .terminal-line.out.success { color: #4ade80; }
+  .terminal-line.hint { color: var(--muted); font-size: .74rem; opacity: .9; }
+  .terminal-line.hint::before { content: '› '; color: var(--primary); }
+  .cursor { font-family: var(--fm); font-size: .83rem; color: var(--orange); animation: blink 1s step-end infinite; display: inline-block; }
+  .cursor.hidden { display: none; }
   @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+  .term-progress { height: 2px; background: rgba(255,255,255,.06); overflow: hidden; }
+  .term-progress-bar { height: 100%; width: 0; background: linear-gradient(90deg, var(--green), var(--primary)); transition: width 1.2s ease; }
+  .term-progress-bar.fill { width: 88%; }
   .term-label {
     display: inline-flex;
     align-items: center;
@@ -162,6 +209,14 @@ import DownloadBtn from './DownloadBtn.astro';
     padding: 5px 12px;
     background: var(--surface);
     box-shadow: var(--sh-sm);
+  }
+  .term-label-ver {
+    margin-left: 8px;
+    background: var(--green);
+    color: #000;
+    padding: 2px 6px;
+    font-size: .62rem;
+    border: 1px solid rgba(255,255,255,.35);
   }
   @media (max-width: 900px) {
     .hero-inner { grid-template-columns: 1fr; }
@@ -186,63 +241,146 @@ import DownloadBtn from './DownloadBtn.astro';
 </style>
 
 <script>
-  const termBox = document.getElementById('terminal-box');
-  if (termBox && window.innerWidth > 900) {
-    const lines = [
-      { id: 't1', cls: 'cmd', text: 'brew install beamsync' },
-      { id: 't2', cls: 'out', text: ':: Resolving dependencies...' },
-      { id: 't3', cls: 'out', text: '\u2713 BeamSync installed. Run: beamsync' },
-    ];
+  (function () {
+    const termBox = document.getElementById('terminal-box');
+    const t1 = document.getElementById('t1');
+    const t2 = document.getElementById('t2');
+    const t3 = document.getElementById('t3');
+    const t4 = document.getElementById('t4');
+    const cursor = document.getElementById('tcursor');
+    const copyBtn = document.getElementById('term-copy');
+    const progressBar = document.getElementById('term-progress-bar');
+    const tabs = document.querySelectorAll('.term-tab');
+    if (!termBox || !t1 || !t2 || !t3) return;
 
-    let timerId = null;
+    const tabPresets = {
+      aur: {
+        cmd: 'yay -S beamsync-bin',
+        out1: ':: Resolving dependencies...',
+        out2: '\u2713 BeamSync v2.5.0 — ready. Run: beamsync',
+        hint: 'hint: phone needs no app — just scan QR',
+        label: 'AUR'
+      },
+      binary: {
+        cmd: 'curl -LO beamsync.AppImage && chmod +x *.AppImage',
+        out1: '  → 14.2 MB downloaded @ 4.8 MB/s',
+        out2: '\u2713 BeamSync ready — double-click to launch',
+        hint: 'hint: also on Arch AUR: beamsync-bin',
+        label: 'Binary'
+      },
+      source: {
+        cmd: 'git clone beamsync && wails build',
+        out1: '  → Go 1.25 + Svelte + Wails v2 building...',
+        out2: '\u2713 built → desktop/build/bin/BeamSync',
+        hint: 'hint: Go 1.25+ & Node required',
+        label: 'Source'
+      },
+    };
+    let activeTab = 'aur';
+    let currentCmd = tabPresets.aur.cmd;
+    let timerIds = [];
     let running = false;
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    function clearTimers() { timerIds.forEach(id => clearTimeout(id)); timerIds = []; }
+    function setTimer(fn, ms) { const id = setTimeout(fn, ms); timerIds.push(id); return id; }
 
     function typeText(el, text, speed) {
       return new Promise(resolve => {
+        if (prefersReduced) { el.textContent = text; resolve(); return; }
         let i = 0;
+        el.textContent = '';
         const tick = () => {
           el.textContent = text.slice(0, ++i);
-          if (i < text.length) timerId = setTimeout(tick, speed);
+          if (i < text.length) setTimer(tick, speed);
           else resolve();
         };
         tick();
       });
     }
 
-    async function runTerminal() {
+    async function runCycle(preset) {
       if (running) return;
       running = true;
-      const cursor = document.getElementById('tcursor');
-      for (const { id, cls, text } of lines) {
-        const el = document.getElementById(id);
-        if (!el) { running = false; return; }
-        el.className = 'terminal-line ' + cls;
-        await typeText(el, text, cls === 'cmd' ? 48 : 18);
-        await new Promise(r => { timerId = setTimeout(r, 320); });
-      }
-      if (cursor) cursor.style.display = 'none';
-      timerId = setTimeout(() => {
-        lines.forEach(({ id }) => {
-          const el = document.getElementById(id);
-          if (el) el.textContent = '';
-        });
-        if (cursor) cursor.style.display = '';
+      const p = preset || tabPresets[activeTab];
+      currentCmd = p.cmd;
+      // reset
+      t1.textContent = ''; t2.textContent = ''; t3.textContent = ''; if (t4) t4.textContent = '';
+      t1.className = 'terminal-line cmd'; t2.className = 'terminal-line out'; t3.className = 'terminal-line out success'; if (t4) t4.className = 'terminal-line hint';
+      if (cursor) cursor.classList.remove('hidden');
+      if (progressBar) { progressBar.classList.remove('fill'); void progressBar.offsetWidth; }
+
+      await typeText(t1, p.cmd, 38);
+      await new Promise(r => { setTimer(r, 260); });
+      await typeText(t2, p.out1, 18);
+      await new Promise(r => { setTimer(r, 300); });
+      if (progressBar) progressBar.classList.add('fill');
+      await typeText(t3, p.out2, 18);
+      await new Promise(r => { setTimer(r, 320); });
+      if (t4) await typeText(t4, p.hint, 16);
+      if (cursor) cursor.classList.add('hidden');
+
+      setTimer(() => {
+        if (cursor) cursor.classList.remove('hidden');
         running = false;
-        timerId = setTimeout(runTerminal, 4200);
-      }, 4200);
+        // loop: stay on same tab, restart after pause
+        setTimer(() => runCycle(tabPresets[activeTab]), 3400);
+      }, 3200);
     }
 
-    const terminalObserver = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        runTerminal();
-        terminalObserver.disconnect();
-      }
-    }, { threshold: 0.5 });
-    terminalObserver.observe(termBox);
-
-    window.addEventListener('beforeunload', () => {
-      if (timerId) clearTimeout(timerId);
-      terminalObserver.disconnect();
+    // Tabs
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const key = tab.dataset.tab;
+        if (!tabPresets[key] || key === activeTab) return;
+        activeTab = key;
+        tabs.forEach(t => {
+          const isActive = t.dataset.tab === key;
+          t.classList.toggle('active', isActive);
+          t.setAttribute('aria-selected', String(isActive));
+        });
+        clearTimers();
+        running = false;
+        if (progressBar) progressBar.classList.remove('fill');
+        runCycle(tabPresets[key]);
+        // update copy target
+        currentCmd = tabPresets[key].cmd;
+      });
     });
-  }
+
+    // Copy
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(currentCmd);
+          const orig = copyBtn.innerHTML;
+          copyBtn.classList.add('copied');
+          copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg><span>Copied</span>';
+          setTimer(() => { copyBtn.innerHTML = orig; copyBtn.classList.remove('copied'); }, 1800);
+        } catch {
+          // fallback: select t1
+          const range = document.createRange();
+          range.selectNodeContents(t1);
+          const sel = window.getSelection();
+          sel.removeAllRanges(); sel.addRange(range);
+        }
+      });
+    }
+
+    // Start: static fallback is already visible for no-JS / reduced-motion.
+    // Enhance with animation when in view.
+    if (prefersReduced) return; // leave static content, no animation nor clearing
+
+    // Prepare for animation: clear static text briefly after observation, then type
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        observer.disconnect();
+        // small delay so user sees static then typing starts
+        setTimer(() => runCycle(tabPresets[activeTab]), 400);
+      }
+    }, { threshold: 0.3 });
+    observer.observe(termBox);
+
+    window.addEventListener('beforeunload', () => { clearTimers(); try { observer.disconnect(); } catch {} });
+  })();
 </script>

@@ -78,6 +78,24 @@
             <p><code>getLocalIP()</code> · <code>FindAvailablePort()</code> · <code>RunFirewallSetup()</code> · <code>AudioEngine</code> · <code>TransferSettings</code></p>
           </div>
         </div>
+
+        <div class="arch-connector">
+          <div class="arch-connector-line"></div>
+          <span class="arch-connector-label">v2.5.0 · HMAC token rotation · activeUploads watchdog · 30-min download tokens</span>
+          <div class="arch-connector-line"></div>
+        </div>
+
+        <div class="arch-layer" style="border-left: 3px solid var(--green);">
+          <div class="arch-layer-num" style="color:var(--green)">05</div>
+          <div class="arch-layer-body">
+            <div class="arch-label" style="color:var(--green)">Security &amp; Stability — New in v2.5.0</div>
+            <div class="arch-techs">
+              <span class="tech-pill" style="border-color:var(--green); color:var(--green); background:rgba(16,217,138,.08)">HMAC</span>
+              <span class="tech-pill" style="border-color:var(--orange); color:var(--orange); background:rgba(255,138,0,.08)">watchdog</span>
+            </div>
+            <p><code>url_changed</code> · <code>token_rotated</code> events · <code>activeUploads</code> guard <code>server.go:600</code> · 5→30 min download token · heartbeat 401/403 guard — QR revokes previous, live refresh, no manual reload</p>
+          </div>
+        </div>
       </div>
 
       <div class="arch-stats">
