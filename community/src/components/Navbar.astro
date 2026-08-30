@@ -1,10 +1,11 @@
-<nav class="navbar" id="navbar">
+<nav class="navbar" id="navbar" aria-label="Primary navigation">
   <div class="nav-inner">
-    <a href="#" class="nav-logo">
-      <img src="/BeamSync/icon.png" alt="BeamSync icon" width="30" height="30">
+    <a href="#" class="nav-logo" aria-label="BeamSync home">
+      <img src="/BeamSync/icon.png" alt="" width="30" height="30" aria-hidden="true">
       BeamSync
     </a>
-    <div class="nav-links" id="nav-links">
+    <div class="nav-links" id="nav-links" role="navigation" aria-label="Primary">
+      <a href="#whats-new" class="nav-new">What's New <span class="nav-new-badge">v2.5.0</span></a>
       <a href="#features">Features</a>
       <a href="#how-it-works">Workflow</a>
       <a href="#screenshots">Screenshots</a>
@@ -13,7 +14,7 @@
       <a href="https://github.com/PranavAgarkar07/BeamSync" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/PranavAgarkar07/BeamSync/releases" target="_blank" rel="noopener"
         class="btn-dl btn-dl-pulse" id="nav-dl">
-        <svg class="dl-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <svg class="dl-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
           <polyline points="7 10 12 15 17 10" />
           <line x1="12" y1="15" x2="12" y2="3" />
@@ -21,10 +22,11 @@
         Download
       </a>
     </div>
-    <button class="nav-hamburger" id="nav-hamburger" aria-label="Toggle menu" aria-expanded="false" type="button">
+    <button class="nav-hamburger" id="nav-hamburger" aria-label="Open menu" aria-expanded="false" aria-controls="nav-links" type="button">
       <span></span><span></span><span></span>
     </button>
   </div>
+  <div class="nav-backdrop" id="nav-backdrop" aria-hidden="true"></div>
 </nav>
 
 <style>
@@ -62,9 +64,10 @@
     font-size: 1.05rem;
     color: var(--text);
     cursor: pointer;
+    flex-shrink: 0;
   }
   .nav-logo img { width: 30px; height: 30px; object-fit: contain; }
-  .nav-links { display: flex; align-items: center; gap: 8px; }
+  .nav-links { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
   .nav-links a {
     font-family: var(--fd);
     font-weight: 700;
@@ -76,6 +79,7 @@
     color: var(--muted);
     transition: color 200ms ease, border-color 200ms ease, background 200ms ease;
     position: relative;
+    white-space: nowrap;
   }
   .nav-links a::after {
     content: '';
@@ -104,6 +108,7 @@
     cursor: pointer;
     box-shadow: var(--sh-sm);
     transition: var(--t);
+    flex-shrink: 0;
   }
   .nav-hamburger span {
     display: block;
@@ -118,13 +123,52 @@
   .nav-hamburger:hover { border-color: var(--primary); box-shadow: var(--sh-md); }
   .nav-hamburger:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
   .nav-links a:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+  .nav-new-badge {
+    font-family: var(--fm);
+    font-size: .6rem;
+    font-weight: 800;
+    letter-spacing: .06em;
+    background: var(--green);
+    color: #000;
+    padding: 2px 6px;
+    margin-left: 6px;
+    vertical-align: middle;
+    border: 1px solid rgba(255,255,255,.4);
+  }
+  .nav-new { color: var(--green) !important; }
+  .nav-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    top: 100%;
+    background: rgba(0,0,0,.45);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 250ms ease;
+    z-index: 97;
+  }
+  .nav-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
 
-  @media (max-width: 900px) {
+  /* ── Intermediate: prevent horizontal overflow before hamburger kicks in ── */
+  @media (max-width: 1180px) and (min-width: 901px) {
+    .nav-inner { padding: 10px 20px; gap: 10px; }
+    .nav-links { gap: 4px; }
+    .nav-links a { font-size: .75rem; padding: 8px 10px; letter-spacing: .04em; }
+  }
+
+  @media (max-width: 1100px) {
     .nav-hamburger { display: flex; }
+    .nav-backdrop { display: block; }
     .nav-links {
       flex-direction: column;
-      position: fixed;
-      top: auto;
+      align-items: stretch;
+      position: absolute;
+      top: 100%;
       left: 0;
       right: 0;
       background: var(--bg);
@@ -134,14 +178,21 @@
       z-index: 98;
       max-height: 0;
       overflow: hidden;
+      overflow-y: hidden;
       opacity: 0;
       transform: translateY(-8px);
+      pointer-events: none;
       transition: max-height 0.35s cubic-bezier(.4,0,.2,1), opacity 0.25s ease, transform 0.3s ease;
     }
     .nav-links.open {
-      max-height: 100vh;
+      max-height: calc(100dvh - 56px);
+      max-height: calc(100vh - 56px);
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
       opacity: 1;
       transform: translateY(0);
+      pointer-events: auto;
     }
     .nav-links a {
       font-family: var(--fd);
@@ -151,12 +202,16 @@
       letter-spacing: .06em;
       padding: 14px 28px;
       border-bottom: 1px solid var(--border);
+      border-left: none;
+      border-right: none;
+      border-top: none;
       color: var(--muted);
       display: block;
     }
-    .nav-links a:last-child { border-bottom: none; }
+    .nav-links a:last-of-type { border-bottom: none; }
     .nav-links a::after { display: none; }
     .nav-links a:hover { color: var(--text); background: var(--surface); }
+    .nav-links a:active { background: var(--raised); }
     .nav-links .btn-dl {
       margin: 16px 28px;
       width: calc(100% - 56px);
@@ -167,9 +222,7 @@
 
   @media (max-width: 540px) {
     .nav-inner { padding: 12px 16px; padding-left: calc(12px + env(safe-area-inset-left, 0px)); padding-right: calc(16px + env(safe-area-inset-right, 0px)); }
-    .nav-links { left: 0; right: 0; }
-    .nav-links.open { max-height: 100vh; }
-    .nav-links a { padding: 14px 28px; }
+    .nav-links a { padding: 14px 20px; }
   }
   @media (max-width: 400px) {
     .nav-inner { padding: 10px 12px; }
@@ -187,35 +240,99 @@
     .nav-logo { font-size: .88rem; }
     .nav-logo img { width: 24px; height: 24px; }
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nav-links, .nav-backdrop, .nav-hamburger span { transition: none !important; }
+  }
 </style>
 
 <script>
   const navbar = document.getElementById('navbar');
-  window.addEventListener('scroll', () => {
-    navbar.classList.toggle('scrolled', window.scrollY > 40);
-  }, { passive: true });
-
   const btn = document.getElementById('nav-hamburger');
   const links = document.getElementById('nav-links');
-  if (btn && links) {
-    const navBar = document.getElementById('navbar');
+  const backdrop = document.getElementById('nav-backdrop');
 
-    function positionDropdown() {
-      links.style.top = navBar.getBoundingClientRect().bottom + 'px';
+  if (navbar) {
+    window.addEventListener('scroll', () => {
+      navbar.classList.toggle('scrolled', window.scrollY > 40);
+    }, { passive: true });
+  }
+
+  if (btn && links) {
+    let scrollLockY = 0;
+
+    function lockScroll() {
+      scrollLockY = window.scrollY;
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollLockY}px`;
+      document.body.style.left = '0';
+      document.body.style.right = '0';
+      document.body.style.width = '100%';
+    }
+    function unlockScroll() {
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      document.body.style.width = '';
+      window.scrollTo(0, scrollLockY);
     }
 
     function toggle(force) {
-      const open = force !== undefined ? force : !links.classList.contains('open');
-      links.classList.toggle('open', open);
-      btn.classList.toggle('open', open);
-      btn.setAttribute('aria-expanded', String(open));
-      document.body.style.overflow = open ? 'hidden' : '';
+      const willOpen = force !== undefined ? force : !links.classList.contains('open');
+      links.classList.toggle('open', willOpen);
+      if (backdrop) backdrop.classList.toggle('open', willOpen);
+      btn.classList.toggle('open', willOpen);
+      btn.setAttribute('aria-expanded', String(willOpen));
+      btn.setAttribute('aria-label', willOpen ? 'Close menu' : 'Open menu');
+
+      // only lock scroll on narrow viewports where menu is overlay
+      const isOverlay = window.innerWidth <= 1100;
+      if (isOverlay) {
+        if (willOpen) lockScroll();
+        else unlockScroll();
+      }
     }
 
-    btn.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggle();
+    });
+
+    if (backdrop) backdrop.addEventListener('click', () => toggle(false));
+
     links.querySelectorAll('a').forEach(a => a.addEventListener('click', () => toggle(false)));
-    document.addEventListener('click', e => { if (!navBar.contains(e.target)) toggle(false); });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') toggle(false); });
-    window.addEventListener('resize', () => { if (window.innerWidth > 900) toggle(false); });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && links.classList.contains('open')) {
+        toggle(false);
+        btn.focus();
+      }
+    });
+
+    // close if clicking outside navbar entirely
+    document.addEventListener('click', e => {
+      if (!navbar.contains(e.target) && links.classList.contains('open')) toggle(false);
+    });
+
+    // auto-close when crossing breakpoint to desktop
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (window.innerWidth > 1100 && links.classList.contains('open')) {
+          toggle(false);
+        }
+      }, 120);
+    });
+
+    // close on scroll on mobile to avoid stuck overlay
+    let scrollTimer;
+    window.addEventListener('scroll', () => {
+      if (links.classList.contains('open') && window.innerWidth <= 1100) {
+        clearTimeout(scrollTimer);
+        // don't auto-close, but hide backdrop flicker is handled
+      }
+    }, { passive: true });
   }
 </script>
