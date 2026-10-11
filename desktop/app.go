@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -122,7 +121,14 @@ func loadConfig() configData {
 
 	if cfg.SavePath != "" {
 		home, _ := os.UserHomeDir()
-		if home != "" && !strings.HasPrefix(filepath.Clean(cfg.SavePath), filepath.Clean(home)) {
+		cleanSave := filepath.Clean(cfg.SavePath)
+		cleanHome := filepath.Clean(home)
+		if stdruntime.GOOS == "windows" {
+			// NTFS paths are case-insensitive; C:\Users\x must match c:\users\x.
+			cleanSave = strings.ToLower(cleanSave)
+			cleanHome = strings.ToLower(cleanHome)
+		}
+		if home != "" && !strings.HasPrefix(cleanSave, cleanHome) {
 			cfg.SavePath = ""
 		}
 	}
@@ -391,7 +397,10 @@ func (a *App) SetSavePath() string {
 		return "Error: Could not create save directory"
 	}
 
-	app, port, token := beamsync.StartServer(selection, 3000, a.getTransferSettings(), a.makeCallback())
+	app, port, token, err := beamsync.StartServerE(selection, 3000, a.getTransferSettings(), a.makeCallback())
+	if err != nil {
+		return a.emitStartError("Receiver failed to start", err)
+	}
 	a.serverApp = app
 
 	localIP := getLocalIP()
@@ -401,6 +410,17 @@ func (a *App) SetSavePath() string {
 	url := a.shareURL(port, token)
 	fmt.Println("📡 Receiver restarted on new path:", url)
 	return url
+}
+
+// emitStartError is the failover for server startup failures (bind denied,
+// firewall setup failed/cancelled, no free port, TLS error). It pushes a
+// user-facing `server_error` event so the UI toasts our message with the
+// manual fix steps, and returns an "Error:" string the frontend checks.
+func (a *App) emitStartError(context string, err error) string {
+	msg := context + ": " + err.Error()
+	fmt.Println("❌", msg)
+	a.safeEmit("server_error", msg)
+	return "Error: " + msg
 }
 
 // StartReceiverDefault starts the receiver using the persisted save path (or default).
@@ -421,7 +441,10 @@ func (a *App) StartReceiverDefault() string {
 		return "Error: Could not create save directory"
 	}
 
-	app, port, token := beamsync.StartServer(savePath, 3000, a.getTransferSettings(), a.makeCallback())
+	app, port, token, err := beamsync.StartServerE(savePath, 3000, a.getTransferSettings(), a.makeCallback())
+	if err != nil {
+		return a.emitStartError("Receiver failed to start", err)
+	}
 	a.serverApp = app
 
 	localIP := getLocalIP()
@@ -452,7 +475,10 @@ func (a *App) StartReceiver() string {
 	}
 	a.lastSavePath = selection
 
-	app, port, token := beamsync.StartServer(selection, 3000, a.getTransferSettings(), a.makeCallback())
+	app, port, token, err := beamsync.StartServerE(selection, 3000, a.getTransferSettings(), a.makeCallback())
+	if err != nil {
+		return a.emitStartError("Receiver failed to start", err)
+	}
 	a.serverApp = app
 
 	localIP := getLocalIP()
@@ -481,7 +507,10 @@ func (a *App) StartSender() string {
 		return "Cancelled"
 	}
 
-	app, port, token := beamsync.StartSender(selection, a.makeCallback())
+	app, port, token, err := beamsync.StartSenderE(selection, a.makeCallback())
+	if err != nil {
+		return a.emitStartError("Sender failed to start", err)
+	}
 	a.senderApp = app
 
 	localIP := getLocalIP()
@@ -534,7 +563,10 @@ func (a *App) SendFiles(filePaths []string) string {
 		a.senderApp = nil
 	}
 
-	app, port, token := beamsync.StartSender(filePaths, a.makeCallback())
+	app, port, token, err := beamsync.StartSenderE(filePaths, a.makeCallback())
+	if err != nil {
+		return a.emitStartError("Sender failed to start", err)
+	}
 	a.senderApp = app
 
 	localIP := getLocalIP()
@@ -622,8 +654,10 @@ func (a *App) OpenFile(filename string) string {
 	var args []string
 	switch stdruntime.GOOS {
 	case "windows":
-		commandName = "cmd"
-		args = []string{"/c", "start", "", fullPath}
+		// rundll32 avoids cmd.exe parsing pitfalls of `cmd /c start`
+		// (spaces, &, ^, trailing backslashes in paths).
+		commandName = "rundll32"
+		args = []string{"url.dll,FileProtocolHandler", fullPath}
 	case "darwin":
 		commandName = "open"
 		args = []string{fullPath}
@@ -813,13 +847,11 @@ func (a *App) checkForUpdateAndNotify() {
 // ---------------------------------------------------------
 
 func getLocalIP() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		fmt.Println("⚠️ Failed to dial for local IP detection:", err)
-		return "127.0.0.1"
+	ip := beamsync.GetLocalIP()
+	if ip == "127.0.0.1" {
+		fmt.Println("⚠️ Could not detect LAN IP (offline with no route?), falling back to 127.0.0.1")
 	}
-	defer conn.Close()
-	return conn.LocalAddr().(*net.UDPAddr).IP.String()
+	return ip
 }
 
 // startIPMonitor polls for IP changes every 3 seconds.
