@@ -93,6 +93,13 @@ func loadOrCreateLocalCertificate() (tls.Certificate, error) {
 }
 
 func localCertificatePaths() (string, string, error) {
+	// os.UserConfigDir is OS-correct: %AppData% on Windows,
+	// ~/Library/Application Support on macOS, ~/.config on Linux.
+	// (Previously hardcoded $HOME/.config, which is wrong on Windows/macOS.)
+	if configDir, err := os.UserConfigDir(); err == nil && configDir != "" {
+		dir := filepath.Join(configDir, "beamsync")
+		return filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem"), nil
+	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", "", fmt.Errorf("resolve home directory for TLS certificate: %w", err)

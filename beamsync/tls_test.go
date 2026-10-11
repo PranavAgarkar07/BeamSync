@@ -6,7 +6,6 @@ import (
 	"encoding/pem"
 	"net"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -67,8 +66,10 @@ func TestLoadOrCreateLocalCertificatePersistsSecureECDSAFiles(t *testing.T) {
 		t.Fatal("persisted certificate has no DER chain")
 	}
 
-	certPath := filepath.Join(homeDir, ".config", "beamsync", "cert.pem")
-	keyPath := filepath.Join(homeDir, ".config", "beamsync", "key.pem")
+	certPath, keyPath, err := localCertificatePaths()
+	if err != nil {
+		t.Fatalf("localCertificatePaths returned error: %v", err)
+	}
 
 	keyPEM, err := os.ReadFile(keyPath)
 	if err != nil {
