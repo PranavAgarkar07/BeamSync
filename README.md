@@ -185,6 +185,11 @@ The following network types may block or limit BeamSync functionality:
 - BeamSync uses TCP ports **3000–3098** for local transfers. Ensure these ports are allowed through your firewall when necessary.
 - If a transfer fails because the selected port is unavailable or blocked, check the firewall rules for the BeamSync port range before troubleshooting the network connection further.
 - On Linux, BeamSync can automatically configure firewall rules when required through its built-in firewall setup mechanism (`ufw`, `firewalld`, or `iptables`).
+- On Windows, allow BeamSync in the **Windows Defender Firewall prompt** (Private networks) on first launch. To add the rule manually (admin PowerShell):
+  ```powershell
+  New-NetFirewallRule -DisplayName BeamSync -Direction Inbound -Protocol TCP -LocalPort 3000-3100 -Action Allow
+  ```
+- If the port looks free but binding fails on Windows (Hyper-V/Docker reserve port ranges), check exclusions with `netstat -ano | findstr 3000` and `netsh interface ipv4 show excludedportrange protocol=tcp`, then restart the app to pick another port.
 - Ensure BeamSync is allowed through your system firewall if prompted
 
 ### Troubleshooting
@@ -203,6 +208,22 @@ netstat -an | grep <port>
 
 # Confirm both devices are on the same subnet
 ip addr show | grep "inet "
+```
+
+Windows (PowerShell) equivalents:
+
+```powershell
+# Check basic network reachability
+Test-Connection <receiver-ip>
+
+# Verify BeamSync's HTTP server is responding
+Invoke-WebRequest http://<receiver-ip>:<port>/
+
+# Check if the port is listening (from the receiver)
+netstat -ano | findstr <port>
+
+# Confirm IP and subnet (compare with the URL shown in BeamSync)
+ipconfig
 ```
 
 Quick steps:
