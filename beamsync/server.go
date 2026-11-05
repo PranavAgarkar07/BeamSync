@@ -589,12 +589,7 @@ func startWatchdog(ctx context.Context, state *serverState, emit func(string, st
 }
 
 func getLocalIPForURL() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		return "127.0.0.1"
-	}
-	defer conn.Close()
-	return conn.LocalAddr().(*net.UDPAddr).IP.String()
+	return GetLocalIP()
 }
 
 func startBootstrapRotator(ctx context.Context, hs *HTTPServer, port string, emit func(string, string)) {
@@ -666,7 +661,7 @@ func logTransfer(history *TransferHistory, emit func(string, string), record Tra
 	emit("transfer_logged", string(data))
 }
 
-func StartServer(uploadDir string, startPort int, settings TransferSettings, callback EventCallback) (*HTTPServer, string, string) {
+func StartServerE(uploadDir string, startPort int, settings TransferSettings, callback EventCallback) (*HTTPServer, string, string, error) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Printf("PANIC IN StartServer: %v\n%s\n", r, debug.Stack())
@@ -674,20 +669,20 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	}()
 
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
-		return nil, "", ""
+		return nil, "", "", fmt.Errorf("cannot create save folder: %w", err)
 	}
 
 	fingerprint, err := serverTLSFingerprint()
 	if err != nil {
-		return nil, "", ""
+		return nil, "", "", fmt.Errorf("cannot prepare secure context: %w", err)
 	}
 	tokens, err := newTokenStore(fingerprint)
 	if err != nil {
-		return nil, "", ""
+		return nil, "", "", fmt.Errorf("cannot create session credentials: %w", err)
 	}
 	token, err := tokens.issue(tokenScopeBootstrap, 1, "")
 	if err != nil {
-		return nil, "", ""
+		return nil, "", "", fmt.Errorf("cannot create session credentials: %w", err)
 	}
 	emit := func(evt, data string) { safeEmit(callback, evt, data) }
 
@@ -1036,15 +1031,15 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 				portInt, listener, err = FindAvailablePort(startPort, 2, 50)
 				if err != nil {
 					cancel()
-					return nil, "", ""
+					return nil, "", "", fmt.Errorf("no free local port even after firewall setup: %w. %s", err, FirewallManualSteps())
 				}
 			} else {
 				cancel()
-				return nil, "", ""
+				return nil, "", "", fmt.Errorf("cannot open a local port (%v) and automatic firewall setup failed: %v. %s", err, fwErr, FirewallManualSteps())
 			}
 		} else {
 			cancel()
-			return nil, "", ""
+			return nil, "", "", fmt.Errorf("no free local port (TCP 3000-3100 busy): %w. Close the app using the port and retry.", err)
 		}
 	}
 	portStr := fmt.Sprintf("%d", portInt)
@@ -1060,7 +1055,7 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 	if tlsErr != nil {
 		cancel()
 		listener.Close()
-		return nil, "", ""
+		return nil, "", "", fmt.Errorf("cannot start secure listener: %w", tlsErr)
 	}
 
 	go func() {
@@ -1076,21 +1071,21 @@ func StartServer(uploadDir string, startPort int, settings TransferSettings, cal
 
 	startBootstrapRotator(ctx, httpServer, portStr, emit)
 
-	return httpServer, portStr, token
+	return httpServer, portStr, token, nil
 }
 
-func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, string, string) {
+func StartSenderE(filePaths []string, callback EventCallback) (*HTTPServer, string, string, error) {
 	fingerprint, err := serverTLSFingerprint()
 	if err != nil {
-		return nil, "", ""
+		return nil, "", "", fmt.Errorf("cannot prepare secure context: %w", err)
 	}
 	tokens, err := newTokenStore(fingerprint)
 	if err != nil {
-		return nil, "", ""
+		return nil, "", "", fmt.Errorf("cannot create session credentials: %w", err)
 	}
 	token, err := tokens.issue(tokenScopeBootstrap, 1, "")
 	if err != nil {
-		return nil, "", ""
+		return nil, "", "", fmt.Errorf("cannot create session credentials: %w", err)
 	}
 	emit := func(evt, data string) { safeEmit(callback, evt, data) }
 
@@ -1380,15 +1375,15 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 				portInt, listener, err = FindAvailablePort(3005, 2, 50)
 				if err != nil {
 					cancel()
-					return nil, "", ""
+					return nil, "", "", fmt.Errorf("no free local port even after firewall setup: %w. %s", err, FirewallManualSteps())
 				}
 			} else {
 				cancel()
-				return nil, "", ""
+				return nil, "", "", fmt.Errorf("cannot open a local port (%v) and automatic firewall setup failed: %v. %s", err, fwErr, FirewallManualSteps())
 			}
 		} else {
 			cancel()
-			return nil, "", ""
+			return nil, "", "", fmt.Errorf("no free local port (TCP 3000-3100 busy): %w. Close the app using the port and retry.", err)
 		}
 	}
 	portStr := fmt.Sprintf("%d", portInt)
@@ -1404,7 +1399,7 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 	if tlsErr != nil {
 		cancel()
 		listener.Close()
-		return nil, "", ""
+		return nil, "", "", fmt.Errorf("cannot start secure listener: %w", tlsErr)
 	}
 
 	go func() {
@@ -1415,5 +1410,5 @@ func StartSender(filePaths []string, callback EventCallback) (*HTTPServer, strin
 
 	startBootstrapRotator(ctx, httpServer, portStr, emit)
 
-	return httpServer, portStr, token
+	return httpServer, portStr, token, nil
 }

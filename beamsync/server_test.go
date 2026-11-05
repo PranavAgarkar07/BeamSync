@@ -318,9 +318,12 @@ func TestStartSenderIssuesClientBoundSingleUseDownloadToken(t *testing.T) {
 		t.Fatalf("write sender fixture: %v", err)
 	}
 
-	server, port, bootstrapToken := StartSender([]string{filePath}, nil)
+	server, port, bootstrapToken, err := StartSenderE([]string{filePath}, nil)
+	if err != nil {
+		t.Fatalf("StartSenderE returned error: %v", err)
+	}
 	if server == nil {
-		t.Fatal("StartSender returned nil server")
+		t.Fatal("StartSenderE returned nil server")
 	}
 	defer func() { _ = server.Shutdown() }() //nolint:errcheck
 	baseURL := "http://127.0.0.1:" + port
@@ -495,17 +498,20 @@ func startRawServerForTest(t *testing.T) (*HTTPServer, string, string, <-chan st
 	uploadDir := t.TempDir()
 	startPort := freePort(t)
 	events := make(chan string, 20)
-	server, port, token := StartServer(uploadDir, startPort, DefaultTransferSettings(), func(eventName, data string) {
+	server, port, token, err := StartServerE(uploadDir, startPort, DefaultTransferSettings(), func(eventName, data string) {
 		events <- eventName + "|" + data
 	})
+	if err != nil {
+		t.Fatalf("StartServerE returned error: %v", err)
+	}
 	if server == nil {
-		t.Fatal("StartServer returned nil server")
+		t.Fatal("StartServerE returned nil server")
 	}
 	if token == "" {
-		t.Fatal("StartServer returned empty token")
+		t.Fatal("StartServerE returned empty token")
 	}
 	if port != fmt.Sprint(startPort) {
-		t.Fatalf("StartServer port = %q, want %d", port, startPort)
+		t.Fatalf("StartServerE port = %q, want %d", port, startPort)
 	}
 	return server, "http://127.0.0.1:" + port, token, events, uploadDir
 }
