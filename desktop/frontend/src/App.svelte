@@ -490,6 +490,15 @@
       }
     });
 
+    // Failover: backend emits our own message (with manual fix steps) whenever
+    // the receiver/sender cannot start — bind denied, firewall setup
+    // failed/cancelled, no free port. Toast it; per-flow state is handled
+    // where the call was made.
+    EventsOn("server_error", (msg) => {
+      toast(`❌ ${msg}`, "error");
+      addSessionEntry("Server failed to start", msg, "error");
+    });
+
     await initReceiver();
     try {
       savePath = await GetSavePath();
@@ -516,7 +525,14 @@
     connectionState = "WAITING";
     playSound("startup");
     try {
-      serverUrl = await StartReceiverDefault();
+      const res = await StartReceiverDefault();
+      if (res.startsWith("Error:")) {
+        // Detail toast already came from the server_error event.
+        serverUrl = "";
+        connectionState = "DISCONNECTED";
+        return;
+      }
+      serverUrl = res;
     } catch {
       serverUrl = "";
       toast("❌ Failed to start receiver", "error");
@@ -558,6 +574,10 @@
       toast("Sender cancelled", "info");
       return;
     }
+    if (result.startsWith("Error:")) {
+      // Detail toast already came from the server_error event.
+      return;
+    }
     senderUrl = result;
     showSenderDialog = true;
     generateQR(result);
@@ -569,6 +589,10 @@
     const result = await SendFiles(filePaths);
     if (result === "Cancelled") {
       toast("Sender cancelled", "info");
+      return;
+    }
+    if (result.startsWith("Error:")) {
+      // Detail toast already came from the server_error event.
       return;
     }
     senderUrl = result;
@@ -674,7 +698,8 @@
       return;
     }
     if (result.startsWith("Error:")) {
-      toast("❌ " + result, "error");
+      // Detail toast already came from the server_error event.
+      connectionState = "DISCONNECTED";
       return;
     }
     serverUrl = result;
