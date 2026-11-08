@@ -28,7 +28,10 @@ Unicode true
 ## !define PRODUCT_EXECUTABLE  "Application.exe"      # Default "${INFO_PROJECTNAME}.exe"
 ## !define UNINST_KEY_NAME     "UninstKeyInRegistry"  # Default "${INFO_COMPANYNAME}${INFO_PRODUCTNAME}"
 ####
-## !define REQUEST_EXECUTION_LEVEL "admin"            # Default "admin"  see also https://nsis.sourceforge.io/Docs/Chapter4.html
+## Per-user install (matches wails.json nsis.installMode "currentUser"):
+## "user" avoids a UAC prompt and matches $LOCALAPPDATA below.
+## wails_tools.nsh defaults to "admin" when this is not defined.
+!define REQUEST_EXECUTION_LEVEL "user"
 ####
 ## Include the wails tools
 ####
@@ -76,7 +79,7 @@ ManifestDPIAware true
 
 Name "${INFO_PRODUCTNAME}"
 OutFile "..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe" # Name of the installer's file.
-InstallDir "$PROGRAMFILES64\${INFO_COMPANYNAME}\${INFO_PRODUCTNAME}" # Default installing folder ($PROGRAMFILES is Program Files folder).
+InstallDir "$LOCALAPPDATA\${INFO_COMPANYNAME}\${INFO_PRODUCTNAME}" # Per-user default (matches installMode "currentUser"); $PROGRAMFILES64 would require admin.
 ShowInstDetails show # This will always show the installation details.
 
 Function .onInit
@@ -86,6 +89,12 @@ FunctionEnd
 Section
     !insertmacro wails.setShellContext
 
+    # NOTE (offline installs): wails.webview2runtime runs the tiny online-only
+    # bootstrapper (tmp/MicrosoftEdgeWebview2Setup.exe), which downloads the
+    # WebView2 Runtime from Microsoft. For fully-offline machines, replace that
+    # file with the Evergreen Standalone installer
+    # (https://developer.microsoft.com/microsoft-edge/webview2/) before building,
+    # keeping the same filename, and check ExecWait's return code.
     !insertmacro wails.webview2runtime
 
     SetOutPath $INSTDIR
