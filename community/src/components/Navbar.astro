@@ -97,6 +97,19 @@
     border-color: var(--border);
   }
   .nav-links a:hover::after { width: calc(100% - 28px); left: 14px; }
+  /* ── Scrollspy active: never color-alone (bg + underline + semibold) ── */
+  .nav-links a.active {
+    color: var(--text);
+    background: rgba(255,255,255,.06);
+    border-color: var(--border);
+    font-weight: 800;
+  }
+  .nav-links a.active::after { width: calc(100% - 28px); left: 14px; }
+  .nav-links a[aria-current="true"] {
+    color: var(--text);
+    background: rgba(255,255,255,.06);
+    border-color: var(--border);
+  }
   .nav-hamburger {
     display: none;
     flex-direction: column;

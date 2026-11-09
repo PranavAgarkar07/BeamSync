@@ -1,10 +1,13 @@
 <script>
   (function () {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var hasIO = 'IntersectionObserver' in window;
+
+    if (reduceMotion) {
       document.querySelectorAll('.reveal').forEach(el => el.classList.add('visible'));
-      return;
-    }
-    const revealObserver = new IntersectionObserver(function (entries) {
+      // NOTE: no return — scrollspy below must still run for reduced-motion users.
+    } else if (hasIO) {
+      var revealObserver = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         if (entry.isIntersecting) {
           var parent = entry.target.parentElement;
@@ -21,18 +24,68 @@
       });
     }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
 
-    document.querySelectorAll('.reveal').forEach(function (el) { revealObserver.observe(el); });
+    if (hasIO && !reduceMotion) {
+      document.querySelectorAll('.reveal').forEach(function (el) { revealObserver.observe(el); });
+    }
+    } // end reveal-animation branch (scrollspy below always runs)
 
-    var sectionObserver = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (entry.isIntersecting) {
-          document.querySelectorAll('.nav-links a[href^="#"]').forEach(function (a) {
-            a.style.color = a.getAttribute('href') === '#' + entry.target.id ? 'var(--primary)' : '';
-          });
-        }
+    // ── Scrollspy: exactly one nav link active at a time ─────────────────
+    // Old code set inline `style.color` per intersecting entry with threshold 0.4.
+    // When two sections intersected (short sections, footer at page bottom),
+    // the last entry won non-deterministically — e.g. Contact stayed lit while
+    // Blog/another section was in view. Fixed with a center-band observer that
+    // only lets one section claim "active", plus class + aria-current (not color).
+    var navLinks = Array.prototype.slice.call(
+      document.querySelectorAll('.nav-links a[href^="#"]:not([href="#"])')
+    );
+    var linkById = {};
+    navLinks.forEach(function (a) {
+      var hash = a.getAttribute('href');
+      if (hash && hash.length > 1) linkById[hash.slice(1)] = a;
+      // Clear any legacy inline highlight from the old implementation.
+      a.style.color = '';
+    });
+
+    function setActiveNav(id) {
+      navLinks.forEach(function (a) {
+        var on = a.getAttribute('href') === '#' + id;
+        a.classList.toggle('active', on);
+        if (on) a.setAttribute('aria-current', 'true');
+        else a.removeAttribute('aria-current');
       });
-    }, { threshold: 0.4 });
+    }
 
-    document.querySelectorAll('section[id]').forEach(function (s) { sectionObserver.observe(s); });
+    // Click wins immediately (covers Blog/Contact and any future #id links
+    // even before the observer fires, and avoids a stale highlight).
+    navLinks.forEach(function (a) {
+      a.addEventListener('click', function () {
+        var hash = a.getAttribute('href');
+        if (hash && hash.length > 1) setActiveNav(hash.slice(1));
+      });
+    });
+
+    var spyTargets = Array.prototype.slice
+      .call(document.querySelectorAll('section[id]'))
+      .filter(function (s) { return linkById[s.id]; });
+
+    if (hasIO && spyTargets.length > 0) {
+      var sectionObserver = new IntersectionObserver(function (entries) {
+        var winner = null;
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting && (!winner || entry.intersectionRatio > winner.intersectionRatio)) {
+            winner = entry;
+          }
+        });
+        if (winner && winner.target && winner.target.id) setActiveNav(winner.target.id);
+      }, { rootMargin: '-45% 0px -50% 0px', threshold: 0 });
+
+      spyTargets.forEach(function (s) { sectionObserver.observe(s); });
+
+      // Deep-link load (e.g. /#contact): highlight without waiting for scroll.
+      if (window.location && window.location.hash) {
+        var initial = window.location.hash.slice(1);
+        if (linkById[initial]) setActiveNav(initial);
+      }
+    }
   })();
 </script>
