@@ -79,6 +79,7 @@ None. Phase 1 is fully standalone and must be done first.
 2.6 **svelte-check** — Add `svelte-check` devDependency. Verify `npx svelte-check` passes.
 
 2.7 **GitHub Actions CI** — Create `.github/workflows/ci.yml` with matrix:
+
    - `lint-go`: `(cd beamsync && golangci-lint run ./...) && (cd desktop && golangci-lint run ./...)`
    - `lint-svelte`: `npm run lint` in `desktop/frontend/`
    - `test-go`: `(cd beamsync && go test ./...) && (cd desktop && go test ./...)`
@@ -106,6 +107,18 @@ None. Phase 1 is fully standalone and must be done first.
 
 **Requirements:** TST-01, TST-02, TST-04
 
+**Plans:** 2/3 plans executed
+
+- [x] 03-01-PLAN.md
+- [ ] 03-02-PLAN.md
+- [x] 03-03-PLAN.md
+
+### Plan Progress
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 3 | 2/3 | In Progress | |
+
 > **Already delivered** (verified 2026-11-12 — do not re-plan):
 > - `TST-03` — `copyChunked` unit test exists (`beamsync/server_test.go`)
 > - `TST-05` — httptest send-receive flow exists (`beamsync/server_test.go`)
@@ -118,6 +131,7 @@ None. Phase 1 is fully standalone and must be done first.
 ### Plans
 
 3.1 **Test `eventDispatcher`** — `beamsync/event_dispatcher_test.go`:
+
    - Normal emit fires callback
    - Buffer full: verify `emit()` returns false (drop behavior) — black-box via return value + `DroppedCount()`, no internals (D-04)
    - Concurrent emit from multiple goroutines — no data race, exact drop count asserted (D-05)
@@ -125,6 +139,7 @@ None. Phase 1 is fully standalone and must be done first.
    - All in `package beamsync` per existing convention (PITFALLS.md 2a)
 
 3.2 **Test `progressWriter`** — `beamsync/progress_test.go`:
+
    - Write bytes → progress callback fires with correct `written`/`total`
    - Event name asserted per path: `upload_progress` (receive) vs `download_progress` (send) (D-08)
    - **Fix the live bug:** `download_progress` is emitted by nothing today — Phase 1 deleted `downloadProgressWriter` and `progressWriter.Write` hardcodes `"upload_progress"` (`beamsync/server.go:377`), so `App.svelte:459` never fires. Add an `eventName` field; write the failing test first (D-07)
@@ -132,17 +147,20 @@ None. Phase 1 is fully standalone and must be done first.
    - Completion: final `progress` event + `transfer_complete`
 
 3.3 **Test `copyChunked`** — `beamsync/io_helpers_test.go`:
+
    - Small file: copied fully
    - Large file (>2 chunks): chunked correctly
    - Error mid-stream: returns partial write count + error
    - Uses pipes (`io.Pipe`) — no real files
 
 3.4 **Test `desktop/app.go` logic** — `desktop/app_test.go`:
+
    - **Pure functions only** (D-10): `shareURL`, `extractTokenFromURL`, `extractPortFromURL`, `loadConfig`/`saveConfig` round-trip, `ensureSaveDir` — no Wails runtime context needed. `processEvents`/`makeCallback` are out of scope
    - Commit `desktop/frontend/dist/.gitkeep` and un-ignore that path — otherwise `go test` in `desktop/` fails to compile on a fresh clone (D-11)
    - Use `go test .` (root package) not `./...` in `desktop/` — `./...` also compiles a stray Go package inside `node_modules` (D-12)
 
 3.5 **CI hardening**:
+
    - Add `-race` to the Go test CI job — `go test ./...` without it cannot detect the data race TST-01 targets (D-13)
    - Scope the `desktop/` Go test/build/vet commands to the root package (D-12)
 
@@ -150,6 +168,8 @@ None. Phase 1 is fully standalone and must be done first.
 
 - **3.1 `eventDispatcher`** (`TST-01`) — landed in `beamsync/event_dispatcher_test.go` (2026-11-12; delivered by plan `03-01`)
 - **3.3 `copyChunked`** (`TST-03`) — exists in `beamsync/server_test.go`
+- **3.4 `desktop/app.go` logic** (`TST-04`) — landed in `desktop/app_test.go` (2026-11-12; delivered by plan `03-03` — shareURL, token/port extraction, config round-trip, all three `ensureSaveDir` branches; the `desktop/frontend/dist/.gitkeep` embed placeholder and both `.gitignore` exceptions also landed)
+- **3.5 CI hardening** (D-12, D-13) — landed in `.github/workflows/ci.yml` (2026-11-12; delivered by plan `03-01` — `-race` added to the Go test job, `desktop/` Go commands scoped to the root package)
 - **3.6 httptest send-receive flow** (`TST-05`) — exists in `beamsync/server_test.go`
 - **3.7 token auth** (`TST-06`) — exists in `beamsync/auth_tokens_test.go`
 
@@ -237,6 +257,7 @@ None. Phase 1 is fully standalone and must be done first.
 ### Plans
 
 5.1 **Create Wails store** — `desktop/frontend/src/lib/wails.js`: Svelte writable store wrapping `window.runtime.*`. Exposes:
+
    - `runtime` — the global for direct calls
    - Reactive stores for common event streams
    - Components import the store, not `window.runtime` directly
@@ -263,6 +284,7 @@ None. Phase 1 is fully standalone and must be done first.
 5.11 **Trim `App.svelte`** — After all extractions, `App.svelte` is a thin shell: global drag-and-drop, event binding orchestration, state ownership, mode routing, `svelte:window` handlers. Keep drag-and-drop in App shell (both HTML5 and Wails paths) per PITFALLS.md 3c.
 
 5.12 **Add Vitest component tests** — Test each extracted component:
+
    - `ReceiveView.svelte`: renders QR when connection established
    - `SettingsView.svelte`: toggles settings, emits change events
    - `AboutView.svelte`: displays version string
@@ -306,12 +328,14 @@ None. Phase 1 is fully standalone and must be done first.
 6.2 **Wrap errors** — Replace ad-hoc string errors like `fmt.Errorf("invalid token")` with `fmt.Errorf("%w: ...", ErrTokenInvalid, detail)` throughout `beamsync/`.
 
 6.3 **Replace `fmt.Printf` / `log.Println` with `slog`** — `beamsync/` and `desktop/`:
+
    - `slog.Info("listening", "addr", addr)` — structured fields
    - `slog.Error("upload failed", "file", name, "err", err)` — with stack-like context
    - Remove all `fmt.Printf("ERROR: ...")` patterns
    - Remove all `log.Println(...)` calls
 
 6.4 **Add structured fields** — Every log line includes:
+
    - Request ID (UUID per HTTP request, passed through context)
    - Session ID (from token, if available)
    - Component (e.g., `upload_handler`, `token_auth`, `rate_limiter`)
@@ -338,17 +362,20 @@ None. Phase 1 is fully standalone and must be done first.
 ### Plans
 
 7.1 **Release workflow** — `.github/workflows/release.yml`:
+
    - Trigger: tag push matching `v*`
    - Build matrix: ubuntu-latest, macos-latest, windows-latest
    - Steps: `wails build` per platform → `gh release create` with artifacts
    - Version from tag, validated against `wails.json` productVersion (Phase 1)
 
 7.2 **Dependabot config** — `.github/dependabot.yml`:
+
    - Go modules (`beamsync/go.mod`, `desktop/go.mod`) — weekly
    - npm (`desktop/frontend/`) — weekly
    - Group minor/patch updates, alert on major
 
 7.3 **Benchmark CI** — Add to `ci.yml`:
+
    - `go test -bench=. -benchmem ./...` in `beamsync/`
    - Output to a PR comment or workflow summary
    - Compare against previous run (store baseline in CI artifacts)
@@ -374,12 +401,14 @@ None. Phase 1 is fully standalone and must be done first.
 ### Plans
 
 8.1 **Update `ARCHITECTURE.md`** — Reflect new file structure:
+
    - List all extracted files in `beamsync/` and their responsibilities
    - Document the component tree in `desktop/frontend/src/`
    - Update the architecture diagram
    - Event flow diagram with buffer sizes and drop counters
 
 8.2 **Update `CONTRIBUTING.md`** — Match current DevEx:
+
    - Pre-commit: `golangci-lint run`, `go vet`, `go test`
    - Frontend: `npm run lint`, `npm run test`, `npm run format`
    - Branch naming: `phase-N-description`
@@ -388,12 +417,14 @@ None. Phase 1 is fully standalone and must be done first.
 8.3 **Remove duplicate firewall scripts** — Delete `beamsync/firewall_setup.sh`, `build/linux/firewall_setup.sh`. Verify `beamsync/firewall.go` is the single source of truth.
 
 8.4 **Transfer history persistence** — `beamsync/history.go`:
+
    - On `logTransfer()`: append to JSON file in XDG config dir (`os.UserConfigDir()`/beamsync/history.json)
    - On startup: load existing history from disk, merge with in-memory ring buffer
    - Max file size: 1 MB (prevent unbounded growth)
    - Rotate on file corruption (delete and start fresh)
 
 8.5 **Verify `README.md`** — Check:
+
    - Setup instructions match reality
    - Screenshots current (or flag for update)
    - Build/install instructions work with new structure
