@@ -317,8 +317,9 @@ func (a *App) emitURLChanged(url string) {
 //
 // It stores the new address and returns the refreshed share URL that the
 // desktop must publish (so the QR code and copy-link follow the new address).
-// An empty string means the address did not change and nothing needs to be
-// published.
+// An empty string means there is nothing to publish: either the address did
+// not change, or no server is listening yet (no port), in which case a
+// portless URL would be worse than no update.
 //
 // It is separate from processEvents so the URL construction can be asserted
 // directly: the event itself is emitted through the Wails runtime, which a
@@ -330,7 +331,12 @@ func (a *App) handleIPChange(currentRealIP string) string {
 	}
 	fmt.Printf("🔄 IP Change Detected! Old: %s, New: %s\n", oldIP, currentRealIP)
 	a.setCurrentIP(currentRealIP)
-	if oldToken != "" && oldPort != "" {
+	if oldPort == "" {
+		// No server is listening on this endpoint yet — publishing a URL
+		// without a port would hand the frontend an unusable address.
+		return ""
+	}
+	if oldToken != "" {
 		return a.shareURL(oldPort, oldToken)
 	}
 	return fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), currentRealIP, oldPort)
@@ -995,6 +1001,8 @@ func (a *App) resolveLocalIP() string {
 }
 
 // startIPMonitor polls for IP changes every 3 seconds.
+//
+// It reuses handleIPChange so the two IP-change paths cannot drift apart.
 func (a *App) startIPMonitor() {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
@@ -1003,21 +1011,10 @@ func (a *App) startIPMonitor() {
 		case <-a.ctx.Done():
 			return
 		case <-ticker.C:
-			newIP := a.resolveLocalIP()
-			oldIP, oldPort, oldToken := a.endpointSnapshot()
-			if oldIP != "" && newIP != oldIP {
-				fmt.Printf("🔄 Network Change! IP: %s → %s\n", oldIP, newIP)
-				a.setCurrentIP(newIP)
-				if oldPort != "" {
-					var newURL string
-					if oldToken != "" {
-						newURL = a.shareURL(oldPort, oldToken)
-					} else {
-						newURL = fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), newIP, oldPort)
-					}
-					fmt.Println("📡 Updating URL to:", newURL)
-					a.safeEmit("url_changed", newURL)
-				}
+			newURL := a.handleIPChange(a.resolveLocalIP())
+			if newURL != "" {
+				fmt.Println("📡 Updating URL to:", newURL)
+				a.emitURLChanged(newURL)
 			}
 		}
 	}

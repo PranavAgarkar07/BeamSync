@@ -972,6 +972,14 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 				if err := json.NewDecoder(part).Decode(&manifest); err == nil {
 					for _, f := range manifest {
 						fileSizes[f.Name] = f.Size
+						// The manifest may carry a path-qualified name while the
+						// multipart part name is reduced with filepath.Base.
+						// Store both forms so the lookup cannot miss.
+						if base := filepath.Base(f.Name); base != f.Name {
+							if _, exists := fileSizes[base]; !exists {
+								fileSizes[base] = f.Size
+							}
+						}
 					}
 				}
 				part.Close()

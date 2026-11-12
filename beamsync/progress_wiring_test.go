@@ -60,6 +60,42 @@ func uploadFile(t *testing.T, baseURL, token, filename string, payload []byte) {
 	}
 }
 
+// uploadFileWithManifestName posts a multipart upload whose manifest declares
+// manifestName while the part's filename is partName.
+func uploadFileWithManifestName(t *testing.T, baseURL, token, manifestName, partName string, payload []byte) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	manifest, err := writer.CreateFormField("beam_manifest")
+	if err != nil {
+		t.Fatalf("create manifest field: %v", err)
+	}
+	manifestJSON := `[{"name":"` + manifestName + `","size":` + strconv.Itoa(len(payload)) + `}]`
+	if _, err := manifest.Write([]byte(manifestJSON)); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	file, err := writer.CreateFormFile("files", partName)
+	if err != nil {
+		t.Fatalf("create file field: %v", err)
+	}
+	if _, err := file.Write(payload); err != nil {
+		t.Fatalf("write file field: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	resp, err := http.Post(baseURL+"/upload?token="+token, writer.FormDataContentType(), &body) //nolint:gosec,noctx
+	if err != nil {
+		t.Fatalf("POST /upload: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		responseBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("upload status = %d, want %d: %s", resp.StatusCode, http.StatusOK, responseBody)
+	}
+}
+
 // awaitProgressEvent waits for a progress event with the given name and
 // returns its payload. It fails if a progress event with a DIFFERENT name
 // arrives first, so a swapped event name is caught rather than waited out.
@@ -361,6 +397,49 @@ func TestReceivePathReportsDeclaredTotal(t *testing.T) {
 			}
 		case <-deadline:
 			t.Fatal("receive path emitted no completion event with the declared total within 10s")
+		}
+	}
+}
+
+// TestReceivePathFindsDeclaredSizeForPathQualifiedManifestName pins that the
+// declared size is found even when the manifest carries a path-qualified file
+// name.
+//
+// The manifest key is stored verbatim while the multipart part name is
+// reduced with filepath.Base. Without normalising both forms the lookup
+// silently misses and the progress total falls back to 0 — the indeterminate
+// upload progress bar.
+func TestReceivePathFindsDeclaredSizeForPathQualifiedManifestName(t *testing.T) {
+	t.Setenv(tlsEnvVar, "")
+	server, baseURL, token, events, _ := startServerForTest(t)
+	defer func() { _ = server.Shutdown() }() //nolint:errcheck
+
+	payload := []byte("qualified name payload")
+	// The manifest uses a path-qualified name; the multipart part uses the
+	// base name only.
+	uploadFileWithManifestName(t, baseURL, token, "sub/dir/note.txt", "note.txt", payload)
+
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case ev := <-events:
+			if !strings.HasPrefix(ev, "upload_progress|") {
+				continue
+			}
+			parts := strings.Split(ev, "|")
+			if len(parts) != 4 {
+				continue
+			}
+			total, err := strconv.ParseInt(parts[3], 10, 64)
+			if err != nil {
+				continue
+			}
+			if total != int64(len(payload)) {
+				t.Fatalf("progress event %q reports total=%d, want the declared size %d", ev, total, len(payload))
+			}
+			return
+		case <-deadline:
+			t.Fatal("receive path emitted no upload_progress event within 3s")
 		}
 	}
 }

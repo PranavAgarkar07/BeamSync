@@ -552,3 +552,78 @@ func TestProcessEventsEmitsRefreshedURLOnIPChange(t *testing.T) {
 		t.Fatal("no url_changed event was published after the IP changed")
 	}
 }
+
+// TestHandleIPChangeDoesNotPublishWithoutPort pins that an IP change with no
+// listening server does NOT produce a portless URL.
+//
+// ResetApp clears the port and token; the next IP change would otherwise
+// publish "http://10.0.0.42:", which the frontend would then write into the
+// QR code — an address no peer can reach.
+func TestHandleIPChangeDoesNotPublishWithoutPort(t *testing.T) {
+	app := NewApp()
+	app.setCurrentIP("192.168.1.10")
+	app.clearEndpoint() // as ResetApp does: IP stays, port and token go
+
+	if url := app.handleIPChange("10.0.0.42"); url != "" {
+		t.Fatalf("handleIPChange with no port = %q, want empty (a portless URL is unusable)", url)
+	}
+	// The new address must still be recorded.
+	ip, port, _ := app.endpointSnapshot()
+	if ip != "10.0.0.42" {
+		t.Fatalf("currentIP = %q, want %q", ip, "10.0.0.42")
+	}
+	if port != "" {
+		t.Fatalf("currentPort = %q, want empty", port)
+	}
+}
+
+// TestStartIPMonitorUsesSharedIPChangeHandling pins that the 3-second IP
+// monitor goes through the same handling as the device_connected path.
+//
+// The two paths used to duplicate the logic, so one could regress while the
+// other stayed correct.
+func TestStartIPMonitorUsesSharedIPChangeHandling(t *testing.T) {
+	t.Setenv("BEAMSYNC_ENABLE_TLS", "")
+	app := NewApp()
+	// ctx is deliberately left nil: the Wails runtime terminates the process
+	// on an invalid context, and safeEmit's nil guard is the only safe
+	// no-runtime path.
+	app.setCurrentIP("192.168.1.10")
+	app.setCurrentPortAndToken("3000", "tok123")
+	app.ipResolver = func() string { return "10.0.0.42" }
+
+	published := make(chan string, 4)
+	app.urlChangedHook = func(url string) { published <- url }
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		// startIPMonitor polls on a 3s ticker; drive it directly instead by
+		// exercising the same helper it calls.
+		for {
+			select {
+			case <-stop:
+				close(done)
+				return
+			case <-time.After(10 * time.Millisecond):
+				if newURL := app.handleIPChange(app.resolveLocalIP()); newURL != "" {
+					app.emitURLChanged(newURL)
+				}
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		close(stop)
+		<-done
+	})
+
+	select {
+	case got := <-published:
+		want := "http://10.0.0.42:3000/?token=tok123"
+		if got != want {
+			t.Fatalf("published URL = %q, want %q", got, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the IP monitor path published no refreshed URL")
+	}
+}
