@@ -55,6 +55,10 @@ type App struct {
 	currentIP    string
 	currentPort  string
 	currentToken string
+
+	// ipResolver overrides LAN IP detection. It exists as a test seam for the
+	// IP-change handling; nil means "use the real detector".
+	ipResolver func() string
 }
 
 // endpointSnapshot returns a consistent read of the current endpoint.
@@ -304,7 +308,7 @@ func (a *App) processEvents() {
 				return
 			}
 			if event.Name == "device_connected" {
-				currentRealIP := getLocalIP()
+				currentRealIP := a.resolveLocalIP()
 				oldIP, oldPort, oldToken := a.endpointSnapshot()
 				if oldIP != "" && oldIP != currentRealIP {
 					fmt.Printf("🔄 IP Change Detected! Old: %s, New: %s\n", oldIP, currentRealIP)
@@ -950,6 +954,18 @@ func getLocalIP() string {
 	return ip
 }
 
+// resolveLocalIP returns the host's current LAN IP.
+//
+// It is a seam so the IP-change handling in processEvents and startIPMonitor
+// can be exercised in tests: a test can point ipResolver at a fixed address
+// instead of depending on the machine's real network.
+func (a *App) resolveLocalIP() string {
+	if a.ipResolver != nil {
+		return a.ipResolver()
+	}
+	return getLocalIP()
+}
+
 // startIPMonitor polls for IP changes every 3 seconds.
 func (a *App) startIPMonitor() {
 	ticker := time.NewTicker(3 * time.Second)
@@ -959,7 +975,7 @@ func (a *App) startIPMonitor() {
 		case <-a.ctx.Done():
 			return
 		case <-ticker.C:
-			newIP := getLocalIP()
+			newIP := a.resolveLocalIP()
 			oldIP, oldPort, oldToken := a.endpointSnapshot()
 			if oldIP != "" && newIP != oldIP {
 				fmt.Printf("🔄 Network Change! IP: %s → %s\n", oldIP, newIP)

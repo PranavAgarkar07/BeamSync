@@ -172,3 +172,125 @@ func TestMultiFileSenderPathEmitsDownloadProgress(t *testing.T) {
 		t.Fatalf("download_progress event = %q, want it to name the sent file", ev)
 	}
 }
+
+// TestReceivePathEmitsCompletionProgress asserts the receive path's TERMINAL
+// progress event reports the full written length.
+//
+// The three production sites each have their own terminal emit; pinning only
+// one leaves the other two free to regress into the "progress stuck below
+// 100%" symptom.
+func TestReceivePathEmitsCompletionProgress(t *testing.T) {
+	t.Setenv(tlsEnvVar, "")
+	server, baseURL, token, events, _ := startServerForTest(t)
+	defer func() { _ = server.Shutdown() }() //nolint:errcheck
+
+	payload := []byte("hello world")
+	uploadFile(t, baseURL, token, "note.txt", payload)
+
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case ev := <-events:
+			if !strings.HasPrefix(ev, "upload_progress|") {
+				continue
+			}
+			parts := strings.Split(ev, "|")
+			if len(parts) != 4 {
+				continue
+			}
+			written, err1 := strconv.ParseInt(parts[2], 10, 64)
+			total, err2 := strconv.ParseInt(parts[3], 10, 64)
+			if err1 != nil || err2 != nil {
+				continue
+			}
+			if written == total && total == int64(len(payload)) {
+				return
+			}
+		case <-deadline:
+			t.Fatal("receive path emitted no upload_progress completion event (written == total) within 3s")
+		}
+	}
+}
+
+// TestMultiFileSenderPathEmitsCompletionProgress asserts the multi-file send
+// path's TERMINAL progress event reports the full written length.
+func TestMultiFileSenderPathEmitsCompletionProgress(t *testing.T) {
+	t.Setenv(tlsEnvVar, "")
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.bin")
+	second := filepath.Join(dir, "second.bin")
+	// Larger than copyChunked's 8MB chunk, so the transfer is written in more
+	// than one chunk. The FIRST progress event then reports written < total,
+	// which is what makes the terminal event distinguishable from ordinary
+	// progress — with a single-chunk file the first event already reports
+	// written == total and the terminal event would be unobservable.
+	payload := make([]byte, 8*1024*1024+1024)
+	for i := range payload {
+		payload[i] = byte(i % 251)
+	}
+	for _, f := range []string{first, second} {
+		if err := os.WriteFile(f, payload, 0600); err != nil {
+			t.Fatalf("write sender fixture %q: %v", f, err)
+		}
+	}
+
+	events := make(chan string, 64)
+	server, port, bootstrapToken, err := StartSenderE([]string{first, second}, func(eventName, data string) {
+		events <- eventName + "|" + data
+	})
+	if err != nil {
+		t.Fatalf("StartSenderE returned error: %v", err)
+	}
+	defer func() { _ = server.Shutdown() }() //nolint:errcheck
+	baseURL := "http://127.0.0.1:" + port + "/"
+
+	resp, err := http.Get(baseURL + "?token=" + bootstrapToken) //nolint:gosec,noctx
+	if err != nil {
+		t.Fatalf("GET sender page: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	// With TWO files the page exposes the /download/N handler, not /download.
+	idx := strings.Index(string(body), "/download/0?token=")
+	if idx == -1 {
+		t.Fatal("sender page did not include a multi-file download link")
+	}
+	rest := string(body)[idx+len("/download/0?token="):]
+	end := strings.IndexAny(rest, "'\"")
+	if end == -1 {
+		t.Fatal("multi-file download token was not terminated")
+	}
+	dlToken := rest[:end]
+
+	dlResp, err := http.Get(baseURL + "download/0?token=" + dlToken) //nolint:gosec,noctx
+	if err != nil {
+		t.Fatalf("GET download/0: %v", err)
+	}
+	_, _ = io.ReadAll(dlResp.Body)
+	dlResp.Body.Close()
+
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case ev := <-events:
+			if !strings.HasPrefix(ev, "download_progress|") {
+				continue
+			}
+			parts := strings.Split(ev, "|")
+			if len(parts) != 4 {
+				continue
+			}
+			written, err1 := strconv.ParseInt(parts[2], 10, 64)
+			total, err2 := strconv.ParseInt(parts[3], 10, 64)
+			if err1 != nil || err2 != nil {
+				continue
+			}
+			if written == total && total == int64(len(payload)) {
+				return
+			}
+		case <-deadline:
+			t.Fatal("multi-file send path emitted no download_progress completion event within 3s")
+		}
+	}
+}

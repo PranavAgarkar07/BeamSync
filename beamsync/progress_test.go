@@ -2,6 +2,8 @@ package beamsync
 
 import (
 	"bytes"
+	"io"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -416,4 +418,90 @@ func TestProgressWriterSingleWriterPerTransferPath(t *testing.T) {
 			previous = written
 		}
 	})
+}
+
+// TestEventDispatcherCloseStopsWorkerAndIsIdempotent pins the dispatcher's
+// shutdown behaviour: close() must stop the worker goroutine (no leak), must
+// be safe to call twice, and must make later emits no-ops rather than
+// panicking on a send to a closed channel.
+func TestEventDispatcherCloseStopsWorkerAndIsIdempotent(t *testing.T) {
+	before := runtime.NumGoroutine()
+
+	dispatcher := newEventDispatcher(4)
+	delivered := make(chan string, 4)
+	dispatcher.emit(eventDispatchJob{
+		emit:  func(eventName string, data string) { delivered <- eventName },
+		event: "before_close",
+		data:  "x",
+	})
+	select {
+	case <-delivered:
+	case <-time.After(time.Second):
+		t.Fatal("event was not delivered before close")
+	}
+
+	dispatcher.close()
+	// Idempotent: a second close must not panic on an already-closed channel.
+	dispatcher.close()
+
+	// Emitting after close must be a safe no-op, not a panic.
+	if dispatcher.emit(eventDispatchJob{emit: func(string, string) {}, event: "after_close"}) {
+		t.Fatal("emit after close returned true, want false")
+	}
+
+	// The worker goroutine must be gone.
+	deadline := time.Now().Add(2 * time.Second)
+	for runtime.NumGoroutine() > before {
+		if time.Now().After(deadline) {
+			t.Fatalf("goroutines did not return to baseline: before=%d now=%d", before, runtime.NumGoroutine())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// shortWriter reports a short write, as the io.Writer contract allows.
+type shortWriter struct {
+	n int
+}
+
+func (w *shortWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	w.n = len(p) / 2
+	return w.n, io.ErrShortWrite
+}
+
+// TestProgressWriterCountsBytesActuallyWritten pins that the written counter
+// tracks the bytes the destination actually accepted (n), not the length of
+// the caller's buffer.
+//
+// The send path writes into an http.ResponseWriter, which may legitimately
+// accept fewer bytes than were offered.
+func TestProgressWriterCountsBytesActuallyWritten(t *testing.T) {
+	now := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
+	sink := &shortWriter{}
+	f := &progressWriterFixture{}
+	f.writer = &progressWriter{
+		w:           sink,
+		total:       100,
+		filename:    "note.txt",
+		eventName:   "upload_progress",
+		emit:        func(event string, data string) { f.events = append(f.events, event+"|"+data) },
+		minInterval: 0,
+		now:         func() time.Time { return now },
+	}
+
+	payload := []byte("0123456789") // 10 bytes
+	if _, err := f.writer.Write(payload); err == nil {
+		t.Fatal("Write returned nil error, want io.ErrShortWrite")
+	}
+
+	// The destination accepted only half; the counter must reflect that.
+	if f.writer.written != int64(sink.n) {
+		t.Fatalf("written = %d, want %d (the bytes the destination accepted)", f.writer.written, sink.n)
+	}
+	if f.writer.written != 5 {
+		t.Fatalf("written = %d, want 5", f.writer.written)
+	}
 }

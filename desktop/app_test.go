@@ -403,3 +403,68 @@ func TestInitVersionStoresParsedVersion(t *testing.T) {
 		t.Fatalf("app.version = %q, want %q (the parsed productVersion)", app.version, expected)
 	}
 }
+
+// TestProcessEventsDetectsIPChange pins the IP-change branch of the
+// event-channel consumer: when the host's LAN address changes, the app must
+// pick up the new address and publish a refreshed URL.
+//
+// The IP detector is injected via ipResolver so the test does not depend on
+// the machine's real network.
+func TestProcessEventsDetectsIPChange(t *testing.T) {
+	app := NewApp()
+	app.setCurrentIP("192.168.1.10")
+	app.setCurrentPortAndToken("3000", "tok123")
+	app.ipResolver = func() string { return "10.0.0.42" }
+
+	done := make(chan struct{})
+	go func() {
+		app.processEvents()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		close(app.eventsClosed)
+		<-done
+	})
+
+	app.makeCallback()("device_connected", "peer")
+
+	deadline := time.After(2 * time.Second)
+	for {
+		ip, _, _ := app.endpointSnapshot()
+		if ip == "10.0.0.42" {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("currentIP = %q, want %q (the new LAN address)", ip, "10.0.0.42")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
+// TestProcessEventsKeepsIPWhenUnchanged pins that a device_connected event
+// with an UNCHANGED address does not rewrite the endpoint.
+func TestProcessEventsKeepsIPWhenUnchanged(t *testing.T) {
+	app := NewApp()
+	app.setCurrentIP("192.168.1.10")
+	app.ipResolver = func() string { return "192.168.1.10" }
+
+	done := make(chan struct{})
+	go func() {
+		app.processEvents()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		close(app.eventsClosed)
+		<-done
+	})
+
+	app.makeCallback()("device_connected", "peer")
+
+	// Give the consumer a moment, then confirm the address is untouched.
+	time.Sleep(50 * time.Millisecond)
+	ip, _, _ := app.endpointSnapshot()
+	if ip != "192.168.1.10" {
+		t.Fatalf("currentIP = %q, want %q (unchanged)", ip, "192.168.1.10")
+	}
+}
