@@ -159,7 +159,7 @@ None. Phase 1 is fully standalone and must be done first.
 
 ## Phase 4: Go Structural Refactor — `server.go` Extraction
 
-**Goal:** Split `beamsync/server.go` (1726 lines) into ~10 focused files within `package beamsync`. No behavior changes. Extract in dependency order.
+**Goal:** Split `beamsync/server.go` (1414 lines as of 2026-11-12; was 1726 when this roadmap was written — Phase 1/2 already extracted `auth_tokens.go`, `permissions.go`, `history.go`, `stats.go`, `tls.go`, `port_manager.go`, `firewall.go`) into ~10 focused files within `package beamsync`. No behavior changes. Extract in dependency order.
 
 **Requirements:** STR-01, STR-02, STR-03, STR-04, STR-05, STR-06, STR-07, STR-08, STR-09, STR-10
 
@@ -218,7 +218,7 @@ None. Phase 1 is fully standalone and must be done first.
 
 ## Phase 5: Svelte Component Split
 
-**Goal:** Split `desktop/frontend/src/App.svelte` (2160 lines) into focused components. Create shared Wails store first to avoid passing `window.runtime` as props everywhere.
+**Goal:** Split `desktop/frontend/src/App.svelte` (2232 lines as of 2026-11-12) into focused components. Create shared Wails store first to avoid passing `window.runtime` as props everywhere.
 
 **Requirements:** SVE-01, SVE-02, SVE-03, SVE-04, SVE-05, SVE-06, SVE-07, SVE-08, SVE-09
 

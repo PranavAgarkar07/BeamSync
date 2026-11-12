@@ -182,7 +182,7 @@ The following network types may block or limit BeamSync functionality:
 ### Firewall & Router Considerations
 
 - Firewalls on Linux, Windows, or macOS may block incoming connections
-- BeamSync uses TCP ports **3000–3098** for local transfers. Ensure these ports are allowed through your firewall when necessary.
+- BeamSync uses TCP ports **3000–3100** for local transfers. Ensure these ports are allowed through your firewall when necessary.
 - If a transfer fails because the selected port is unavailable or blocked, check the firewall rules for the BeamSync port range before troubleshooting the network connection further.
 - On Linux, BeamSync can automatically configure firewall rules when required through its built-in firewall setup mechanism (`ufw`, `firewalld`, or `iptables`).
 - On Windows, allow BeamSync in the **Windows Defender Firewall prompt** (Private networks) on first launch. To add the rule manually (admin PowerShell):

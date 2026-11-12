@@ -12,6 +12,26 @@ A sender can share files from their desktop to any mobile device on the same LAN
 
 **2026-07-20 — Brownfield quality overhaul.** The codebase was built fast ("vibe coded") and has accumulated significant structural debt. The goal of this milestone is to transform it into a production-quality, maintainable project without changing user-facing behavior.
 
+**2026-11-12 — Codebase analysis.** A full audit of the implementation against the tracker
+found `REQUIREMENTS.md` had every checkbox marked `[x]` since its initial commit — the tracker
+claimed 50/50 while the true figure was 13/50. Checkboxes were re-derived from the code and
+corrected; Phase 2's missing summary was written. Real completion is **21/50**.
+
+Two areas moved ahead of the roadmap and are now the de-facto baseline:
+
+- **Windows/Linux parity + failure surfacing.** Windows previously had no firewall path at all
+  (`pkexec`/`ufw`/`iptables` are Linux-only) and every startup failure returned
+  `nil, "", ""` — a silent death with no user-facing message. Now `StartServerE`/
+  `StartSenderE` return typed errors, `RunFirewallSetup` has a Windows `netsh` branch, and
+  `server_error` events toast the failure with OS-specific manual fix steps.
+- **Cross-platform correctness.** TLS certs now live in the OS config dir (`%AppData%` on
+  Windows) instead of `~/.config`; LAN IP detection falls back to interface enumeration when
+  fully offline; `OpenFile` avoids `cmd /c start` quoting hazards.
+
+These were fixes, not features — they stay inside the "quality-only" boundary of this
+milestone. They are tracked in `STATE.md` under *Planning Data Corrections*, not as new
+requirements, since the milestone's scope is structural quality rather than new behavior.
+
 ## Requirements
 
 ### Validated (already work)
@@ -34,16 +54,16 @@ A sender can share files from their desktop to any mobile device on the same LAN
 
 ### Active (to address in this milestone)
 
-- [ ] **TECH-01** — Split `beamsync/server.go` (1726 lines) into focused modules: upload handler, download handler, middleware, rate limiter, progress tracking
-- [ ] **TECH-02** — Split `desktop/frontend/src/App.svelte` (2160 lines) into focused components
+- [ ] **TECH-01** — Split `beamsync/server.go` (1414 lines) into focused modules: upload handler, download handler, middleware, rate limiter, progress tracking
+- [ ] **TECH-02** — Split `desktop/frontend/src/App.svelte` (2232 lines) into focused components
 - [ ] **TECH-03** — Add tests to `desktop/` (Go module) — currently zero coverage
 - [ ] **TECH-04** — Add tests to `desktop/frontend/` (Svelte) — currently zero coverage
-- [ ] **TECH-05** — Merge duplicate `progressWriter` / `downloadProgressWriter` types
-- [ ] **TECH-06** — Deduplicate URL construction pattern (6 copies in `desktop/app.go`)
-- [ ] **TECH-07** — Unify version string from a single source of truth
+- [ ] **TECH-05** — Merge duplicate `progressWriter` / `downloadProgressWriter` types *(done — `downloadProgressWriter` removed in `d750b19`)*
+- [ ] **TECH-06** — Deduplicate URL construction pattern (6 copies in `desktop/app.go`) *(done — `shareURL()` added in `c11f2be`)*
+- [ ] **TECH-07** — Unify version string from a single source of truth *(done — Phase 1)*
 - [ ] **TECH-08** — Establish Go error handling conventions (typed errors, consistent wrapping)
-- [ ] **TECH-09** — Add linting/formatting pipeline for frontend (ESLint, Prettier)
-- [ ] **TECH-10** — Set CI/CD with automated tests, lint, build for all platforms
+- [ ] **TECH-09** — Add linting/formatting pipeline for frontend (ESLint, Prettier) *(done — Phase 2)*
+- [ ] **TECH-10** — Set CI/CD with automated tests, lint, build for all platforms *(partial — CI lint/test/build done in Phase 2; release workflow + Dependabot outstanding)*
 - [ ] **TECH-11** — Document architecture, setup, and contribution guide
 - [ ] **TECH-12** — Address all issues from CONCERNS.md analysis
 

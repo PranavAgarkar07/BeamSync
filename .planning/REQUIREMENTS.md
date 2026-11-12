@@ -20,52 +20,52 @@
 - [x] TOL-07 — Configure GitHub Actions CI: lint → test → build (per-module)
 
 ### Phase 3: Tests Before Refactoring
-- [x] TST-01 — Add unit tests for `eventDispatcher` (normal send, full buffer drop, concurrent access)
-- [x] TST-02 — Add unit tests for `progressWriter` / `downloadProgressWriter` (write, progress events, completion)
+- [ ] TST-01 — Add unit tests for `eventDispatcher` (normal send, full buffer drop, concurrent access)
+- [ ] TST-02 — Add unit tests for `progressWriter` / `downloadProgressWriter` (write, progress events, completion)
 - [x] TST-03 — Add unit tests for `copyChunked` I/O helper
-- [x] TST-04 — Add unit tests for `desktop/app.go` URL builder, version source, event channel
+- [ ] TST-04 — Add unit tests for `desktop/app.go` URL builder, version source, event channel
 - [x] TST-05 — Add integration test for full send-receive flow via `httptest.Server`
 - [x] TST-06 — Add integration test for token auth (valid, expired, wrong scope, wrong IP)
 
 ### Phase 4: Go Structural Refactor
-- [x] STR-01 — Extract rate limiter from `server.go` into `rate_limiter.go`
-- [x] STR-02 — Extract progress tracking types into `progress.go`
+- [ ] STR-01 — Extract rate limiter from `server.go` into `rate_limiter.go`
+- [ ] STR-02 — Extract progress tracking types into `progress.go`
 - [x] STR-03 — Merge duplicate `progressWriter` / `downloadProgressWriter` into single type
-- [x] STR-04 — Extract I/O helpers into `io_helpers.go`
-- [x] STR-05 — Extract HTTP middleware into `middleware.go`
-- [x] STR-06 — Extract event dispatcher into `events.go`
-- [x] STR-07 — Extract upload handler into `upload_handler.go`
-- [x] STR-08 — Extract download handler into `download_handler.go`
-- [x] STR-09 — Trim `server.go` to orchestration only (StartServer, StartSender, route setup)
+- [ ] STR-04 — Extract I/O helpers into `io_helpers.go`
+- [ ] STR-05 — Extract HTTP middleware into `middleware.go`
+- [ ] STR-06 — Extract event dispatcher into `events.go`
+- [ ] STR-07 — Extract upload handler into `upload_handler.go`
+- [ ] STR-08 — Extract download handler into `download_handler.go`
+- [ ] STR-09 — Trim `server.go` to orchestration only (StartServer, StartSender, route setup)
 - [x] STR-10 — Deduplicate URL construction pattern — add `shareURL()` helper on App struct
 
 ### Phase 5: Svelte Component Split
-- [x] SVE-01 — Create Wails store module (`wails.js`) to centralize `window.runtime.*` access
-- [x] SVE-02 — Extract `ReceiveView.svelte` (QR display, receive controls)
-- [x] SVE-03 — Extract `SendView.svelte` (file drop area, send controls)
-- [x] SVE-04 — Extract `SettingsView.svelte` (app settings panel)
-- [x] SVE-05 — Extract `AboutView.svelte` (version, credits)
-- [x] SVE-06 — Extract `ToastManager.svelte` (notification toasts)
-- [x] SVE-07 — Extract `ProgressOverlay.svelte` (transfer progress bars)
-- [x] SVE-08 — Define event name constants in shared Go/Svelte file
-- [x] SVE-09 — Add Vitest component tests for extracted components
+- [ ] SVE-01 — Create Wails store module (`wails.js`) to centralize `window.runtime.*` access
+- [ ] SVE-02 — Extract `ReceiveView.svelte` (QR display, receive controls)
+- [ ] SVE-03 — Extract `SendView.svelte` (file drop area, send controls)
+- [ ] SVE-04 — Extract `SettingsView.svelte` (app settings panel)
+- [ ] SVE-05 — Extract `AboutView.svelte` (version, credits)
+- [ ] SVE-06 — Extract `ToastManager.svelte` (notification toasts)
+- [ ] SVE-07 — Extract `ProgressOverlay.svelte` (transfer progress bars)
+- [ ] SVE-08 — Define event name constants in shared Go/Svelte file
+- [ ] SVE-09 — Add Vitest component tests for extracted components
 
 ### Phase 6: Error Handling & Logging
 - [x] ERR-01 — Adopt Go sentinel errors for expected failure cases
-- [x] ERR-02 — Convert ad-hoc string errors to `fmt.Errorf("%w: ...")` wrapping
-- [x] ERR-03 — Replace `fmt.Printf` and `log.Println` scatter with `slog` (stdlib)
-- [x] ERR-04 — Add structured fields (request ID, session, component) to log lines
+- [ ] ERR-02 — Convert ad-hoc string errors to `fmt.Errorf("%w: ...")` wrapping
+- [ ] ERR-03 — Replace `fmt.Printf` and `log.Println` scatter with `slog` (stdlib)
+- [ ] ERR-04 — Add structured fields (request ID, session, component) to log lines
 
 ### Phase 7: CI/CD & Release
-- [x] CID-01 — GitHub Actions release workflow (tag → build matrix → GitHub Release)
-- [x] CID-02 — Dependabot config for Go modules and npm
-- [x] CID-03 — Add benchmark comparison to CI (`go test -bench=. -benchmem`)
+- [ ] CID-01 — GitHub Actions release workflow (tag → build matrix → GitHub Release)
+- [ ] CID-02 — Dependabot config for Go modules and npm
+- [ ] CID-03 — Add benchmark comparison to CI (`go test -bench=. -benchmem`)
 
 ### Phase 8: Documentation & Cleanup
-- [x] DOC-01 — Update ARCHITECTURE.md to reflect new structure
+- [ ] DOC-01 — Update ARCHITECTURE.md to reflect new structure
 - [x] DOC-02 — Update CONTRIBUTING.md to match current DevEx
-- [x] DOC-03 — Remove duplicate on-disk firewall scripts (`beamsync/firewall_setup.sh`, `build/linux/firewall_setup.sh`)
-- [x] DOC-04 — Add transfer history persistence (JSON file in XDG config dir)
+- [ ] DOC-03 — Remove duplicate on-disk firewall scripts (`beamsync/firewall_setup.sh`, `build/linux/firewall_setup.sh`)
+- [ ] DOC-04 — Add transfer history persistence (JSON file in XDG config dir)
 - [x] DOC-05 — Verify README.md matches reality
 
 ## Out of Scope
