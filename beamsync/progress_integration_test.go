@@ -24,7 +24,14 @@ func startSenderWithEvents(t *testing.T, filePath string) (*HTTPServer, string, 
 	t.Helper()
 	events := make(chan string, 64)
 	server, port, bootstrapToken, err := StartSenderE([]string{filePath}, func(eventName, data string) {
-		events <- eventName + "|" + data
+		select {
+		case events <- eventName + "|" + data:
+		default:
+			// Never block here: this callback runs on the SHARED global
+			// event dispatcher worker. A full channel would wedge that
+			// worker and hang every later event test instead of failing
+			// one cleanly.
+		}
 	})
 	if err != nil {
 		t.Fatalf("StartSenderE returned error: %v", err)

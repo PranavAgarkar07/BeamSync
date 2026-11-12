@@ -424,36 +424,46 @@ func TestProgressWriterSingleWriterPerTransferPath(t *testing.T) {
 // shutdown behaviour: close() must stop the worker goroutine (no leak), must
 // be safe to call twice, and must make later emits no-ops rather than
 // panicking on a send to a closed channel.
+//
+// The leak is detected by creating many dispatchers at once: each adds one
+// worker goroutine, so the signal is large enough that ordinary goroutine
+// churn elsewhere in the test binary cannot mask it.
 func TestEventDispatcherCloseStopsWorkerAndIsIdempotent(t *testing.T) {
-	before := runtime.NumGoroutine()
+	const dispatchers = 20
 
-	dispatcher := newEventDispatcher(4)
-	delivered := make(chan string, 4)
-	dispatcher.emit(eventDispatchJob{
-		emit:  func(eventName string, data string) { delivered <- eventName },
-		event: "before_close",
-		data:  "x",
-	})
-	select {
-	case <-delivered:
-	case <-time.After(time.Second):
-		t.Fatal("event was not delivered before close")
+	baseline := runtime.NumGoroutine()
+	created := make([]*eventDispatcher, 0, dispatchers)
+	for i := 0; i < dispatchers; i++ {
+		d := newEventDispatcher(4)
+		created = append(created, d)
 	}
 
-	dispatcher.close()
-	// Idempotent: a second close must not panic on an already-closed channel.
-	dispatcher.close()
+	// Each dispatcher owns one worker goroutine; wait for them to start.
+	deadline := time.Now().Add(2 * time.Second)
+	for runtime.NumGoroutine() < baseline+dispatchers {
+		if time.Now().After(deadline) {
+			t.Fatalf("workers did not start: baseline=%d now=%d", baseline, runtime.NumGoroutine())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	for _, d := range created {
+		d.close()
+		// Idempotent: a second close must not panic on an already-closed channel.
+		d.close()
+	}
 
 	// Emitting after close must be a safe no-op, not a panic.
-	if dispatcher.emit(eventDispatchJob{emit: func(string, string) {}, event: "after_close"}) {
+	if created[0].emit(eventDispatchJob{emit: func(string, string) {}, event: "after_close"}) {
 		t.Fatal("emit after close returned true, want false")
 	}
 
-	// The worker goroutine must be gone.
-	deadline := time.Now().Add(2 * time.Second)
-	for runtime.NumGoroutine() > before {
+	// The worker goroutines must be gone.
+	deadline = time.Now().Add(3 * time.Second)
+	for runtime.NumGoroutine() > baseline+dispatchers/2 {
 		if time.Now().After(deadline) {
-			t.Fatalf("goroutines did not return to baseline: before=%d now=%d", before, runtime.NumGoroutine())
+			t.Fatalf("goroutines did not settle after close: baseline=%d now=%d (leaked workers?)",
+				baseline, runtime.NumGoroutine())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

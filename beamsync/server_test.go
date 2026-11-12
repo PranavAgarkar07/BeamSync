@@ -497,9 +497,16 @@ func startRawServerForTest(t *testing.T) (*HTTPServer, string, string, <-chan st
 	t.Helper()
 	uploadDir := t.TempDir()
 	startPort := freePort(t)
-	events := make(chan string, 20)
+	events := make(chan string, 256)
 	server, port, token, err := StartServerE(uploadDir, startPort, DefaultTransferSettings(), func(eventName, data string) {
-		events <- eventName + "|" + data
+		select {
+		case events <- eventName + "|" + data:
+		default:
+			// Never block here: this callback runs on the SHARED global
+			// event dispatcher worker. A full channel would wedge that
+			// worker and hang every later event test instead of failing
+			// one cleanly.
+		}
 	})
 	if err != nil {
 		t.Fatalf("StartServerE returned error: %v", err)

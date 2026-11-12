@@ -1000,8 +1000,19 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 			}
 
 			diskBuf := bufio.NewWriterSize(dst, 8*1024*1024)
+			// The manifest carries each file's declared size. It was parsed
+			// above and then discarded, which left progressWriter.total at 0
+			// and made the desktop's upload progress bar unable to compute a
+			// percentage. Look it up by the ORIGINAL name (the manifest uses
+			// the client-side name, which may differ from the saved name
+			// after auto-rename).
+			declaredSize, ok := fileSizes[rawName]
+			if !ok {
+				declaredSize = fileSizes[savedName]
+			}
 			pw := &progressWriter{
 				w:           diskBuf,
+				total:       declaredSize,
 				filename:    savedName,
 				eventName:   "upload_progress",
 				emit:        emit,

@@ -121,7 +121,14 @@ func TestMultiFileSenderPathEmitsDownloadProgress(t *testing.T) {
 
 	events := make(chan string, 64)
 	server, port, bootstrapToken, err := StartSenderE([]string{first, second}, func(eventName, data string) {
-		events <- eventName + "|" + data
+		select {
+		case events <- eventName + "|" + data:
+		default:
+			// Never block here: this callback runs on the SHARED global
+			// event dispatcher worker. A full channel would wedge that
+			// worker and hang every later event test instead of failing
+			// one cleanly.
+		}
 	})
 	if err != nil {
 		t.Fatalf("StartSenderE returned error: %v", err)
@@ -236,7 +243,14 @@ func TestMultiFileSenderPathEmitsCompletionProgress(t *testing.T) {
 
 	events := make(chan string, 64)
 	server, port, bootstrapToken, err := StartSenderE([]string{first, second}, func(eventName, data string) {
-		events <- eventName + "|" + data
+		select {
+		case events <- eventName + "|" + data:
+		default:
+			// Never block here: this callback runs on the SHARED global
+			// event dispatcher worker. A full channel would wedge that
+			// worker and hang every later event test instead of failing
+			// one cleanly.
+		}
 	})
 	if err != nil {
 		t.Fatalf("StartSenderE returned error: %v", err)
@@ -291,6 +305,62 @@ func TestMultiFileSenderPathEmitsCompletionProgress(t *testing.T) {
 			}
 		case <-deadline:
 			t.Fatal("multi-file send path emitted no download_progress completion event within 3s")
+		}
+	}
+}
+
+// TestReceivePathReportsDeclaredTotal asserts the receive path reports the
+// file's DECLARED size as the progress total.
+//
+// The manifest carries each file's size and it was parsed into fileSizes —
+// then discarded, leaving progressWriter.total at 0. With total 0 the
+// desktop cannot compute a percentage and shows the upload as indeterminate.
+//
+// The fixture is larger than copyChunked's 8MB chunk so the transfer spans
+// more than one write: the first progress event then reports written < total,
+// which is what makes the terminal event distinguishable.
+func TestReceivePathReportsDeclaredTotal(t *testing.T) {
+	t.Setenv(tlsEnvVar, "")
+	server, baseURL, token, events, _ := startServerForTest(t)
+	defer func() { _ = server.Shutdown() }() //nolint:errcheck
+
+	payload := make([]byte, 8*1024*1024+1024)
+	for i := range payload {
+		payload[i] = byte(i % 251)
+	}
+	uploadFile(t, baseURL, token, "big.bin", payload)
+
+	deadline := time.After(10 * time.Second)
+	sawPartial := false
+	for {
+		select {
+		case ev := <-events:
+			if !strings.HasPrefix(ev, "upload_progress|") {
+				continue
+			}
+			parts := strings.Split(ev, "|")
+			if len(parts) != 4 {
+				continue
+			}
+			written, err1 := strconv.ParseInt(parts[2], 10, 64)
+			total, err2 := strconv.ParseInt(parts[3], 10, 64)
+			if err1 != nil || err2 != nil {
+				continue
+			}
+			if total != int64(len(payload)) {
+				t.Fatalf("progress event %q reports total=%d, want the declared size %d", ev, total, len(payload))
+			}
+			if written < total {
+				sawPartial = true
+			}
+			if written == total {
+				if !sawPartial {
+					t.Fatal("no partial progress event was seen before the completion event")
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("receive path emitted no completion event with the declared total within 10s")
 		}
 	}
 }

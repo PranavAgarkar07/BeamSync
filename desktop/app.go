@@ -59,6 +59,11 @@ type App struct {
 	// ipResolver overrides LAN IP detection. It exists as a test seam for the
 	// IP-change handling; nil means "use the real detector".
 	ipResolver func() string
+
+	// urlChangedHook observes published share URLs. It exists as a test seam:
+	// the real publish path goes through the Wails runtime, which a unit test
+	// cannot observe. nil means "no observation".
+	urlChangedHook func(string)
 }
 
 // endpointSnapshot returns a consistent read of the current endpoint.
@@ -299,6 +304,38 @@ func (a *App) startup(ctx context.Context) {
 	}
 }
 
+// emitURLChanged publishes a refreshed share URL so the desktop can update its
+// QR code and copy-link.
+func (a *App) emitURLChanged(url string) {
+	if a.urlChangedHook != nil {
+		a.urlChangedHook(url)
+	}
+	a.safeEmit("url_changed", url)
+}
+
+// handleIPChange reacts to a change in the host's LAN address.
+//
+// It stores the new address and returns the refreshed share URL that the
+// desktop must publish (so the QR code and copy-link follow the new address).
+// An empty string means the address did not change and nothing needs to be
+// published.
+//
+// It is separate from processEvents so the URL construction can be asserted
+// directly: the event itself is emitted through the Wails runtime, which a
+// unit test cannot observe.
+func (a *App) handleIPChange(currentRealIP string) string {
+	oldIP, oldPort, oldToken := a.endpointSnapshot()
+	if oldIP == "" || oldIP == currentRealIP {
+		return ""
+	}
+	fmt.Printf("🔄 IP Change Detected! Old: %s, New: %s\n", oldIP, currentRealIP)
+	a.setCurrentIP(currentRealIP)
+	if oldToken != "" && oldPort != "" {
+		return a.shareURL(oldPort, oldToken)
+	}
+	return fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), currentRealIP, oldPort)
+}
+
 // processEvents handles backend events on a safe goroutine before relaying to Wails.
 func (a *App) processEvents() {
 	for {
@@ -309,17 +346,8 @@ func (a *App) processEvents() {
 			}
 			if event.Name == "device_connected" {
 				currentRealIP := a.resolveLocalIP()
-				oldIP, oldPort, oldToken := a.endpointSnapshot()
-				if oldIP != "" && oldIP != currentRealIP {
-					fmt.Printf("🔄 IP Change Detected! Old: %s, New: %s\n", oldIP, currentRealIP)
-					a.setCurrentIP(currentRealIP)
-					var newURL string
-					if oldToken != "" && oldPort != "" {
-						newURL = a.shareURL(oldPort, oldToken)
-					} else {
-						newURL = fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), currentRealIP, oldPort)
-					}
-					a.safeEmit("url_changed", newURL)
+				if newURL := a.handleIPChange(currentRealIP); newURL != "" {
+					a.emitURLChanged(newURL)
 				}
 			}
 			if event.Name == "url_changed" || event.Name == "token_rotated" {

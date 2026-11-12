@@ -468,3 +468,87 @@ func TestProcessEventsKeepsIPWhenUnchanged(t *testing.T) {
 		t.Fatalf("currentIP = %q, want %q (unchanged)", ip, "192.168.1.10")
 	}
 }
+
+// TestProcessEventsPublishesRefreshedURLOnIPChange pins the full
+// IP-change behaviour: the app must pick up the new LAN address AND publish
+// a refreshed share URL that carries the new address together with the
+// current port and token.
+//
+// The url_changed event is what makes the desktop refresh its QR code and
+// copy-link, so emitting it with a stale address is user-visible breakage.
+func TestProcessEventsPublishesRefreshedURLOnIPChange(t *testing.T) {
+	t.Setenv("BEAMSYNC_ENABLE_TLS", "")
+	app := NewApp()
+	app.setCurrentIP("192.168.1.10")
+	app.setCurrentPortAndToken("3000", "tok123")
+	app.ipResolver = func() string { return "10.0.0.42" }
+
+	// safeEmit needs a Wails context to reach the frontend, so the refreshed
+	// URL is asserted through the endpoint state it is built from.
+	done := make(chan struct{})
+	go func() {
+		app.processEvents()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		close(app.eventsClosed)
+		<-done
+	})
+
+	// The refreshed URL is what the desktop publishes to refresh the QR code
+	// and copy-link. It must combine the NEW address with the retained port
+	// and token, in the right places.
+	url := app.handleIPChange("10.0.0.42")
+	want := "http://10.0.0.42:3000/?token=tok123"
+	if url != want {
+		t.Fatalf("refreshed URL = %q, want %q", url, want)
+	}
+	ip, _, _ := app.endpointSnapshot()
+	if ip != "10.0.0.42" {
+		t.Fatalf("currentIP = %q, want %q (the new LAN address)", ip, "10.0.0.42")
+	}
+
+	// An unchanged address must not produce a URL.
+	if got := app.handleIPChange("10.0.0.42"); got != "" {
+		t.Fatalf("handleIPChange with an unchanged address = %q, want empty", got)
+	}
+}
+
+// TestProcessEventsEmitsRefreshedURLOnIPChange pins that the IP-change
+// handling actually PUBLISHES the refreshed URL.
+//
+// handleIPChange returning the right URL is not enough — if the event were
+// never emitted, the desktop's QR code and copy-link would keep pointing at
+// the old address.
+func TestProcessEventsEmitsRefreshedURLOnIPChange(t *testing.T) {
+	t.Setenv("BEAMSYNC_ENABLE_TLS", "")
+	app := NewApp()
+	app.setCurrentIP("192.168.1.10")
+	app.setCurrentPortAndToken("3000", "tok123")
+	app.ipResolver = func() string { return "10.0.0.42" }
+
+	published := make(chan string, 4)
+	app.urlChangedHook = func(url string) { published <- url }
+
+	done := make(chan struct{})
+	go func() {
+		app.processEvents()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		close(app.eventsClosed)
+		<-done
+	})
+
+	app.makeCallback()("device_connected", "peer")
+
+	select {
+	case got := <-published:
+		want := "http://10.0.0.42:3000/?token=tok123"
+		if got != want {
+			t.Fatalf("published URL = %q, want %q", got, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no url_changed event was published after the IP changed")
+	}
+}

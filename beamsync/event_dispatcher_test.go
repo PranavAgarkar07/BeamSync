@@ -232,3 +232,29 @@ func TestEventDispatcherConcurrentEmitsExactDropAccounting(t *testing.T) {
 		t.Fatalf("DroppedCount() = %d, want %d (failed enqueues)", got, failed.Load())
 	}
 }
+
+// TestEventDispatcherCloseRacesEmitSafely pins that close() cannot race with
+// emit().
+//
+// Without the lock, a close that lands between the closed-check and the send
+// would panic with "send on closed channel". The test drives both operations
+// concurrently and fails if the dispatcher panics or drops the close.
+func TestEventDispatcherCloseRacesEmitSafely(t *testing.T) {
+	for attempt := 0; attempt < 50; attempt++ {
+		dispatcher := newEventDispatcher(8)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				dispatcher.emit(eventDispatchJob{emit: func(string, string) {}, event: "race", data: "x"})
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			dispatcher.close()
+		}()
+		wg.Wait()
+		dispatcher.close()
+	}
+}
