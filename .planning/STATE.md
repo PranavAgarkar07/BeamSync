@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 3
 current_phase_name: Tests Before Refactoring
-status: verifying
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-11-12T12:00:12.053Z"
+status: complete
+stopped_at: "Phase 3 complete — verification passed (18/18 must-haves)"
+last_updated: "2026-11-12T12:30:00.000Z"
 last_activity: 2026-11-12
-last_activity_desc: Phase 3 plan 03-02 (progressWriter tests + download_progress fix) completed
+last_activity_desc: Phase 3 complete — 24/50 requirements, verification passed 18/18
 progress:
-  total_phases: 3
+  total_phases: 8
   completed_phases: 3
   total_plans: 7
   completed_plans: 7
@@ -26,11 +26,45 @@ Phase 3: complete — 6/6 (TST-03, TST-05, TST-06 landed with the initial test s
 
 ## Current Position
 
-Phase: 3 of 8 — Tests Before Refactoring
-Plan: 03-02 of 3 in current phase — all three plans complete (03-01, 03-02, 03-03)
-Status: Phase complete — ready for verification
-Last activity: 2026-11-12 — Phase 3 plan 03-02 (progressWriter tests + download_progress fix) completed
+Phase: 3 of 8 — Tests Before Refactoring — **COMPLETE, verification passed (18/18 must-haves)**
+Plan: 3 of 3 in current phase — 03-01, 03-02, 03-03 all complete
+Status: Phase complete — next is Phase 4 (Go Structural Refactor)
+Last activity: 2026-11-12 — Phase 3 complete
 Progress: [██████████] 100%
+
+### Phase 3 outcome
+
+Test safety net delivered: **24/50 requirements complete** (was 13/50 at the start of this
+session). 85 test functions across both Go modules; `go test -race` green in both;
+`golangci-lint` clean in both; Windows cross-build OK.
+
+Live bugs found and fixed while building the net:
+- **`download_progress` was emitted by nothing.** Phase 1 deleted `downloadProgressWriter` and
+  pointed the sender at `progressWriter`, whose `Write` hardcoded `upload_progress` — so the
+  desktop send-direction panel never moved. Now `progressWriter` carries an `eventName` field
+  set per path at all three construction sites, and the send path emits a completion event.
+- **A fast send emitted zero progress events.** The send path re-seeded `lastEmit`, so a
+  transfer finishing inside the 500 ms throttle window emitted nothing at all.
+- **Data race on the shared endpoint fields.** `currentIP`/`currentPort`/`currentToken` were
+  written from three goroutines (processEvents, startIPMonitor, the Wails call handlers) and
+  read from others. Now guarded by `endpointMu` with snapshot/set accessors.
+- **`extractPortFromURL` returned `1]`** for a bracketed IPv6 host with no port.
+- **The home-directory guard used a raw string prefix**, accepting `<home>-evil` as inside home.
+- **CI was red** on `main` and `dev` — `errorlint` violations in the firewall-failover error
+  path plus a `typecheck` failure on the `/v2`-suffixed wails import. Both fixed; CI lint is
+  now clean.
+
+### Safety net quality
+
+Every production `eventName` literal is protected by an end-to-end test that drives the real
+HTTP handler — mutating any one of the three sites fails the suite. The dispatcher tests use a
+primer construction (a callback that signals entry from inside the blocking callback) so the
+drop-on-full assertion is deterministic rather than a scheduler coin-flip (measured: 197/200
+flips with a scheduler yield). Nine mutants were written and all are killed.
+
+Deferred to later phases (logged in `.planning/phases/03-tests-before-refactoring/deferred-items.md`):
+the `|`-in-filename payload ambiguity, and the Linux-only CI matrix (Phase 7) that leaves the
+Windows-only branch of `desktop/app.go` unexercised.
 
 ## Milestone: Quality Overhaul
 
