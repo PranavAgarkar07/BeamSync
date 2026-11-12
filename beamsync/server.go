@@ -1035,7 +1035,7 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 				}
 			} else {
 				cancel()
-				return nil, "", "", fmt.Errorf("cannot open a local port (%v) and automatic firewall setup failed: %v. %s", err, fwErr, FirewallManualSteps())
+				return nil, "", "", fmt.Errorf("cannot open a local port (%w) and automatic firewall setup failed: %w. %s", err, fwErr, FirewallManualSteps())
 			}
 		} else {
 			cancel()
@@ -1379,7 +1379,7 @@ func StartSenderE(filePaths []string, callback EventCallback) (*HTTPServer, stri
 				}
 			} else {
 				cancel()
-				return nil, "", "", fmt.Errorf("cannot open a local port (%v) and automatic firewall setup failed: %v. %s", err, fwErr, FirewallManualSteps())
+				return nil, "", "", fmt.Errorf("cannot open a local port (%w) and automatic firewall setup failed: %w. %s", err, fwErr, FirewallManualSteps())
 			}
 		} else {
 			cancel()
