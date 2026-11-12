@@ -47,7 +47,8 @@ Verified by inspection, not by trusting the tracker:
 
 | Claim | Reality |
 |-------|---------|
-| Phase 2 complete | True — all 7 config artifacts exist and CI passes; only `02-SUMMARY.md` was missing (now written) |
+| Phase 2 complete | True — all 7 config artifacts exist and CI passes; only `02-01-SUMMARY.md` was missing (now written) |
+| Phase 1 complete | True — but summaries were phase-level (`01-SUMMARY.md`) while GSD pairs one summary per *plan*. Split into `01-01/01-02/01-03-SUMMARY.md`; rollup renamed `01-OVERVIEW.md` so it stops double-counting (was reporting 5 summaries for 4 plans) |
 | STR-03 merge duplicate writers | True — `downloadProgressWriter` was deleted in `d750b19`; only `progressWriter` remains |
 | STR-10 `shareURL()` helper | True — added in `c11f2be` |
 | ERR-01 sentinel errors | True — `errInvalidToken`/`errExpiredToken`/`errUsedToken` in `beamsync/auth_tokens.go` |
@@ -84,7 +85,10 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 - `.planning/phases/01-foundation-event-system-version/01-01-PLAN.md` — Plan: dispatcher hardening
 - `.planning/phases/01-foundation-event-system-version/01-02-PLAN.md` — Plan: desktop channel + version
 - `.planning/phases/01-foundation-event-system-version/01-03-PLAN.md` — Plan: frontend version bridge
-- `.planning/phases/01-foundation-event-system-version/01-SUMMARY.md` — Phase 1 summary
+- `.planning/phases/01-foundation-event-system-version/01-01-SUMMARY.md` — Plan 1.1 summary (dispatcher hardening)
+- `.planning/phases/01-foundation-event-system-version/01-02-SUMMARY.md` — Plan 1.2 summary (desktop channel + version)
+- `.planning/phases/01-foundation-event-system-version/01-03-SUMMARY.md` — Plan 1.3 summary (frontend version bridge)
+- `.planning/phases/01-foundation-event-system-version/01-OVERVIEW.md` — Phase 1 rollup + decisions (renamed from `01-SUMMARY.md` so it does not double-count against the 3 plans)
 - `.planning/phases/02-tooling-devex/CONTEXT.md` — Phase 2 context
 - `.planning/phases/02-tooling-devex/02-01-PLAN.md` — Plan: all tooling configs
-- `.planning/phases/02-tooling-devex/02-SUMMARY.md` — Phase 2 summary (written 2026-11-12)
+- `.planning/phases/02-tooling-devex/02-01-SUMMARY.md` — Plan 2.1 summary (written 2026-11-12)
