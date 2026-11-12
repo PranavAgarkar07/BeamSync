@@ -11,6 +11,7 @@ import (
 func TestEventDispatcherDeliversNormalEmit(t *testing.T) {
 	t.Run("single emit delivers", func(t *testing.T) {
 		dispatcher := newEventDispatcher(4)
+		t.Cleanup(dispatcher.close)
 		delivered := make(chan string, 1)
 		dispatcher.emit(eventDispatchJob{
 			emit:  func(eventName string, data string) { delivered <- eventName + "|" + data },
@@ -30,6 +31,7 @@ func TestEventDispatcherDeliversNormalEmit(t *testing.T) {
 
 	t.Run("emits delivered in FIFO order", func(t *testing.T) {
 		dispatcher := newEventDispatcher(4)
+		t.Cleanup(dispatcher.close)
 		const deliveries = 3
 		delivered := make(chan string, deliveries)
 		emit := func(eventName string, data string) { delivered <- eventName + "|" + data }
@@ -52,6 +54,7 @@ func TestEventDispatcherDeliversNormalEmit(t *testing.T) {
 
 	t.Run("emits duplicates separately", func(t *testing.T) {
 		dispatcher := newEventDispatcher(4)
+		t.Cleanup(dispatcher.close)
 		delivered := make(chan string, 2)
 		emit := func(eventName string, data string) { delivered <- eventName + "|" + data }
 		dispatcher.emit(eventDispatchJob{emit: emit, event: "ping", data: "x"})
@@ -78,6 +81,7 @@ func TestEventDispatcherDeliversNormalEmit(t *testing.T) {
 func startBlockingEventDispatcher(t *testing.T, bufferSize int) (*eventDispatcher, chan struct{}) {
 	t.Helper()
 	dispatcher := newEventDispatcher(bufferSize)
+	t.Cleanup(dispatcher.close)
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	dispatcher.emit(eventDispatchJob{
@@ -156,6 +160,7 @@ func TestEventDispatcherDropsFromFullBuffer(t *testing.T) {
 
 func TestEventDispatcherSurvivesCallbackPanic(t *testing.T) {
 	dispatcher := newEventDispatcher(8)
+	t.Cleanup(dispatcher.close)
 	dispatcher.emit(eventDispatchJob{
 		emit:  func(eventName string, data string) { panic("boom") },
 		event: "boom",
@@ -187,6 +192,7 @@ func TestEventDispatcherConcurrentEmitsExactDropAccounting(t *testing.T) {
 	const total = emitters * emitPerEmit
 
 	dispatcher := newEventDispatcher(8)
+	t.Cleanup(dispatcher.close)
 	delivered := make(chan string, total)
 	var failed atomic.Int64
 

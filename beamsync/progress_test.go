@@ -195,12 +195,17 @@ func TestProgressWriterCoalescesWritesWithinInterval(t *testing.T) {
 }
 
 // TestProgressWriterZeroByteWriteEmitsNothing pins that a zero-byte write is a
-// no-op: inside the throttle window it emits no progress event and leaves the
-// written counter and the destination untouched.
+// no-op: it emits no progress event and leaves the written counter and the
+// destination untouched.
+//
+// The throttle window is deliberately left OPEN (lastEmit is not pinned) so the
+// assertion proves the zero-byte guard in Write, not the throttle. Pinning
+// lastEmit inside the window would make the test pass for the wrong reason.
 func TestProgressWriterZeroByteWriteEmitsNothing(t *testing.T) {
 	now := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
 	f := newProgressWriterForTest("upload_progress", "note.txt", 100, 500*time.Millisecond, func() time.Time { return now })
-	f.writer.lastEmit = now
+	// lastEmit stays at its zero value, so now.Sub(lastEmit) >= minInterval and
+	// the throttle would permit an emit if Write did not guard against n == 0.
 
 	if _, err := f.writer.Write(nil); err != nil {
 		t.Fatalf("Write returned error: %v", err)

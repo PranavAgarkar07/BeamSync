@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,6 +74,9 @@ func TestExtractPortFromURL(t *testing.T) {
 		{name: "no port means empty", raw: "http://192.168.1.10/share?token=tok", want: ""},
 		{name: "no colon means empty", raw: "192.168.1.10/share?token=tok", want: ""},
 		{name: "ipv6 literal with port", raw: "http://[::1]:8080/share?token=tok", want: "8080"},
+		{name: "ipv6 literal without port", raw: "http://[::1]/share?token=tok", want: ""},
+		{name: "ipv6 literal without port or path", raw: "http://[fe80::1]", want: ""},
+		{name: "ipv6 literal with port and no path", raw: "http://[fe80::1]:3000", want: "3000"},
 		{name: "port only", raw: "http://192.168.1.10:9090", want: "9090"},
 	}
 	for _, tc := range tests {
@@ -88,6 +92,10 @@ func TestExtractPortFromURL(t *testing.T) {
 // the way Go resolves them at runtime (XDG_CONFIG_HOME, AppData, USERPROFILE
 // fallbacks) at a single temp directory, so config round-trip tests never touch
 // the developer's real config file.
+//
+// It asserts the redirection actually took effect. Without that check a silent
+// miss (an env var Go does not consult on this platform) would let the test
+// overwrite the developer's real config while still passing.
 func redirectUserConfigHome(t *testing.T, dir string) {
 	t.Helper()
 	t.Setenv("HOME", dir)
@@ -95,6 +103,15 @@ func redirectUserConfigHome(t *testing.T, dir string) {
 	t.Setenv("APPDATA", dir)
 	t.Setenv("LOCALAPPDATA", dir)
 	t.Setenv("USERPROFILE", dir)
+
+	// configPath() must resolve inside the temp dir, not the real user dir.
+	got := configPath()
+	if !strings.HasPrefix(filepath.Clean(got), filepath.Clean(dir)) {
+		t.Fatalf("configPath() = %q, want a path under the redirected temp dir %q", got, dir)
+	}
+	if _, err := os.Stat(filepath.Dir(got)); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("stat redirected config dir %q: %v", filepath.Dir(got), err)
+	}
 }
 
 func TestLoadConfigRoundTripsSavePathInsideHome(t *testing.T) {
@@ -123,6 +140,28 @@ func TestLoadConfigClearsSavePathOutsideHome(t *testing.T) {
 	got := loadConfig()
 	if got.SavePath != "" {
 		t.Fatalf("loadConfig().SavePath = %q, want empty for out-of-home save path", got.SavePath)
+	}
+}
+
+// TestLoadConfigClearsSavePathInHomeSibling pins the path-boundary guard: a
+// sibling of the home directory that merely shares its string prefix
+// ("<home>-evil") is NOT inside the home and must be cleared.
+//
+// A raw strings.HasPrefix guard accepted "<home>-evil/..." as inside home,
+// because the prefix matched. The guard now compares on a path separator
+// boundary.
+func TestLoadConfigClearsSavePathInHomeSibling(t *testing.T) {
+	home := t.TempDir()
+	redirectUserConfigHome(t, home)
+
+	sibling := home + "-evil" + string(filepath.Separator) + "BeamSync"
+	if err := saveConfig(configData{SavePath: sibling}); err != nil {
+		t.Fatalf("saveConfig returned error: %v", err)
+	}
+
+	got := loadConfig()
+	if got.SavePath != "" {
+		t.Fatalf("loadConfig().SavePath = %q, want empty for home-sibling path %q", got.SavePath, sibling)
 	}
 }
 

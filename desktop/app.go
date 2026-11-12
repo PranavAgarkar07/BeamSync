@@ -128,7 +128,12 @@ func loadConfig() configData {
 			cleanSave = strings.ToLower(cleanSave)
 			cleanHome = strings.ToLower(cleanHome)
 		}
-		if home != "" && !strings.HasPrefix(cleanSave, cleanHome) {
+		// A raw string prefix would accept siblings of the home directory
+		// ("/home/user-evil" against home "/home/user"), so compare on a path
+		// boundary instead.
+		insideHome := cleanSave == cleanHome ||
+			strings.HasPrefix(cleanSave, cleanHome+string(filepath.Separator))
+		if home != "" && !insideHome {
 			cfg.SavePath = ""
 		}
 	}
@@ -281,6 +286,24 @@ func extractPortFromURL(raw string) string {
 	withoutScheme := raw
 	if idx := strings.Index(raw, "://"); idx != -1 {
 		withoutScheme = raw[idx+3:]
+	}
+	// Bracketed IPv6 literal: "[::1]" or "[::1]:8080". The host is everything
+	// up to the closing bracket; the port (if any) follows it.
+	if open := strings.Index(withoutScheme, "["); open != -1 {
+		rest := withoutScheme[open+1:]
+		closeIdx := strings.Index(rest, "]")
+		if closeIdx == -1 {
+			return ""
+		}
+		tail := rest[closeIdx+1:]
+		if !strings.HasPrefix(tail, ":") {
+			return ""
+		}
+		port := tail[1:]
+		if slash := strings.Index(port, "/"); slash != -1 {
+			port = port[:slash]
+		}
+		return port
 	}
 	if slash := strings.Index(withoutScheme, "/"); slash != -1 {
 		withoutScheme = withoutScheme[:slash]

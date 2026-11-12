@@ -83,6 +83,13 @@ func (d *eventDispatcher) DroppedCount() int64 {
 	return d.dropped.Load()
 }
 
+// close stops the dispatcher goroutine. It is intended for tests and for
+// shutdown paths — the worker ranges over d.queue, so without this the
+// goroutine leaks for the lifetime of the process.
+func (d *eventDispatcher) close() {
+	close(d.queue)
+}
+
 type rateLimitState struct {
 	windowStart time.Time
 	count       int
@@ -379,6 +386,11 @@ type progressWriter struct {
 
 func (pw *progressWriter) Write(p []byte) (int, error) {
 	n, err := pw.w.Write(p) //nolint:errcheck,gosec
+	if n == 0 {
+		// A zero-byte write transfers nothing; emitting progress for it would
+		// report "0 bytes written" as a real update.
+		return n, err
+	}
 	pw.written += int64(n)
 	clock := time.Now
 	if pw.now != nil {
@@ -1006,7 +1018,7 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 				continue
 			}
 
-			emit("upload_progress", fmt.Sprintf("%s|%d|%d", savedName, written, written))
+			emit(pw.eventName, fmt.Sprintf("%s|%d|%d", savedName, written, written))
 			snapshot := httpServer.stats.recordReceived(savedName, written, state.activeUploads())
 			emit("transfer_stats", transferStatsJSON(snapshot))
 
@@ -1292,7 +1304,6 @@ func StartSenderE(filePaths []string, callback EventCallback) (*HTTPServer, stri
 				filename:    filename,
 				eventName:   "download_progress",
 				emit:        emit,
-				lastEmit:    time.Now(),
 				minInterval: 500 * time.Millisecond,
 				now:         time.Now,
 			}
@@ -1303,6 +1314,10 @@ func StartSenderE(filePaths []string, callback EventCallback) (*HTTPServer, stri
 				status = TransferStatusFailed
 				errMsg = copyErr.Error()
 			} else {
+				// Completion event. Without it a fast transfer (finished inside the
+				// 500ms throttle window) emits NO progress event at all, so the
+				// desktop send-direction panel would never move.
+				emit(pw.eventName, fmt.Sprintf("%s|%d|%d", filename, written, written))
 				snapshot := httpServer.stats.recordSent(filename, written, state.activeUploads())
 				emit("transfer_stats", transferStatsJSON(snapshot))
 			}
@@ -1360,7 +1375,6 @@ func StartSenderE(filePaths []string, callback EventCallback) (*HTTPServer, stri
 					filename:    realName,
 					eventName:   "download_progress",
 					emit:        emit,
-					lastEmit:    time.Now(),
 					minInterval: 500 * time.Millisecond,
 					now:         time.Now,
 				}
@@ -1371,6 +1385,8 @@ func StartSenderE(filePaths []string, callback EventCallback) (*HTTPServer, stri
 					status = TransferStatusFailed
 					errMsg = copyErr.Error()
 				} else {
+					// Completion event — see the single-file send path for why.
+					emit(pw.eventName, fmt.Sprintf("%s|%d|%d", realName, written, written))
 					snapshot := httpServer.stats.recordSent(realName, written, state.activeUploads())
 					emit("transfer_stats", transferStatsJSON(snapshot))
 				}
