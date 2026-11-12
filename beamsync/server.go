@@ -359,22 +359,34 @@ func (s *HTTPServer) RotateBootstrapToken() (string, error) {
 	return newToken, nil
 }
 
+// progressWriter wraps the destination of a transfer and emits a progress event
+// as bytes flow through it.
+//
+// Single-writer type: Write mutates written/lastEmit and is NOT safe for
+// concurrent use. Each transfer path owns exactly one progressWriter and writes
+// to it from a single goroutine (receive path and each send path).
 type progressWriter struct {
 	w           io.Writer
 	total       int64
 	written     int64
 	filename    string
+	eventName   string
 	emit        func(string, string)
 	lastEmit    time.Time
 	minInterval time.Duration
+	now         func() time.Time
 }
 
 func (pw *progressWriter) Write(p []byte) (int, error) {
 	n, err := pw.w.Write(p) //nolint:errcheck,gosec
 	pw.written += int64(n)
-	now := time.Now()
+	clock := time.Now
+	if pw.now != nil {
+		clock = pw.now
+	}
+	now := clock()
 	if now.Sub(pw.lastEmit) >= pw.minInterval {
-		pw.emit("upload_progress", fmt.Sprintf("%s|%d|%d", pw.filename, pw.written, pw.total))
+		pw.emit(pw.eventName, fmt.Sprintf("%s|%d|%d", pw.filename, pw.written, pw.total))
 		pw.lastEmit = now
 	}
 	return n, err
@@ -957,8 +969,10 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 			pw := &progressWriter{
 				w:           diskBuf,
 				filename:    savedName,
+				eventName:   "upload_progress",
 				emit:        emit,
 				minInterval: 500 * time.Millisecond,
+				now:         time.Now,
 			}
 
 			startedAt := time.Now()
@@ -1276,9 +1290,11 @@ func StartSenderE(filePaths []string, callback EventCallback) (*HTTPServer, stri
 				w:           w,
 				total:       fileInfo.Size(),
 				filename:    filename,
+				eventName:   "download_progress",
 				emit:        emit,
 				lastEmit:    time.Now(),
 				minInterval: 500 * time.Millisecond,
+				now:         time.Now,
 			}
 			written, copyErr := copyChunked(pw, bufReader, 8*1024*1024)
 			status := TransferStatusCompleted
@@ -1342,9 +1358,11 @@ func StartSenderE(filePaths []string, callback EventCallback) (*HTTPServer, stri
 					w:           w,
 					total:       fileInfo.Size(),
 					filename:    realName,
+					eventName:   "download_progress",
 					emit:        emit,
 					lastEmit:    time.Now(),
 					minInterval: 500 * time.Millisecond,
+					now:         time.Now,
 				}
 				written, copyErr := copyChunked(pw, bufReader, 8*1024*1024)
 				status := TransferStatusCompleted
