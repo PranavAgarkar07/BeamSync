@@ -102,22 +102,32 @@ None. Phase 1 is fully standalone and must be done first.
 
 **Goal:** Write tests for all untested components *before* any file-splitting or structural changes, so regressions from Phase 4-5 are caught immediately.
 
-**Requirements:** TST-01, TST-02, TST-03, TST-04, TST-05, TST-06
+**Requirements:** TST-01, TST-02, TST-04
+
+> **Already delivered** (verified 2026-11-12 — do not re-plan):
+> - `TST-03` — `copyChunked` unit test exists (`beamsync/server_test.go`)
+> - `TST-05` — httptest send-receive flow exists (`beamsync/server_test.go`)
+> - `TST-06` — token auth tests exist (`beamsync/auth_tokens_test.go`)
+>
+> Scope for this phase is decided in `.planning/phases/03-tests-before-refactoring/03-CONTEXT.md`
+> (decision D-01). Phase 3 also carries the `download_progress` event-name fix (D-07) and
+> CI hardening (D-11, D-12, D-13).
 
 ### Plans
 
 3.1 **Test `eventDispatcher`** — `beamsync/event_dispatcher_test.go`:
    - Normal emit fires callback
-   - Buffer full: verify `emit()` returns false (drop behavior)
-   - Concurrent emit from multiple goroutines — no data race
-   - Panic recovery in callback goroutine
+   - Buffer full: verify `emit()` returns false (drop behavior) — black-box via return value + `DroppedCount()`, no internals (D-04)
+   - Concurrent emit from multiple goroutines — no data race, exact drop count asserted (D-05)
+   - Panic recovery in callback goroutine — assert the dispatcher survives and keeps delivering (D-06)
    - All in `package beamsync` per existing convention (PITFALLS.md 2a)
 
 3.2 **Test `progressWriter`** — `beamsync/progress_test.go`:
    - Write bytes → progress callback fires with correct `written`/`total`
-   - Throttling: consecutive writes within `minInterval` coalesce
+   - Event name asserted per path: `upload_progress` (receive) vs `download_progress` (send) (D-08)
+   - **Fix the live bug:** `download_progress` is emitted by nothing today — Phase 1 deleted `downloadProgressWriter` and `progressWriter.Write` hardcodes `"upload_progress"` (`beamsync/server.go:377`), so `App.svelte:459` never fires. Add an `eventName` field; write the failing test first (D-07)
+   - Throttling: split into `minInterval=0` payload test + injected-clock coalescing test (D-09)
    - Completion: final `progress` event + `transfer_complete`
-   - Test both `progressWriter` signatures (pre-merge), then merge and retest
 
 3.3 **Test `copyChunked`** — `beamsync/io_helpers_test.go`:
    - Small file: copied fully
@@ -126,34 +136,33 @@ None. Phase 1 is fully standalone and must be done first.
    - Uses pipes (`io.Pipe`) — no real files
 
 3.4 **Test `desktop/app.go` logic** — `desktop/app_test.go`:
-   - URL builder outputs correct format (before dedup, capture expected output)
-   - Version source returns value from wails.json
-   - `processEvents` goroutine dispatches events correctly
-   - Create test helpers in `export_test.go` per PITFALLS.md 2d
+   - **Pure functions only** (D-10): `shareURL`, `extractTokenFromURL`, `extractPortFromURL`, `loadConfig`/`saveConfig` round-trip, `ensureSaveDir` — no Wails runtime context needed. `processEvents`/`makeCallback` are out of scope
+   - Commit `desktop/frontend/dist/.gitkeep` and un-ignore that path — otherwise `go test` in `desktop/` fails to compile on a fresh clone (D-11)
+   - Use `go test .` (root package) not `./...` in `desktop/` — `./...` also compiles a stray Go package inside `node_modules` (D-12)
 
-3.5 **Integration test: full send-receive flow** — `beamsync/server_test.go`:
-   - Start `httptest.NewServer` → init receiver → issue token → upload file → verify on disk
-   - Same pattern as existing `server_test.go` — use `t.Cleanup(server.Close)`
-   - Don't start real servers per PITFALLS.md 2c — use `httptest.NewRecorder`/`NewRequest` style
+3.5 **CI hardening**:
+   - Add `-race` to the Go test CI job — `go test ./...` without it cannot detect the data race TST-01 targets (D-13)
+   - Scope the `desktop/` Go test/build/vet commands to the root package (D-12)
 
-3.6 **Integration test: token auth** — `beamsync/auth_tokens_test.go`:
-   - Valid token: passes middleware
-   - Expired token: 401
-   - Wrong scope: 403
-   - Wrong IP binding: 403
-   - Reuse consumed token: 401
+### Already delivered — do not re-plan
+
+- **3.3 `copyChunked`** (`TST-03`) — exists in `beamsync/server_test.go`
+- **3.6 httptest send-receive flow** (`TST-05`) — exists in `beamsync/server_test.go`
+- **3.7 token auth** (`TST-06`) — exists in `beamsync/auth_tokens_test.go`
 
 ### Dependencies
 
-- Phase 2 (Vitest scaffold exists for 3.5–3.6 test runner, linters catch test code issues)
+- Phase 2 (Vitest scaffold exists; linters catch test code issues)
 
 ### Risks
 
 - **`package beamsync` vs `package beamsync_test`** (PITFALLS.md 2a): All new test files must use `package beamsync` (not `_test` suffix) to access unexported types like `eventDispatcher`, `progressWriter`.
-- **Test helper duplication** (PITFALLS.md 2d): Create `export_test.go` early — move shared helpers there so all test files can import them.
-- **HTTP handler tests vs real server** (PITFALLS.md 2c): Match existing `httptest.NewRecorder`/`NewRequest` pattern. Add `httptest.NewServer` only for TST-05 integration test.
+- **Test helper duplication** (PITFALLS.md 2d): Not required — Go allows any test file in the same package to use helpers declared in another. The existing convention already places helpers with the file that uses them (`newTokenStoreForTest` in `auth_tokens_test.go`; `freePort`/`startServerForTest` in `server_test.go`). Skip `export_test.go` unless duplication actually appears.
+- **HTTP handler tests vs real server** (PITFALLS.md 2c): Match existing `httptest.NewRecorder`/`NewRequest` pattern. Avoid starting real listeners.
 - **Sequential test execution** (PITFALLS.md 2c): Flag any test that starts a real listener — ensure `t.Cleanup` and no port conflicts.
 - **Medium risk** — code is tested for the first time; bugs found now are expected, not alarming.
+- **`desktop/` compile blockers** (D-11, D-12): `desktop/frontend/dist` is gitignored, so `go test ./...` in `desktop/` fails to compile without a frontend build unless a `.gitkeep` placeholder is committed. `./...` also compiles a stray Go package under `node_modules` — scope desktop/ Go commands to the root package.
+- **Fix-and-test ordering** (D-07): the `download_progress` fix must be test-first — the test fails before the fix lands, so the fix is provably what turned it green.
 
 ---
 
