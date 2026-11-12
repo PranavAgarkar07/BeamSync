@@ -28,7 +28,12 @@ var soundFS embed.FS
 var wailsJSONData []byte
 
 const eventChanCapacity = 512
-const fallbackVersion = "v2.5.0"
+
+// fallbackVersion is shown when the product version cannot be read from
+// wails.json. It is deliberately NOT a real version number: claiming a
+// specific version that was never read is worse than admitting the version is
+// unknown, and it keeps the fallback distinguishable from a successful parse.
+const fallbackVersion = "v0.0.0-unknown"
 
 // App struct
 type App struct {
@@ -240,15 +245,23 @@ func parseVersion(wailsJSON []byte) (string, error) {
 	return "v" + info.Info.ProductVersion, nil
 }
 
-// startup is called when the app starts
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
-
+// initVersion reads the product version from the embedded wails.json and
+// stores it on the App. It is separate from startup so the version source can
+// be exercised without booting the whole runtime (goroutines, audio device,
+// network).
+func (a *App) initVersion() {
 	version, err := parseVersion(wailsJSONData)
 	if err != nil {
 		fmt.Println("⚠️ Failed to parse wails.json:", err)
 	}
 	a.version = version
+}
+
+// startup is called when the app starts
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+
+	a.initVersion()
 
 	go a.processEvents()
 	go a.startIPMonitor()

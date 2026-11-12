@@ -327,37 +327,44 @@ func TestMakeCallbackDropsWhenChannelFull(t *testing.T) {
 }
 
 // TestProcessEventsTracksTokenAndPortFromURLChange pins the event-channel
-// consumer: when the backend reports a new URL (url_changed / token_rotated)
+// consumer: when the backend reports a new URL (url_changed OR token_rotated)
 // the app must extract and retain the new token and port, so the QR code and
 // the copy-link stay in sync with the running server.
+//
+// Both event names are exercised — dropping either branch of the
+// "url_changed || token_rotated" condition must fail this test.
 func TestProcessEventsTracksTokenAndPortFromURLChange(t *testing.T) {
-	app := NewApp()
-	app.currentIP = "192.168.1.10"
-	done := make(chan struct{})
-	go func() {
-		app.processEvents()
-		close(done)
-	}()
-	t.Cleanup(func() {
-		close(app.eventsClosed)
-		<-done
-	})
+	for _, eventName := range []string{"url_changed", "token_rotated"} {
+		t.Run(eventName, func(t *testing.T) {
+			app := NewApp()
+			app.setCurrentIP("192.168.1.10")
+			done := make(chan struct{})
+			go func() {
+				app.processEvents()
+				close(done)
+			}()
+			t.Cleanup(func() {
+				close(app.eventsClosed)
+				<-done
+			})
 
-	app.makeCallback()("url_changed", "http://192.168.1.10:8080/?token=abc123")
+			app.makeCallback()(eventName, "http://192.168.1.10:8080/?token=abc123")
 
-	deadline := time.After(2 * time.Second)
-	for {
-		// Read through the accessor — processEvents writes these fields from
-		// its own goroutine, so a direct read would be a data race.
-		_, port, token := app.endpointSnapshot()
-		if token == "abc123" && port == "8080" {
-			return
-		}
-		select {
-		case <-deadline:
-			t.Fatalf("token = %q, port = %q, want %q and %q", token, port, "abc123", "8080")
-		case <-time.After(5 * time.Millisecond):
-		}
+			deadline := time.After(2 * time.Second)
+			for {
+				// Read through the accessor — processEvents writes these fields
+				// from its own goroutine, so a direct read would be a data race.
+				_, port, token := app.endpointSnapshot()
+				if token == "abc123" && port == "8080" {
+					return
+				}
+				select {
+				case <-deadline:
+					t.Fatalf("token = %q, port = %q, want %q and %q", token, port, "abc123", "8080")
+				case <-time.After(5 * time.Millisecond):
+				}
+			}
+		})
 	}
 }
 
@@ -376,5 +383,23 @@ func TestProcessEventsStopsWhenClosed(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("processEvents did not exit within 2s after eventsClosed was closed")
+	}
+}
+
+// TestInitVersionStoresParsedVersion pins that the startup path stores the
+// version parsed out of wails.json.
+//
+// parseVersion is tested directly elsewhere; this pins the CALL SITE, so
+// startup cannot silently fall back to the hardcoded default.
+func TestInitVersionStoresParsedVersion(t *testing.T) {
+	app := NewApp()
+	app.initVersion()
+
+	expected, err := parseVersion(wailsJSONData)
+	if err != nil {
+		t.Fatalf("parseVersion(wailsJSONData) returned error: %v", err)
+	}
+	if app.version != expected {
+		t.Fatalf("app.version = %q, want %q (the parsed productVersion)", app.version, expected)
 	}
 }
