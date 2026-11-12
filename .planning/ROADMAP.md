@@ -107,17 +107,17 @@ None. Phase 1 is fully standalone and must be done first.
 
 **Requirements:** TST-01, TST-02, TST-04
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans executed
 
 - [x] 03-01-PLAN.md
-- [ ] 03-02-PLAN.md
+- [x] 03-02-PLAN.md
 - [x] 03-03-PLAN.md
 
 ### Plan Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 3 | 2/3 | In Progress | |
+| 3 | 3/3 | Complete | 2026-11-12 |
 
 > **Already delivered** (verified 2026-11-12 — do not re-plan):
 > - `TST-03` — `copyChunked` unit test exists (`beamsync/server_test.go`)
@@ -167,6 +167,7 @@ None. Phase 1 is fully standalone and must be done first.
 ### Already delivered — do not re-plan
 
 - **3.1 `eventDispatcher`** (`TST-01`) — landed in `beamsync/event_dispatcher_test.go` (2026-11-12; delivered by plan `03-01`)
+- **3.2 `progressWriter`** (`TST-02`) — landed in `beamsync/progress_test.go` (2026-11-12; delivered by plan `03-02` — per-path event names, throttle coalescing via injected clock, zero-byte write, payload format, single-writer contract; the `download_progress` event-name fix also landed in `beamsync/server.go`)
 - **3.3 `copyChunked`** (`TST-03`) — exists in `beamsync/server_test.go`
 - **3.4 `desktop/app.go` logic** (`TST-04`) — landed in `desktop/app_test.go` (2026-11-12; delivered by plan `03-03` — shareURL, token/port extraction, config round-trip, all three `ensureSaveDir` branches; the `desktop/frontend/dist/.gitkeep` embed placeholder and both `.gitignore` exceptions also landed)
 - **3.5 CI hardening** (D-12, D-13) — landed in `.github/workflows/ci.yml` (2026-11-12; delivered by plan `03-01` — `-race` added to the Go test job, `desktop/` Go commands scoped to the root package)

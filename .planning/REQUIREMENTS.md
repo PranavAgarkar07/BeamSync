@@ -21,7 +21,7 @@
 
 ### Phase 3: Tests Before Refactoring
 - [x] TST-01 — Add unit tests for `eventDispatcher` (normal send, full buffer drop, concurrent access)
-- [ ] TST-02 — Add unit tests for `progressWriter` / `downloadProgressWriter` (write, progress events, completion)
+- [x] TST-02 — Add unit tests for `progressWriter` / `downloadProgressWriter` (write, progress events, completion)
 - [x] TST-03 — Add unit tests for `copyChunked` I/O helper
 - [x] TST-04 — Add unit tests for `desktop/app.go` URL builder, version source, event channel
 - [x] TST-05 — Add integration test for full send-receive flow via `httptest.Server`
