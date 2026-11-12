@@ -102,6 +102,8 @@ None. Phase 1 is fully standalone and must be done first.
 
 **Goal:** Write tests for all untested components *before* any file-splitting or structural changes, so regressions from Phase 4-5 are caught immediately.
 
+**UI hint**: no
+
 **Requirements:** TST-01, TST-02, TST-04
 
 > **Already delivered** (verified 2026-11-12 — do not re-plan):
