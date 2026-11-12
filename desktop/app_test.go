@@ -232,8 +232,23 @@ func TestParseVersionReadsEmbeddedWailsJSON(t *testing.T) {
 	if !strings.HasPrefix(version, "v") {
 		t.Fatalf("version = %q, want a %q prefix", version, "v")
 	}
-	if version == "v"+fallbackVersion {
-		t.Fatalf("version = %q, want the parsed productVersion rather than the fallback", version)
+}
+
+// TestParseVersionUsesProductVersionNotFallback pins that a valid payload
+// yields THAT payload's productVersion.
+//
+// Comparing against the embedded wails.json alone is not enough: its
+// productVersion currently happens to equal fallbackVersion, so a parse that
+// always returned the fallback would pass. This case uses a synthetic payload
+// with a distinguishable version, so the fallback cannot masquerade as a
+// successful parse.
+func TestParseVersionUsesProductVersionNotFallback(t *testing.T) {
+	version, err := parseVersion([]byte(`{"info":{"productVersion":"9.9.9"}}`))
+	if err != nil {
+		t.Fatalf("parseVersion returned error: %v", err)
+	}
+	if version != "v9.9.9" {
+		t.Fatalf("version = %q, want %q (the payload's productVersion, not the fallback %q)", version, "v9.9.9", fallbackVersion)
 	}
 }
 
@@ -308,5 +323,58 @@ func TestMakeCallbackDropsWhenChannelFull(t *testing.T) {
 
 	if got := len(app.eventChan); got != eventChanCapacity {
 		t.Fatalf("event channel length = %d after overflow, want %d (event dropped, not queued)", got, eventChanCapacity)
+	}
+}
+
+// TestProcessEventsTracksTokenAndPortFromURLChange pins the event-channel
+// consumer: when the backend reports a new URL (url_changed / token_rotated)
+// the app must extract and retain the new token and port, so the QR code and
+// the copy-link stay in sync with the running server.
+func TestProcessEventsTracksTokenAndPortFromURLChange(t *testing.T) {
+	app := NewApp()
+	app.currentIP = "192.168.1.10"
+	done := make(chan struct{})
+	go func() {
+		app.processEvents()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		close(app.eventsClosed)
+		<-done
+	})
+
+	app.makeCallback()("url_changed", "http://192.168.1.10:8080/?token=abc123")
+
+	deadline := time.After(2 * time.Second)
+	for {
+		// Read through the accessor — processEvents writes these fields from
+		// its own goroutine, so a direct read would be a data race.
+		_, port, token := app.endpointSnapshot()
+		if token == "abc123" && port == "8080" {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("token = %q, port = %q, want %q and %q", token, port, "abc123", "8080")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
+// TestProcessEventsStopsWhenClosed pins that the consumer goroutine exits when
+// the app shuts down, so it does not leak for the process lifetime.
+func TestProcessEventsStopsWhenClosed(t *testing.T) {
+	app := NewApp()
+	done := make(chan struct{})
+	go func() {
+		app.processEvents()
+		close(done)
+	}()
+
+	close(app.eventsClosed)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("processEvents did not exit within 2s after eventsClosed was closed")
 	}
 }

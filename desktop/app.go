@@ -40,14 +40,51 @@ type App struct {
 	eventsClosed chan struct{}
 	shutdownOnce sync.Once //nolint:unused // used in shutdown
 	lastSavePath string
+	version      string
+
+	// endpointMu guards currentIP/currentPort/currentToken. They are written
+	// from three different goroutines (processEvents, startIPMonitor, and the
+	// Wails call handlers) and read from others, so without this lock the QR
+	// URL can observe a half-updated endpoint.
+	endpointMu   sync.RWMutex
 	currentIP    string
 	currentPort  string
 	currentToken string
-	version      string
+}
+
+// endpointSnapshot returns a consistent read of the current endpoint.
+func (a *App) endpointSnapshot() (ip, port, token string) {
+	a.endpointMu.RLock()
+	defer a.endpointMu.RUnlock()
+	return a.currentIP, a.currentPort, a.currentToken
+}
+
+// setCurrentIP updates only the IP, leaving port and token untouched.
+func (a *App) setCurrentIP(ip string) {
+	a.endpointMu.Lock()
+	a.currentIP = ip
+	a.endpointMu.Unlock()
+}
+
+// setCurrentPortAndToken updates port and token together so a reader never
+// sees a port from one transfer paired with a token from another.
+func (a *App) setCurrentPortAndToken(port, token string) {
+	a.endpointMu.Lock()
+	a.currentPort = port
+	a.currentToken = token
+	a.endpointMu.Unlock()
+}
+
+// clearEndpoint resets the port and token (used when the servers stop).
+func (a *App) clearEndpoint() {
+	a.endpointMu.Lock()
+	defer a.endpointMu.Unlock()
+	a.currentPort = ""
+	a.currentToken = ""
 }
 
 func (a *App) shareURL(port, token string) string {
-	ip := a.currentIP
+	ip, _, _ := a.endpointSnapshot()
 	if ip == "" {
 		ip = getLocalIP()
 	}
@@ -55,6 +92,8 @@ func (a *App) shareURL(port, token string) string {
 }
 
 func (a *App) updateCurrentEndpoint(port, token string) {
+	a.endpointMu.Lock()
+	defer a.endpointMu.Unlock()
 	a.currentPort = port
 	if token != "" {
 		a.currentToken = token
@@ -253,25 +292,32 @@ func (a *App) processEvents() {
 			}
 			if event.Name == "device_connected" {
 				currentRealIP := getLocalIP()
-				if a.currentIP != "" && a.currentIP != currentRealIP {
-					fmt.Printf("🔄 IP Change Detected! Old: %s, New: %s\n", a.currentIP, currentRealIP)
-					a.currentIP = currentRealIP
+				oldIP, oldPort, oldToken := a.endpointSnapshot()
+				if oldIP != "" && oldIP != currentRealIP {
+					fmt.Printf("🔄 IP Change Detected! Old: %s, New: %s\n", oldIP, currentRealIP)
+					a.setCurrentIP(currentRealIP)
 					var newURL string
-					if a.currentToken != "" && a.currentPort != "" {
-						newURL = a.shareURL(a.currentPort, a.currentToken)
+					if oldToken != "" && oldPort != "" {
+						newURL = a.shareURL(oldPort, oldToken)
 					} else {
-						newURL = fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), a.currentIP, a.currentPort)
+						newURL = fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), currentRealIP, oldPort)
 					}
 					a.safeEmit("url_changed", newURL)
 				}
 			}
 			if event.Name == "url_changed" || event.Name == "token_rotated" {
 				if event.Data != "" {
-					if token := extractTokenFromURL(event.Data); token != "" {
-						a.currentToken = token
-					}
-					if port := extractPortFromURL(event.Data); port != "" {
-						a.currentPort = port
+					token := extractTokenFromURL(event.Data)
+					port := extractPortFromURL(event.Data)
+					if token != "" || port != "" {
+						_, oldPort, oldToken := a.endpointSnapshot()
+						if port == "" {
+							port = oldPort
+						}
+						if token == "" {
+							token = oldToken
+						}
+						a.setCurrentPortAndToken(port, token)
 					}
 				}
 			}
@@ -443,7 +489,7 @@ func (a *App) SetSavePath() string {
 
 	localIP := getLocalIP()
 	a.updateCurrentEndpoint(port, token)
-	a.currentIP = localIP
+	a.setCurrentIP(localIP)
 
 	url := a.shareURL(port, token)
 	fmt.Println("📡 Receiver restarted on new path:", url)
@@ -487,7 +533,7 @@ func (a *App) StartReceiverDefault() string {
 
 	localIP := getLocalIP()
 	a.updateCurrentEndpoint(port, token)
-	a.currentIP = localIP
+	a.setCurrentIP(localIP)
 
 	// Embed token in the URL so the mobile page's JS can attach it to requests.
 	url := a.shareURL(port, token)
@@ -521,7 +567,7 @@ func (a *App) StartReceiver() string {
 
 	localIP := getLocalIP()
 	a.updateCurrentEndpoint(port, token)
-	a.currentIP = localIP
+	a.setCurrentIP(localIP)
 
 	url := a.shareURL(port, token)
 	fmt.Println("📡 Receiver started:", url)
@@ -553,7 +599,7 @@ func (a *App) StartSender() string {
 
 	localIP := getLocalIP()
 	a.updateCurrentEndpoint(port, token)
-	a.currentIP = localIP
+	a.setCurrentIP(localIP)
 
 	url := a.shareURL(port, token)
 
@@ -609,7 +655,7 @@ func (a *App) SendFiles(filePaths []string) string {
 
 	localIP := getLocalIP()
 	a.updateCurrentEndpoint(port, token)
-	a.currentIP = localIP
+	a.setCurrentIP(localIP)
 
 	url := a.shareURL(port, token)
 
@@ -675,8 +721,7 @@ func (a *App) ResetApp() {
 	a.StopSender()
 	a.serverApp = nil
 	a.senderApp = nil
-	a.currentPort = ""
-	a.currentToken = ""
+	a.clearEndpoint()
 }
 
 // OpenFile opens a received file with the system default application.
@@ -902,15 +947,16 @@ func (a *App) startIPMonitor() {
 			return
 		case <-ticker.C:
 			newIP := getLocalIP()
-			if a.currentIP != "" && newIP != a.currentIP {
-				fmt.Printf("🔄 Network Change! IP: %s → %s\n", a.currentIP, newIP)
-				a.currentIP = newIP
-				if a.currentPort != "" {
+			oldIP, oldPort, oldToken := a.endpointSnapshot()
+			if oldIP != "" && newIP != oldIP {
+				fmt.Printf("🔄 Network Change! IP: %s → %s\n", oldIP, newIP)
+				a.setCurrentIP(newIP)
+				if oldPort != "" {
 					var newURL string
-					if a.currentToken != "" {
-						newURL = a.shareURL(a.currentPort, a.currentToken)
+					if oldToken != "" {
+						newURL = a.shareURL(oldPort, oldToken)
 					} else {
-						newURL = fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), a.currentIP, a.currentPort)
+						newURL = fmt.Sprintf("%s://%s:%s", beamsync.ServerScheme(), newIP, oldPort)
 					}
 					fmt.Println("📡 Updating URL to:", newURL)
 					a.safeEmit("url_changed", newURL)
