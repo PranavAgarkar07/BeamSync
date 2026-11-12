@@ -443,3 +443,86 @@ func TestReceivePathFindsDeclaredSizeForPathQualifiedManifestName(t *testing.T) 
 		}
 	}
 }
+
+// TestReceivePathGivesEachFileItsOwnDeclaredSize pins that two files uploaded
+// in the SAME request, whose names share a base name, each report their own
+// size.
+//
+// Keying the manifest by base name alone collapses them onto one entry, so
+// the second file would report the first file's size and its progress total
+// would be wrong (written > total).
+func TestReceivePathGivesEachFileItsOwnDeclaredSize(t *testing.T) {
+	t.Setenv(tlsEnvVar, "")
+	server, baseURL, token, events, _ := startServerForTest(t)
+	defer func() { _ = server.Shutdown() }() //nolint:errcheck
+
+	firstPayload := []byte("aaaaaaaaaa")     // 10 bytes
+	secondPayload := []byte("bbbbbbbbbbbbb") // 13 bytes
+
+	// ONE request, TWO parts, manifest declaring two path-qualified names
+	// that share the base name "report.txt".
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	manifest, err := writer.CreateFormField("beam_manifest")
+	if err != nil {
+		t.Fatalf("create manifest field: %v", err)
+	}
+	manifestJSON := `[{"name":"a/report.txt","size":10},{"name":"b/report.txt","size":13}]`
+	if _, err := manifest.Write([]byte(manifestJSON)); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	for _, payload := range [][]byte{firstPayload, secondPayload} {
+		file, err := writer.CreateFormFile("files", "report.txt")
+		if err != nil {
+			t.Fatalf("create file field: %v", err)
+		}
+		if _, err := file.Write(payload); err != nil {
+			t.Fatalf("write file field: %v", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	resp, err := http.Post(baseURL+"/upload?token="+token, writer.FormDataContentType(), &body) //nolint:gosec,noctx
+	if err != nil {
+		t.Fatalf("POST /upload: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		responseBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("upload status = %d, want %d: %s", resp.StatusCode, http.StatusOK, responseBody)
+	}
+
+	totals := map[int64]bool{}
+	deadline := time.After(5 * time.Second)
+	for len(totals) < 2 {
+		select {
+		case ev := <-events:
+			if !strings.HasPrefix(ev, "upload_progress|") {
+				continue
+			}
+			parts := strings.Split(ev, "|")
+			if len(parts) != 4 {
+				continue
+			}
+			written, err1 := strconv.ParseInt(parts[2], 10, 64)
+			total, err2 := strconv.ParseInt(parts[3], 10, 64)
+			if err1 != nil || err2 != nil {
+				continue
+			}
+			if written > total {
+				t.Fatalf("progress event %q reports written=%d > total=%d", ev, written, total)
+			}
+			totals[total] = true
+		case <-deadline:
+			t.Fatalf("expected totals for both uploads, saw %v", totals)
+		}
+	}
+
+	if !totals[int64(len(firstPayload))] {
+		t.Fatalf("totals %v missing the first file's size %d", totals, len(firstPayload))
+	}
+	if !totals[int64(len(secondPayload))] {
+		t.Fatalf("totals %v missing the second file's size %d", totals, len(secondPayload))
+	}
+}

@@ -947,7 +947,17 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 		netReader := bufio.NewReaderSize(r.Body, 8*1024*1024)
 		mr := multipart.NewReader(netReader, boundary)
 
-		fileSizes := make(map[string]int64)
+		// The manifest is matched to parts in ORDER, not by name alone: two
+		// parts may share a base name (a/report.txt and b/report.txt), and
+		// keying by base name alone would report one file's size for the
+		// other. Each entry is consumed by the first part whose base name
+		// matches.
+		type manifestEntry struct {
+			name string
+			size int64
+			used bool
+		}
+		var manifestEntries []manifestEntry
 		fileCount := 0
 		var parseErr error
 
@@ -971,15 +981,7 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 				}
 				if err := json.NewDecoder(part).Decode(&manifest); err == nil {
 					for _, f := range manifest {
-						fileSizes[f.Name] = f.Size
-						// The manifest may carry a path-qualified name while the
-						// multipart part name is reduced with filepath.Base.
-						// Store both forms so the lookup cannot miss.
-						if base := filepath.Base(f.Name); base != f.Name {
-							if _, exists := fileSizes[base]; !exists {
-								fileSizes[base] = f.Size
-							}
-						}
+						manifestEntries = append(manifestEntries, manifestEntry{name: f.Name, size: f.Size})
 					}
 				}
 				part.Close()
@@ -1011,12 +1013,19 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 			// The manifest carries each file's declared size. It was parsed
 			// above and then discarded, which left progressWriter.total at 0
 			// and made the desktop's upload progress bar unable to compute a
-			// percentage. Look it up by the ORIGINAL name (the manifest uses
-			// the client-side name, which may differ from the saved name
-			// after auto-rename).
-			declaredSize, ok := fileSizes[rawName]
-			if !ok {
-				declaredSize = fileSizes[savedName]
+			// percentage. Match the entry by base name, consuming it so a
+			// later part with the same base name gets its OWN size.
+			var declaredSize int64
+			for i := range manifestEntries {
+				if manifestEntries[i].used {
+					continue
+				}
+				if filepath.Base(manifestEntries[i].name) != rawName {
+					continue
+				}
+				declaredSize = manifestEntries[i].size
+				manifestEntries[i].used = true
+				break
 			}
 			pw := &progressWriter{
 				w:           diskBuf,

@@ -39,13 +39,18 @@ const fallbackVersion = "v0.0.0-unknown"
 type App struct {
 	ctx          context.Context
 	audio        *audio.AudioEngine
-	serverApp    *beamsync.HTTPServer
-	senderApp    *beamsync.HTTPServer
 	eventChan    chan EventData
 	eventsClosed chan struct{}
 	shutdownOnce sync.Once //nolint:unused // used in shutdown
-	lastSavePath string
 	version      string
+
+	// serverMu guards serverApp, senderApp and lastSavePath. Wails v2
+	// dispatches every bound-method call on its own goroutine, so these are
+	// read and written concurrently by the UI and by background work.
+	serverMu     sync.Mutex
+	serverApp    *beamsync.HTTPServer
+	senderApp    *beamsync.HTTPServer
+	lastSavePath string
 
 	// endpointMu guards currentIP/currentPort/currentToken. They are written
 	// from three different goroutines (processEvents, startIPMonitor, and the
@@ -60,10 +65,88 @@ type App struct {
 	// IP-change handling; nil means "use the real detector".
 	ipResolver func() string
 
+	// ipMonitorStop stops the IP monitor goroutine. The Wails context is the
+	// normal stop signal; this channel lets the monitor also be stopped
+	// explicitly (shutdown, tests).
+	ipMonitorStop chan struct{}
+
+	// ipPollInterval is how often startIPMonitor checks for an address change.
+	// It is a field so a test can shorten the interval and exercise the real
+	// monitor instead of a copy of it.
+	ipPollInterval time.Duration
+
 	// urlChangedHook observes published share URLs. It exists as a test seam:
 	// the real publish path goes through the Wails runtime, which a unit test
 	// cannot observe. nil means "no observation".
 	urlChangedHook func(string)
+}
+
+// receiverServer returns the running receiver server, if any.
+func (a *App) receiverServer() *beamsync.HTTPServer {
+	a.serverMu.Lock()
+	defer a.serverMu.Unlock()
+	return a.serverApp
+}
+
+// senderServer returns the running sender server, if any.
+func (a *App) senderServer() *beamsync.HTTPServer {
+	a.serverMu.Lock()
+	defer a.serverMu.Unlock()
+	return a.senderApp
+}
+
+// setReceiverServer installs (or clears) the receiver server.
+func (a *App) setReceiverServer(s *beamsync.HTTPServer) {
+	a.serverMu.Lock()
+	a.serverApp = s
+	a.serverMu.Unlock()
+}
+
+// setSenderServer installs (or clears) the sender server.
+func (a *App) setSenderServer(s *beamsync.HTTPServer) {
+	a.serverMu.Lock()
+	a.senderApp = s
+	a.serverMu.Unlock()
+}
+
+// stopReceiver shuts the receiver down and clears it, returning the shutdown
+// error. The server is taken and cleared under the lock, then shut down
+// outside it so a slow shutdown cannot block other callers.
+func (a *App) stopReceiver() error {
+	a.serverMu.Lock()
+	srv := a.serverApp
+	a.setReceiverServer(nil)
+	a.serverMu.Unlock()
+	if srv == nil {
+		return nil
+	}
+	return srv.Shutdown()
+}
+
+// stopSender shuts the sender down and clears it, returning the shutdown error.
+func (a *App) stopSender() error {
+	a.serverMu.Lock()
+	srv := a.senderApp
+	a.setSenderServer(nil)
+	a.serverMu.Unlock()
+	if srv == nil {
+		return nil
+	}
+	return srv.Shutdown()
+}
+
+// savePath returns the active save directory.
+func (a *App) savePath() string {
+	a.serverMu.Lock()
+	defer a.serverMu.Unlock()
+	return a.lastSavePath
+}
+
+// setSavePath records the active save directory.
+func (a *App) setSavePath(path string) {
+	a.serverMu.Lock()
+	a.lastSavePath = path
+	a.serverMu.Unlock()
 }
 
 // endpointSnapshot returns a consistent read of the current endpoint.
@@ -142,8 +225,9 @@ type ReceivedFile struct {
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
-		eventChan:    make(chan EventData, eventChanCapacity),
-		eventsClosed: make(chan struct{}),
+		eventChan:     make(chan EventData, eventChanCapacity),
+		eventsClosed:  make(chan struct{}),
+		ipMonitorStop: make(chan struct{}),
 	}
 }
 
@@ -351,10 +435,7 @@ func (a *App) processEvents() {
 				return
 			}
 			if event.Name == "device_connected" {
-				currentRealIP := a.resolveLocalIP()
-				if newURL := a.handleIPChange(currentRealIP); newURL != "" {
-					a.emitURLChanged(newURL)
-				}
+				a.pollIPChange()
 			}
 			if event.Name == "url_changed" || event.Name == "token_rotated" {
 				if event.Data != "" {
@@ -444,19 +525,20 @@ func (a *App) safeEmit(eventName string, data interface{}) {
 // shutdown is called when the app is closing.
 func (a *App) shutdown(ctx context.Context) { //nolint:unused // wails lifecycle
 	a.shutdownOnce.Do(func() {
-		if a.serverApp != nil {
+		if a.receiverServer() != nil {
 			fmt.Println("🛑 Shutting down receiver server...")
-			if err := a.serverApp.Shutdown(); err != nil {
+			if err := a.stopReceiver(); err != nil {
 				fmt.Println("⚠️ Server shutdown error:", err)
 			}
 		}
-		if a.senderApp != nil {
+		if a.senderServer() != nil {
 			fmt.Println("🛑 Shutting down sender server...")
-			if err := a.senderApp.Shutdown(); err != nil {
+			if err := a.stopSender(); err != nil {
 				fmt.Println("⚠️ Sender shutdown error:", err)
 			}
 		}
 		close(a.eventsClosed)
+		close(a.ipMonitorStop)
 	})
 }
 
@@ -491,12 +573,12 @@ func (a *App) makeCallback() beamsync.EventCallback {
 
 // GetSavePath returns the current save path. Reads from config or falls back to default.
 func (a *App) GetSavePath() string {
-	if a.lastSavePath != "" {
-		return a.lastSavePath
+	if p := a.savePath(); p != "" {
+		return p
 	}
 	cfg := loadConfig()
 	if cfg.SavePath != "" {
-		a.lastSavePath = cfg.SavePath
+		a.setSavePath(cfg.SavePath)
 		return cfg.SavePath
 	}
 	return defaultSavePath()
@@ -518,14 +600,11 @@ func (a *App) SetSavePath() string {
 	if err := saveConfig(cfg); err != nil {
 		fmt.Println("⚠️ Failed to save config:", err)
 	}
-	a.lastSavePath = selection
+	a.setSavePath(selection)
 	fmt.Printf("📁 Save path changed to: %s\n", selection)
 
 	// Restart receiver on new path
-	if a.serverApp != nil {
-		_ = a.serverApp.Shutdown() //nolint:errcheck
-		a.serverApp = nil
-	}
+	_ = a.stopReceiver() //nolint:errcheck
 
 	if err := ensureSaveDir(selection); err != nil {
 		fmt.Println("⚠️ Failed to create save directory:", err)
@@ -536,7 +615,7 @@ func (a *App) SetSavePath() string {
 	if err != nil {
 		return a.emitStartError("Receiver failed to start", err)
 	}
-	a.serverApp = app
+	a.setReceiverServer(app)
 
 	localIP := getLocalIP()
 	a.updateCurrentEndpoint(port, token)
@@ -560,16 +639,15 @@ func (a *App) emitStartError(context string, err error) string {
 
 // StartReceiverDefault starts the receiver using the persisted save path (or default).
 func (a *App) StartReceiverDefault() string {
-	if a.serverApp != nil {
+	if a.receiverServer() != nil {
 		fmt.Println("🔄 Stopping previous receiver server...")
-		if err := a.serverApp.Shutdown(); err != nil {
+		if err := a.stopReceiver(); err != nil {
 			fmt.Println("⚠️ Failed to stop previous server:", err)
 		}
-		a.serverApp = nil
 	}
 
 	savePath := a.GetSavePath()
-	a.lastSavePath = savePath
+	a.setSavePath(savePath)
 
 	if err := ensureSaveDir(savePath); err != nil {
 		fmt.Println("⚠️ Failed to create save directory:", err)
@@ -580,7 +658,7 @@ func (a *App) StartReceiverDefault() string {
 	if err != nil {
 		return a.emitStartError("Receiver failed to start", err)
 	}
-	a.serverApp = app
+	a.setReceiverServer(app)
 
 	localIP := getLocalIP()
 	a.updateCurrentEndpoint(port, token)
@@ -594,12 +672,11 @@ func (a *App) StartReceiverDefault() string {
 
 // StartReceiver lets the user pick a save folder.
 func (a *App) StartReceiver() string {
-	if a.serverApp != nil {
+	if a.receiverServer() != nil {
 		fmt.Println("🔄 Stopping previous receiver server...")
-		if err := a.serverApp.Shutdown(); err != nil {
+		if err := a.stopReceiver(); err != nil {
 			fmt.Println("⚠️ Failed to stop previous server:", err)
 		}
-		a.serverApp = nil
 	}
 
 	selection, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
@@ -608,13 +685,13 @@ func (a *App) StartReceiver() string {
 	if err != nil || selection == "" {
 		return "Cancelled"
 	}
-	a.lastSavePath = selection
+	a.setSavePath(selection)
 
 	app, port, token, err := beamsync.StartServerE(selection, 3000, a.getTransferSettings(), a.makeCallback())
 	if err != nil {
 		return a.emitStartError("Receiver failed to start", err)
 	}
-	a.serverApp = app
+	a.setReceiverServer(app)
 
 	localIP := getLocalIP()
 	a.updateCurrentEndpoint(port, token)
@@ -627,12 +704,11 @@ func (a *App) StartReceiver() string {
 
 // StartSender lets the user pick files and hosts them for download.
 func (a *App) StartSender() string {
-	if a.senderApp != nil {
+	if a.senderServer() != nil {
 		fmt.Println("🔄 Stopping previous sender server...")
-		if err := a.senderApp.Shutdown(); err != nil {
+		if err := a.stopSender(); err != nil {
 			fmt.Println("⚠️ Failed to stop previous sender:", err)
 		}
-		a.senderApp = nil
 	}
 
 	selection, err := runtime.OpenMultipleFilesDialog(a.ctx, runtime.OpenDialogOptions{
@@ -646,7 +722,7 @@ func (a *App) StartSender() string {
 	if err != nil {
 		return a.emitStartError("Sender failed to start", err)
 	}
-	a.senderApp = app
+	a.setSenderServer(app)
 
 	localIP := getLocalIP()
 	a.updateCurrentEndpoint(port, token)
@@ -690,19 +766,18 @@ func (a *App) SendFiles(filePaths []string) string {
 		return "Cancelled"
 	}
 
-	if a.senderApp != nil {
+	if a.senderServer() != nil {
 		fmt.Println("🔄 Stopping previous sender server...")
-		if err := a.senderApp.Shutdown(); err != nil {
+		if err := a.stopSender(); err != nil {
 			fmt.Println("⚠️ Failed to stop previous sender:", err)
 		}
-		a.senderApp = nil
 	}
 
 	app, port, token, err := beamsync.StartSenderE(filePaths, a.makeCallback())
 	if err != nil {
 		return a.emitStartError("Sender failed to start", err)
 	}
-	a.senderApp = app
+	a.setSenderServer(app)
 
 	localIP := getLocalIP()
 	a.updateCurrentEndpoint(port, token)
@@ -741,12 +816,11 @@ func (a *App) SendFiles(filePaths []string) string {
 
 // StopReceiver stops the receiver server.
 func (a *App) StopReceiver() string {
-	if a.serverApp != nil {
+	if a.receiverServer() != nil {
 		fmt.Println("🛑 Stopping receiver server...")
-		if err := a.serverApp.Shutdown(); err != nil {
+		if err := a.stopReceiver(); err != nil {
 			return "Error stopping server"
 		}
-		a.serverApp = nil
 		return "Receiver stopped"
 	}
 	return "No receiver running"
@@ -754,12 +828,11 @@ func (a *App) StopReceiver() string {
 
 // StopSender stops the sender server.
 func (a *App) StopSender() string {
-	if a.senderApp != nil {
+	if a.senderServer() != nil {
 		fmt.Println("🛑 Stopping sender server...")
-		if err := a.senderApp.Shutdown(); err != nil {
+		if err := a.stopSender(); err != nil {
 			return "Error stopping sender"
 		}
-		a.senderApp = nil
 		return "Sender stopped"
 	}
 	return "No sender running"
@@ -770,18 +843,19 @@ func (a *App) ResetApp() {
 	fmt.Println("🔄 Resetting App State...")
 	a.StopReceiver()
 	a.StopSender()
-	a.serverApp = nil
-	a.senderApp = nil
+	a.setReceiverServer(nil)
+	a.setSenderServer(nil)
 	a.clearEndpoint()
 }
 
 // OpenFile opens a received file with the system default application.
 func (a *App) OpenFile(filename string) string {
-	if a.lastSavePath == "" {
+	savePath := a.savePath()
+	if savePath == "" {
 		return "Error: No active save directory"
 	}
 
-	fullPath := filepath.Join(a.lastSavePath, filepath.Base(filename))
+	fullPath := filepath.Join(savePath, filepath.Base(filename))
 	fmt.Println("📂 Opening file:", fullPath)
 
 	var commandName string
@@ -809,10 +883,11 @@ func (a *App) OpenFile(filename string) string {
 // GetReceivedFiles returns existing files in the save directory so the UI
 // can restore the received-files log after a restart or reconnect.
 func (a *App) GetReceivedFiles() []ReceivedFile {
-	if a.lastSavePath == "" {
+	savePath := a.savePath()
+	if savePath == "" {
 		return nil
 	}
-	entries, err := os.ReadDir(a.lastSavePath)
+	entries, err := os.ReadDir(savePath)
 	if err != nil {
 		fmt.Println("GetReceivedFiles: could not read dir:", err)
 		return nil
@@ -879,8 +954,8 @@ func (a *App) SaveTransferSettings(settings beamsync.TransferSettings) string {
 		return fmt.Sprintf("Error saving settings: %v", err)
 	}
 	// Update the running server's settings in-place (no restart needed)
-	if a.serverApp != nil && a.serverApp.Settings() != nil {
-		*a.serverApp.Settings() = settings
+	if srv := a.receiverServer(); srv != nil && srv.Settings() != nil {
+		*srv.Settings() = settings
 	}
 	fmt.Println("✅ Transfer settings saved:", settings.Mode)
 	return "ok"
@@ -888,15 +963,15 @@ func (a *App) SaveTransferSettings(settings beamsync.TransferSettings) string {
 
 // ApproveTransfer approves a pending transfer request by its ID.
 func (a *App) ApproveTransfer(id string) {
-	if a.serverApp != nil {
-		a.serverApp.RespondToTransfer(id, true)
+	if srv := a.receiverServer(); srv != nil {
+		srv.RespondToTransfer(id, true)
 	}
 }
 
 // RejectTransfer rejects a pending transfer request by its ID.
 func (a *App) RejectTransfer(id string) {
-	if a.serverApp != nil {
-		a.serverApp.RespondToTransfer(id, false)
+	if srv := a.receiverServer(); srv != nil {
+		srv.RespondToTransfer(id, false)
 	}
 }
 
@@ -1000,22 +1075,45 @@ func (a *App) resolveLocalIP() string {
 	return getLocalIP()
 }
 
-// startIPMonitor polls for IP changes every 3 seconds.
+// pollIPChange checks the LAN address once and publishes a refreshed URL if
+// it changed. It returns the published URL, or "" when nothing changed.
 //
-// It reuses handleIPChange so the two IP-change paths cannot drift apart.
+// It is the single implementation behind both IP-change detectors (the
+// 3-second monitor and the device_connected event), so the two paths cannot
+// drift apart, and it is a seam a test can drive directly.
+func (a *App) pollIPChange() string {
+	newURL := a.handleIPChange(a.resolveLocalIP())
+	if newURL == "" {
+		return ""
+	}
+	fmt.Println("📡 Updating URL to:", newURL)
+	a.emitURLChanged(newURL)
+	return newURL
+}
+
+// startIPMonitor polls for IP changes every 3 seconds.
 func (a *App) startIPMonitor() {
-	ticker := time.NewTicker(3 * time.Second)
+	interval := a.ipPollInterval
+	if interval <= 0 {
+		interval = 3 * time.Second
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
+		// The context is absent only in tests (the Wails runtime supplies it
+		// in production). Guard it like safeEmit does so the monitor can run
+		// without a live runtime.
+		var done <-chan struct{}
+		if a.ctx != nil {
+			done = a.ctx.Done()
+		}
 		select {
-		case <-a.ctx.Done():
+		case <-done:
+			return
+		case <-a.ipMonitorStop:
 			return
 		case <-ticker.C:
-			newURL := a.handleIPChange(a.resolveLocalIP())
-			if newURL != "" {
-				fmt.Println("📡 Updating URL to:", newURL)
-				a.emitURLChanged(newURL)
-			}
+			a.pollIPChange()
 		}
 	}
 }

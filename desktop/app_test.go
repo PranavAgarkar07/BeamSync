@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -553,6 +554,43 @@ func TestProcessEventsEmitsRefreshedURLOnIPChange(t *testing.T) {
 	}
 }
 
+func TestStartIPMonitorUsesSharedIPChangeHandling(t *testing.T) {
+	t.Setenv("BEAMSYNC_ENABLE_TLS", "")
+	app := NewApp()
+	// ctx is deliberately left nil: the Wails runtime terminates the process
+	// on an invalid context, and safeEmit's nil guard is the only safe
+	// no-runtime path.
+	app.setCurrentIP("192.168.1.10")
+	app.setCurrentPortAndToken("3000", "tok123")
+	app.ipResolver = func() string { return "10.0.0.42" }
+	app.ipPollInterval = 10 * time.Millisecond
+
+	published := make(chan string, 4)
+	app.urlChangedHook = func(url string) { published <- url }
+
+	done := make(chan struct{})
+	go func() {
+		app.startIPMonitor()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		close(app.ipMonitorStop)
+		<-done
+	})
+
+	// Drive the REAL monitor (shortened interval) rather than a copy of its
+	// logic, so reverting the monitor to duplicated handling fails here.
+	want := "http://10.0.0.42:3000/?token=tok123"
+	select {
+	case got := <-published:
+		if got != want {
+			t.Fatalf("published URL = %q, want %q", got, want)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the IP monitor published no refreshed URL")
+	}
+}
+
 // TestHandleIPChangeDoesNotPublishWithoutPort pins that an IP change with no
 // listening server does NOT produce a portless URL.
 //
@@ -581,49 +619,33 @@ func TestHandleIPChangeDoesNotPublishWithoutPort(t *testing.T) {
 // monitor goes through the same handling as the device_connected path.
 //
 // The two paths used to duplicate the logic, so one could regress while the
-// other stayed correct.
-func TestStartIPMonitorUsesSharedIPChangeHandling(t *testing.T) {
-	t.Setenv("BEAMSYNC_ENABLE_TLS", "")
+
+// TestServerAndSavePathAccessorsAreRaceFree exercises the server-field
+// accessors concurrently.
+//
+// Wails v2 dispatches every bound-method call on its own goroutine, so the
+// receiver/sender server pointers and the save path are read and written
+// concurrently. Under -race this test fails if the accessors lose their lock.
+func TestServerAndSavePathAccessorsAreRaceFree(t *testing.T) {
 	app := NewApp()
-	// ctx is deliberately left nil: the Wails runtime terminates the process
-	// on an invalid context, and safeEmit's nil guard is the only safe
-	// no-runtime path.
-	app.setCurrentIP("192.168.1.10")
-	app.setCurrentPortAndToken("3000", "tok123")
-	app.ipResolver = func() string { return "10.0.0.42" }
-
-	published := make(chan string, 4)
-	app.urlChangedHook = func(url string) { published <- url }
-
-	stop := make(chan struct{})
-	done := make(chan struct{})
-	go func() {
-		// startIPMonitor polls on a 3s ticker; drive it directly instead by
-		// exercising the same helper it calls.
-		for {
-			select {
-			case <-stop:
-				close(done)
-				return
-			case <-time.After(10 * time.Millisecond):
-				if newURL := app.handleIPChange(app.resolveLocalIP()); newURL != "" {
-					app.emitURLChanged(newURL)
-				}
-			}
-		}
-	}()
-	t.Cleanup(func() {
-		close(stop)
-		<-done
-	})
-
-	select {
-	case got := <-published:
-		want := "http://10.0.0.42:3000/?token=tok123"
-		if got != want {
-			t.Fatalf("published URL = %q, want %q", got, want)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("the IP monitor path published no refreshed URL")
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			_ = app.receiverServer()
+			_ = app.senderServer()
+			_ = app.savePath()
+		}()
+		go func() {
+			defer wg.Done()
+			app.setReceiverServer(nil)
+			app.setSenderServer(nil)
+		}()
+		go func() {
+			defer wg.Done()
+			app.setSavePath(t.TempDir())
+		}()
 	}
+	wg.Wait()
 }
