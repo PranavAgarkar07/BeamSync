@@ -1,6 +1,7 @@
 package beamsync
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -65,4 +66,113 @@ func TestEventDispatcherDeliversNormalEmit(t *testing.T) {
 			}
 		}
 	})
+}
+
+// startBlockingEventDispatcher hands back a dispatcher whose worker goroutine
+// is provably blocked inside a callback: the callback closes `entered` (signalled
+// by the dispatcher itself once it dequeues the primer) and then blocks on
+// `release`. The queue is therefore empty and undrainable while the caller holds
+// it — deterministic drop accounting without scheduler luck.
+func startBlockingEventDispatcher(t *testing.T, bufferSize int) (*eventDispatcher, chan struct{}) {
+	t.Helper()
+	dispatcher := newEventDispatcher(bufferSize)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	dispatcher.emit(eventDispatchJob{
+		emit: func(eventName string, data string) {
+			close(entered)
+			<-release
+		},
+		event: "primer",
+		data:  "block",
+	})
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("eventDispatcher worker did not start processing (bufferSize=%d)", bufferSize)
+	}
+	return dispatcher, release
+}
+
+func TestEventDispatcherEmptyBufferFallsBack(t *testing.T) {
+	for _, bufferSize := range []int{0, -1} {
+		t.Run(fmt.Sprintf("buffer size %d falls back to eventDispatcherBufferSize", bufferSize), func(t *testing.T) {
+			dispatcher, release := startBlockingEventDispatcher(t, bufferSize)
+
+			for i := 0; i < eventDispatcherBufferSize; i++ {
+				if !dispatcher.emit(eventDispatchJob{
+					emit:  func(eventName string, data string) {},
+					event: "evt",
+					data:  "payload",
+				}) {
+					t.Fatalf("emit %d of %d through buffer size %d = false, want true", i, eventDispatcherBufferSize, bufferSize)
+				}
+			}
+			if dispatcher.emit(eventDispatchJob{
+				emit:  func(eventName string, data string) {},
+				event: "evt",
+				data:  "payload",
+			}) {
+				t.Fatalf("emit %d of %d through buffer size %d = true, want false", eventDispatcherBufferSize, eventDispatcherBufferSize, bufferSize)
+			}
+			if got := dispatcher.DroppedCount(); got != 1 {
+				t.Fatalf("DroppedCount() = %d, want 1", got)
+			}
+			close(release)
+		})
+	}
+}
+
+func TestEventDispatcherDropsFromFullBuffer(t *testing.T) {
+	for _, bufferSize := range []int{1, 2} {
+		t.Run(fmt.Sprintf("capacity %d drops from full buffer", bufferSize), func(t *testing.T) {
+			dispatcher, release := startBlockingEventDispatcher(t, bufferSize)
+
+			for i := 0; i < bufferSize; i++ {
+				if !dispatcher.emit(eventDispatchJob{
+					emit:  func(eventName string, data string) {},
+					event: "evt",
+					data:  "payload",
+				}) {
+					t.Fatalf("emit %d of %d with capacity %d = false, want true", i, bufferSize, bufferSize)
+				}
+			}
+			if dispatcher.emit(eventDispatchJob{
+				emit:  func(eventName string, data string) {},
+				event: "evt",
+				data:  "payload",
+			}) {
+				t.Fatalf("emit capacity+1 (%d) with capacity %d = true, want false", bufferSize+1, bufferSize)
+			}
+			if got := dispatcher.DroppedCount(); got != 1 {
+				t.Fatalf("DroppedCount() = %d, want 1", got)
+			}
+			close(release)
+		})
+	}
+}
+
+func TestEventDispatcherSurvivesCallbackPanic(t *testing.T) {
+	dispatcher := newEventDispatcher(8)
+	dispatcher.emit(eventDispatchJob{
+		emit:  func(eventName string, data string) { panic("boom") },
+		event: "boom",
+		data:  "payload",
+	})
+
+	delivered := make(chan string, 1)
+	dispatcher.emit(eventDispatchJob{
+		emit:  func(eventName string, data string) { delivered <- eventName + "|" + data },
+		event: "later",
+		data:  "ok",
+	})
+
+	select {
+	case got := <-delivered:
+		if got != "later|ok" {
+			t.Fatalf("delivered event = %q, want %q", got, "later|ok")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("eventDispatcher did not deliver the event after the panicking callback")
+	}
 }
