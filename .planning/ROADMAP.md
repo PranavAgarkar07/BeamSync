@@ -148,6 +148,7 @@ None. Phase 1 is fully standalone and must be done first.
 
 ### Already delivered — do not re-plan
 
+- **3.1 `eventDispatcher`** (`TST-01`) — landed in `beamsync/event_dispatcher_test.go` (2026-11-12; delivered by plan `03-01`)
 - **3.3 `copyChunked`** (`TST-03`) — exists in `beamsync/server_test.go`
 - **3.6 httptest send-receive flow** (`TST-05`) — exists in `beamsync/server_test.go`
 - **3.7 token auth** (`TST-06`) — exists in `beamsync/auth_tokens_test.go`

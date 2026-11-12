@@ -2,13 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-stopped_at: Phase 3 context gathered
-last_updated: "2026-11-12T08:30:24.995Z"
+current_phase: 3
+current_phase_name: Tests Before Refactoring
+status: executing
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-11-12T11:20:57.753Z"
+last_activity: 2026-11-12
+last_activity_desc: Phase 3 plan 03-01 (eventDispatcher tests) completed
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 4
+  total_plans: 7
   completed_plans: 4
 ---
 
@@ -20,11 +24,13 @@ Phase 1: complete — 6/6.
 Phase 2: complete — 7/7.
 Phase 3: partial — 3/6 (TST-03, TST-05, TST-06 landed with the initial test suite; TST-01, TST-02, TST-04 outstanding).
 
-## Current Status
+## Current Position
 
-```
-◆  Phase 3 — Tests Before Refactoring (3/6 done — needs CONTEXT + plans for the remainder)
-```
+Phase: 3 of 8 — Tests Before Refactoring
+Plan: 2 of 3 in current phase
+Status: Ready to execute
+Last activity: 2026-11-12 — Phase 3 plan 03-01 (eventDispatcher tests) completed
+Progress: [██████░░░░] 57%
 
 ## Milestone: Quality Overhaul
 
@@ -110,6 +116,10 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 
 ## Session
 
-**Last session:** 2026-11-12T08:30:24.981Z
-**Stopped at:** Phase 3 context gathered
-**Resume file:** .planning/phases/03-tests-before-refactoring/03-CONTEXT.md
+**Last session:** 2026-11-12T11:17:41.036Z
+**Stopped at:** Completed 03-01-PLAN.md
+**Resume file:** None
+
+## Decisions
+
+- [Phase 3]: Added eventDispatcher unit test suite (normal emit, drop-on-full, empty-buffer fallback, panic recovery, concurrency exact drop accounting) before Phase 4 refactor — Phase 4 will move the dispatcher into beamsync/events.go; black-box emit/DroppedCount seam keeps tests representation-agnostic (D-04)

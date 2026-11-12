@@ -20,7 +20,7 @@
 - [x] TOL-07 — Configure GitHub Actions CI: lint → test → build (per-module)
 
 ### Phase 3: Tests Before Refactoring
-- [ ] TST-01 — Add unit tests for `eventDispatcher` (normal send, full buffer drop, concurrent access)
+- [x] TST-01 — Add unit tests for `eventDispatcher` (normal send, full buffer drop, concurrent access)
 - [ ] TST-02 — Add unit tests for `progressWriter` / `downloadProgressWriter` (write, progress events, completion)
 - [x] TST-03 — Add unit tests for `copyChunked` I/O helper
 - [ ] TST-04 — Add unit tests for `desktop/app.go` URL builder, version source, event channel
