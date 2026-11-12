@@ -2,6 +2,8 @@ package beamsync
 
 import (
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -174,5 +176,53 @@ func TestEventDispatcherSurvivesCallbackPanic(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("eventDispatcher did not deliver the event after the panicking callback")
+	}
+}
+
+func TestEventDispatcherConcurrentEmitsExactDropAccounting(t *testing.T) {
+	const (
+		emitters    = 4
+		emitPerEmit = 25
+	)
+	const total = emitters * emitPerEmit
+
+	dispatcher := newEventDispatcher(8)
+	delivered := make(chan string, total)
+	var failed atomic.Int64
+
+	var wg sync.WaitGroup
+	for g := 0; g < emitters; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < emitPerEmit; i++ {
+				if dispatcher.emit(eventDispatchJob{
+					emit:  func(eventName string, data string) { delivered <- eventName + "|" + data },
+					event: "evt",
+					data:  "payload",
+				}) {
+					continue
+				}
+				failed.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	received := 0
+	deadline := time.Now().Add(5 * time.Second)
+	for int64(received)+failed.Load() < int64(total) {
+		select {
+		case <-delivered:
+			received++
+		case <-time.After(50 * time.Millisecond):
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for deliveries: received %d, failed %d, want %d", received, failed.Load(), total)
+			}
+		}
+	}
+
+	if got := dispatcher.DroppedCount(); got != failed.Load() {
+		t.Fatalf("DroppedCount() = %d, want %d (failed enqueues)", got, failed.Load())
 	}
 }

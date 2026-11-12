@@ -20,7 +20,7 @@ jobs:
       - uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64
-          args: ./...
+          args: .
           working-directory: desktop
           install-mode: goinstall
 
@@ -42,8 +42,8 @@ jobs:
         with: { node-version: '24' }
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - run: cd desktop/frontend && npm ci && npm run build
-      - run: (cd beamsync && go test ./...)
-      - run: (cd desktop && go test ./...)
+      - run: (cd beamsync && go test -race ./...)
+      - run: (cd desktop && go test -race .)
 
   test-svelte:
     runs-on: ubuntu-latest
@@ -65,4 +65,4 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - run: cd desktop/frontend && npm ci && npm run build
       - run: (cd beamsync && go build ./...)
-      - run: (cd desktop && go build ./...)
+      - run: (cd desktop && go build .)
