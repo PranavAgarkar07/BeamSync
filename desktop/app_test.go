@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestShareURLEmbedsStoredEndpoint is the first slice of the desktop app test
@@ -213,5 +214,99 @@ func TestEnsureSaveDirReplacesFileWithDirectory(t *testing.T) {
 	}
 	if !backupInfo.Mode().IsRegular() {
 		t.Fatalf("backup = %v, want regular file", backupInfo)
+	}
+}
+
+// TestParseVersionReadsEmbeddedWailsJSON pins the version source: the value
+// the desktop reports must come from wails.json's info.productVersion, with
+// a "v" prefix, and a malformed payload must fall back rather than panic.
+//
+// The embedded wails.json is the single source of truth for the version
+// (Phase 1, VER-01..VER-03), so a parse regression would silently break the
+// About panel and the update check.
+func TestParseVersionReadsEmbeddedWailsJSON(t *testing.T) {
+	version, err := parseVersion(wailsJSONData)
+	if err != nil {
+		t.Fatalf("parseVersion(wailsJSONData) returned error: %v", err)
+	}
+	if !strings.HasPrefix(version, "v") {
+		t.Fatalf("version = %q, want a %q prefix", version, "v")
+	}
+	if version == "v"+fallbackVersion {
+		t.Fatalf("version = %q, want the parsed productVersion rather than the fallback", version)
+	}
+}
+
+func TestParseVersionFallsBackOnMalformedPayload(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		payload string
+	}{
+		{name: "not json", payload: "{not json"},
+		{name: "missing info block", payload: `{"other":1}`},
+		{name: "empty product version", payload: `{"info":{"productVersion":""}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			version, err := parseVersion([]byte(tc.payload))
+			if err == nil {
+				t.Fatalf("parseVersion(%q) = %q, want an error", tc.payload, version)
+			}
+			if version != fallbackVersion {
+				t.Fatalf("version = %q, want the fallback %q", version, fallbackVersion)
+			}
+		})
+	}
+}
+
+// TestMakeCallbackDeliversEventsToChannel pins the Wails event bridge: the
+// callback handed to the Go core must forward events onto the App's event
+// channel so processEvents can relay them to the frontend.
+func TestMakeCallbackDeliversEventsToChannel(t *testing.T) {
+	app := NewApp()
+	callback := app.makeCallback()
+
+	callback("device_connected", "peer-a")
+
+	select {
+	case ev := <-app.eventChan:
+		if ev.Name != "device_connected" || ev.Data != "peer-a" {
+			t.Fatalf("event = %#v, want name %q data %q", ev, "device_connected", "peer-a")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("event was not delivered to the event channel within 1s")
+	}
+}
+
+// TestMakeCallbackDropsWhenChannelFull pins the documented drop-on-full
+// behaviour of the event bridge: when the channel is saturated the callback
+// drops the event instead of blocking the producer (CONCERNS.md / PITFALLS.md
+// 4b). A silent drop is the intended behaviour; a BLOCK would deadlock the
+// producer goroutine, so the test asserts the callback returns promptly.
+func TestMakeCallbackDropsWhenChannelFull(t *testing.T) {
+	app := NewApp()
+	callback := app.makeCallback()
+
+	// Fill the channel to capacity.
+	for i := 0; i < eventChanCapacity; i++ {
+		callback("filler", "x")
+	}
+	if got := len(app.eventChan); got != eventChanCapacity {
+		t.Fatalf("event channel length = %d, want %d", got, eventChanCapacity)
+	}
+
+	// One more must be dropped, and must not block.
+	done := make(chan struct{})
+	go func() {
+		callback("overflow", "y")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("makeCallback blocked on a full event channel")
+	}
+
+	if got := len(app.eventChan); got != eventChanCapacity {
+		t.Fatalf("event channel length = %d after overflow, want %d (event dropped, not queued)", got, eventChanCapacity)
 	}
 }

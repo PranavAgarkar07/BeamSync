@@ -179,22 +179,37 @@ func ensureSaveDir(path string) error {
 	return os.MkdirAll(path, 0755)
 }
 
-// startup is called when the app starts
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
-
+// parseVersion extracts the product version from the embedded wails.json
+// payload. It is a pure function so the version source can be unit tested
+// without booting the Wails runtime (which needs a live context, audio
+// device, and network access).
+//
+// The returned string is prefixed with "v" to match the display format.
+func parseVersion(wailsJSON []byte) (string, error) {
 	type wailsInfo struct {
 		Info struct {
 			ProductVersion string `json:"productVersion"`
 		} `json:"info"`
 	}
 	var info wailsInfo
-	if err := json.Unmarshal(wailsJSONData, &info); err != nil {
-		fmt.Println("⚠️ Failed to parse wails.json:", err)
-		a.version = fallbackVersion
-	} else {
-		a.version = "v" + info.Info.ProductVersion
+	if err := json.Unmarshal(wailsJSON, &info); err != nil {
+		return fallbackVersion, err
 	}
+	if info.Info.ProductVersion == "" {
+		return fallbackVersion, fmt.Errorf("wails.json has no info.productVersion")
+	}
+	return "v" + info.Info.ProductVersion, nil
+}
+
+// startup is called when the app starts
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+
+	version, err := parseVersion(wailsJSONData)
+	if err != nil {
+		fmt.Println("⚠️ Failed to parse wails.json:", err)
+	}
+	a.version = version
 
 	go a.processEvents()
 	go a.startIPMonitor()
