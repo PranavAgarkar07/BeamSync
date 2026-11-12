@@ -17,7 +17,8 @@ go.work.sum
 
 # ----- Node / Frontend -----
 desktop/frontend/node_modules/
-desktop/frontend/dist/
+desktop/frontend/dist/*
+!desktop/frontend/dist/.gitkeep
 desktop/frontend/.svelte-kit/
 desktop/frontend/.vercel/
 desktop/frontend/.output/
