@@ -304,6 +304,11 @@ type HTTPServer struct {
 	cancel           context.CancelFunc
 	pendingMu        sync.Mutex
 	pendingTransfers map[string]*PendingTransfer
+	// settingsMu guards settings. The desktop can replace the transfer
+	// settings (blocklist, trustlist) while HTTP handlers are reading them,
+	// and the struct carries slice fields — so the handlers must read a
+	// consistent snapshot, never a pointer that is being written through.
+	settingsMu       sync.RWMutex
 	settings         *TransferSettings
 	history          *TransferHistory
 	stats            *transferStatsTracker
@@ -329,8 +334,34 @@ func (s *HTTPServer) RespondToTransfer(id string, approved bool) {
 	}
 }
 
+// Settings returns a snapshot of the current transfer settings.
+//
+// It returns a COPY: the caller must not mutate the server's live settings
+// through the returned pointer, because HTTP handlers read it concurrently.
+// Use UpdateSettings to change them.
 func (s *HTTPServer) Settings() *TransferSettings {
-	return s.settings
+	s.settingsMu.RLock()
+	defer s.settingsMu.RUnlock()
+	if s.settings == nil {
+		return nil
+	}
+	snapshot := *s.settings
+	return &snapshot
+}
+
+// UpdateSettings replaces the server's transfer settings atomically.
+//
+// The whole struct is swapped under the lock, so a concurrent reader either
+// sees the old settings or the new ones — never a half-written mix.
+func (s *HTTPServer) UpdateSettings(settings TransferSettings) {
+	s.settingsMu.Lock()
+	s.settings = &settings
+	s.settingsMu.Unlock()
+}
+
+// currentSettings returns a snapshot for use inside request handlers.
+func (s *HTTPServer) currentSettings() *TransferSettings {
+	return s.Settings()
 }
 
 func (s *HTTPServer) TransferHistory() []TransferRecord {
@@ -528,7 +559,12 @@ func setRateLimitHeaders(w http.ResponseWriter, decision rateLimitDecision) {
 	w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(decision.resetAt.Unix(), 10))
 }
 
-func rateLimitMiddleware(lim *clientRateLimiter, settings *TransferSettings, next http.HandlerFunc) http.HandlerFunc {
+// rateLimitMiddleware wraps a handler with per-client rate limiting.
+//
+// settings is a PROVIDER, not a pointer: the settings can be replaced while
+// the server runs, so each request must read the current snapshot rather than
+// a pointer captured at route-registration time.
+func rateLimitMiddleware(lim *clientRateLimiter, settings func() *TransferSettings, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		if r.Method == http.MethodOptions {
@@ -537,7 +573,11 @@ func rateLimitMiddleware(lim *clientRateLimiter, settings *TransferSettings, nex
 		}
 
 		ip := clientIP(r)
-		if settings != nil && settings.isDeviceTrusted(ip) {
+		var current *TransferSettings
+		if settings != nil {
+			current = settings()
+		}
+		if current != nil && current.isDeviceTrusted(ip) {
 			next(w, r)
 			return
 		}
@@ -755,7 +795,7 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/heartbeat", rateLimitMiddleware(httpServer.heartbeatLimiter, httpServer.settings, tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/heartbeat", rateLimitMiddleware(httpServer.heartbeatLimiter, httpServer.currentSettings, tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -774,7 +814,7 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 		w.WriteHeader(http.StatusOK)
 	})))
 
-	mux.HandleFunc("/", rateLimitMiddleware(httpServer.pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", rateLimitMiddleware(httpServer.pageLimiter, httpServer.currentSettings, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
@@ -806,7 +846,7 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 		}
 	}))
 
-	mux.HandleFunc("/logo.png", rateLimitMiddleware(httpServer.pageLimiter, httpServer.settings, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/logo.png", rateLimitMiddleware(httpServer.pageLimiter, httpServer.currentSettings, func(w http.ResponseWriter, r *http.Request) {
 		setCORSHeaders(w)
 		w.Header().Set("Cache-Control", "public, max-age=31536000")
 		w.Header().Set("Content-Type", "image/png")
@@ -818,7 +858,7 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 		w.Write(content) //nolint:errcheck
 	}))
 
-	mux.HandleFunc("/stats", rateLimitMiddleware(httpServer.pageLimiter, httpServer.settings, tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/stats", rateLimitMiddleware(httpServer.pageLimiter, httpServer.currentSettings, tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -829,7 +869,7 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 		w.Write([]byte(transferStatsJSON(snapshot))) //nolint:errcheck,gosec
 	})))
 
-	mux.HandleFunc("/request-transfer", rateLimitMiddleware(httpServer.transferLimiter, httpServer.settings, tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/request-transfer", rateLimitMiddleware(httpServer.transferLimiter, httpServer.currentSettings, tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -846,7 +886,7 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 			return
 		}
 
-		s := httpServer.settings
+		s := httpServer.currentSettings()
 		senderName := s.friendlyNameForIP(senderIP)
 
 		if s.isDeviceBlocked(senderIP) {
@@ -920,7 +960,7 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 		}
 	})))
 
-	mux.HandleFunc("/upload", rateLimitMiddleware(httpServer.uploadLimiter, httpServer.settings, tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/upload", rateLimitMiddleware(httpServer.uploadLimiter, httpServer.currentSettings, tokenMiddlewareAny(tokens, []tokenScope{tokenScopeSession, tokenScopeBootstrap}, false, func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if r := recover(); r != nil {
 				fmt.Printf("PANIC in upload handler: %v\n%s\n", r, debug.Stack())

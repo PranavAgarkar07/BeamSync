@@ -1,6 +1,9 @@
 package beamsync
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
 
 func TestDefaultTransferSettings(t *testing.T) {
 	settings := DefaultTransferSettings()
@@ -60,5 +63,60 @@ func TestTransferSettingsBlockedExtensionsAreCaseInsensitive(t *testing.T) {
 	}
 	if settings.isExtensionBlocked("notes.txt") {
 		t.Fatal("did not expect .txt file to be blocked")
+	}
+}
+
+// TestUpdateSettingsIsRaceFreeWithConcurrentReaders pins that replacing the
+// transfer settings while handlers read them is race-free.
+//
+// The settings carry slice fields (the device blocklist and trustlist), so a
+// torn read could mis-apply the blocklist. UpdateSettings swaps the whole
+// struct under a lock and the handlers read a snapshot.
+func TestUpdateSettingsIsRaceFreeWithConcurrentReaders(t *testing.T) {
+	server := &HTTPServer{settings: &TransferSettings{}}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(2)
+		go func(n int) {
+			defer wg.Done()
+			server.UpdateSettings(TransferSettings{
+				Mode:              TransferModeAskFirst,
+				BlockedDevices:    []DeviceRule{{IP: "192.168.1.99", FriendlyName: "blocked"}},
+				TrustedDevices:    []DeviceRule{{IP: "192.168.1.50", FriendlyName: "trusted"}},
+				BlockedExtensions: []string{".exe"},
+				MaxFileSizeMB:     int64(100 + n),
+			})
+		}(i)
+		go func() {
+			defer wg.Done()
+			current := server.currentSettings()
+			if current != nil {
+				_ = current.isDeviceBlocked("192.168.1.99")
+				_ = current.isDeviceTrusted("192.168.1.50")
+				_ = current.isExtensionBlocked("payload.exe")
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// TestSettingsReturnsSnapshotNotLivePointer pins that Settings() hands back a
+// COPY, so a caller cannot mutate the server's live settings through it.
+func TestSettingsReturnsSnapshotNotLivePointer(t *testing.T) {
+	original := TransferSettings{Mode: TransferModeAskFirst}
+	server := &HTTPServer{settings: &original}
+
+	snapshot := server.Settings()
+	if snapshot == nil {
+		t.Fatal("Settings() returned nil")
+	}
+	snapshot.Mode = TransferModeBlockAll
+
+	if original.Mode != TransferModeAskFirst {
+		t.Fatalf("live settings were mutated through the snapshot: mode = %q", original.Mode)
+	}
+	if got := server.Settings().Mode; got != TransferModeAskFirst {
+		t.Fatalf("server settings mode = %q, want %q", got, TransferModeAskFirst)
 	}
 }

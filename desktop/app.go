@@ -1014,8 +1014,11 @@ func (a *App) SaveTransferSettings(settings beamsync.TransferSettings) string {
 		return fmt.Sprintf("Error saving settings: %v", err)
 	}
 	// Update the running server's settings in-place (no restart needed)
-	if srv := a.receiverServer(); srv != nil && srv.Settings() != nil {
-		*srv.Settings() = settings
+	if srv := a.receiverServer(); srv != nil {
+		// UpdateSettings swaps the whole struct atomically. Writing through
+		// Settings() would mutate the live blocklist/trustlist while HTTP
+		// handlers read it.
+		srv.UpdateSettings(settings)
 	}
 	fmt.Println("✅ Transfer settings saved:", settings.Mode)
 	return "ok"

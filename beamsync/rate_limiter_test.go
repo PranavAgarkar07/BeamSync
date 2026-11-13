@@ -156,7 +156,7 @@ func TestRateLimitMiddlewareBypassesTrustedDevice(t *testing.T) {
 		TrustedDevices: []DeviceRule{{IP: "192.168.1.50", FriendlyName: "Phone"}},
 	}
 	var calls int
-	handler := rateLimitMiddleware(limiter, settings, func(w http.ResponseWriter, r *http.Request) {
+	handler := rateLimitMiddleware(limiter, func() *TransferSettings { return settings }, func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusNoContent)
 	})
