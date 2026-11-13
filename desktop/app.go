@@ -37,12 +37,17 @@ const fallbackVersion = "v0.0.0-unknown"
 
 // App struct
 type App struct {
-	ctx          context.Context
-	audio        *audio.AudioEngine
 	eventChan    chan EventData
 	eventsClosed chan struct{}
 	shutdownOnce sync.Once //nolint:unused // used in shutdown
-	version      string
+
+	// stateMu guards ctx, audio and version. Wails runs OnStartup on one
+	// goroutine while the frontend already calls GetVersion/PlaySound on
+	// others, so these fields are written and read concurrently.
+	stateMu sync.RWMutex
+	ctx     context.Context
+	audio   *audio.AudioEngine
+	version string
 
 	// serverMu guards serverApp, senderApp and lastSavePath. Wails v2
 	// dispatches every bound-method call on its own goroutine, so these are
@@ -81,6 +86,48 @@ type App struct {
 	urlChangedHook func(string)
 }
 
+// wailsContext returns the Wails runtime context, or nil before startup.
+func (a *App) wailsContext() context.Context {
+	a.stateMu.RLock()
+	defer a.stateMu.RUnlock()
+	return a.ctx
+}
+
+// setWailsContext stores the Wails runtime context.
+func (a *App) setWailsContext(ctx context.Context) {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+	a.ctx = ctx
+}
+
+// audioEngine returns the audio engine, or nil before startup.
+func (a *App) audioEngine() *audio.AudioEngine {
+	a.stateMu.RLock()
+	defer a.stateMu.RUnlock()
+	return a.audio
+}
+
+// setAudioEngine stores the audio engine.
+func (a *App) setAudioEngine(engine *audio.AudioEngine) {
+	a.stateMu.Lock()
+	a.audio = engine
+	a.stateMu.Unlock()
+}
+
+// versionString returns the app version.
+func (a *App) versionString() string {
+	a.stateMu.RLock()
+	defer a.stateMu.RUnlock()
+	return a.version
+}
+
+// setVersion stores the app version.
+func (a *App) setVersion(version string) {
+	a.stateMu.Lock()
+	defer a.stateMu.Unlock()
+	a.version = version
+}
+
 // receiverServer returns the running receiver server, if any.
 func (a *App) receiverServer() *beamsync.HTTPServer {
 	a.serverMu.Lock()
@@ -112,10 +159,13 @@ func (a *App) setSenderServer(s *beamsync.HTTPServer) {
 // stopReceiver shuts the receiver down and clears it, returning the shutdown
 // error. The server is taken and cleared under the lock, then shut down
 // outside it so a slow shutdown cannot block other callers.
+//
+// The field is cleared DIRECTLY under the lock: calling setReceiverServer
+// here would re-lock the same non-reentrant mutex and deadlock.
 func (a *App) stopReceiver() error {
 	a.serverMu.Lock()
 	srv := a.serverApp
-	a.setReceiverServer(nil)
+	a.serverApp = nil
 	a.serverMu.Unlock()
 	if srv == nil {
 		return nil
@@ -124,10 +174,12 @@ func (a *App) stopReceiver() error {
 }
 
 // stopSender shuts the sender down and clears it, returning the shutdown error.
+//
+// The field is cleared DIRECTLY under the lock — see stopReceiver.
 func (a *App) stopSender() error {
 	a.serverMu.Lock()
 	srv := a.senderApp
-	a.setSenderServer(nil)
+	a.senderApp = nil
 	a.serverMu.Unlock()
 	if srv == nil {
 		return nil
@@ -347,12 +399,12 @@ func (a *App) initVersion() {
 	if err != nil {
 		fmt.Println("⚠️ Failed to parse wails.json:", err)
 	}
-	a.version = version
+	a.setVersion(version)
 }
 
 // startup is called when the app starts
 func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+	a.setWailsContext(ctx)
 
 	a.initVersion()
 
@@ -360,8 +412,8 @@ func (a *App) startup(ctx context.Context) {
 	go a.startIPMonitor()
 	go a.checkForUpdateAndNotify()
 
-	a.audio = audio.NewAudioEngine()
-	if err := a.audio.Init(); err != nil {
+	a.setAudioEngine(audio.NewAudioEngine())
+	if err := a.audioEngine().Init(); err != nil {
 		fmt.Println("⚠️ Audio Init Failed:", err)
 	} else {
 		fmt.Println("🔊 Loading embedded sounds...")
@@ -379,7 +431,7 @@ func (a *App) startup(ctx context.Context) {
 				fmt.Printf("⚠️ Failed to open embedded sound '%s': %v\n", file, err)
 				continue
 			}
-			if err := a.audio.LoadSoundFromStream(name, f); err != nil {
+			if err := a.audioEngine().LoadSoundFromStream(name, f); err != nil {
 				fmt.Printf("⚠️ Failed to load sound '%s': %v\n", name, err)
 			} else {
 				fmt.Printf("🔊 Loaded sound: %s\n", name)
@@ -514,11 +566,12 @@ func (a *App) safeEmit(eventName string, data interface{}) {
 			fmt.Printf("⚠️ safeEmit panic for event '%s': %v\n", eventName, r)
 		}
 	}()
-	if a.ctx == nil {
+	ctx := a.wailsContext()
+	if ctx == nil {
 		fmt.Printf("⚠️ safeEmit: Context is nil, cannot emit event '%s'\n", eventName)
 		return
 	}
-	runtime.EventsEmit(a.ctx, eventName, data)
+	runtime.EventsEmit(ctx, eventName, data)
 	fmt.Printf("✅ Event emitted: %s\n", eventName)
 }
 
@@ -544,14 +597,14 @@ func (a *App) shutdown(ctx context.Context) { //nolint:unused // wails lifecycle
 
 // PlaySound is exposed to the frontend.
 func (a *App) PlaySound(name string) {
-	if a.audio != nil {
-		a.audio.Play(name)
+	if engine := a.audioEngine(); engine != nil {
+		engine.Play(name)
 	}
 }
 
 // GetVersion returns the app version from wails.json (single source of truth).
 func (a *App) GetVersion() string {
-	return a.version
+	return a.versionString()
 }
 
 // ---------------------------------------------------------
@@ -586,7 +639,7 @@ func (a *App) GetSavePath() string {
 
 // SetSavePath opens a directory picker, persists the choice, restarts receiver, returns new URL.
 func (a *App) SetSavePath() string {
-	selection, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+	selection, err := runtime.OpenDirectoryDialog(a.wailsContext(), runtime.OpenDialogOptions{
 		Title:            "Choose Save Folder for Received Files",
 		DefaultDirectory: a.GetSavePath(),
 	})
@@ -679,7 +732,7 @@ func (a *App) StartReceiver() string {
 		}
 	}
 
-	selection, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+	selection, err := runtime.OpenDirectoryDialog(a.wailsContext(), runtime.OpenDialogOptions{
 		Title: "Select Folder to Save Received Files",
 	})
 	if err != nil || selection == "" {
@@ -711,7 +764,7 @@ func (a *App) StartSender() string {
 		}
 	}
 
-	selection, err := runtime.OpenMultipleFilesDialog(a.ctx, runtime.OpenDialogOptions{
+	selection, err := runtime.OpenMultipleFilesDialog(a.wailsContext(), runtime.OpenDialogOptions{
 		Title: "Select File(s) to Send",
 	})
 	if err != nil || len(selection) == 0 {
@@ -983,11 +1036,11 @@ func (a *App) RejectTransfer(id string) {
 // The User-Agent header encodes the current version + OS, giving GitHub's
 // traffic analytics natural DAU and platform signals at zero privacy cost.
 func (a *App) CheckForUpdate() UpdateInfo {
-	info := UpdateInfo{CurrentVersion: a.version}
+	info := UpdateInfo{CurrentVersion: a.versionString()}
 
 	userAgent := fmt.Sprintf(
 		"BeamSync/%s (%s; %s)",
-		a.version, stdruntime.GOOS, stdruntime.GOARCH,
+		a.versionString(), stdruntime.GOOS, stdruntime.GOARCH,
 	)
 
 	req, err := http.NewRequest("GET",
@@ -1031,10 +1084,10 @@ func (a *App) CheckForUpdate() UpdateInfo {
 		notes = notes[:280] + "…"
 	}
 	info.ReleaseNotes = notes
-	info.UpdateAvailable = release.TagName != "" && release.TagName != a.version
+	info.UpdateAvailable = release.TagName != "" && release.TagName != a.versionString()
 
 	fmt.Printf("🔍 UpdateCheck: current=%s latest=%s available=%v\n",
-		a.version, release.TagName, info.UpdateAvailable)
+		a.versionString(), release.TagName, info.UpdateAvailable)
 	return info
 }
 
@@ -1104,8 +1157,8 @@ func (a *App) startIPMonitor() {
 		// in production). Guard it like safeEmit does so the monitor can run
 		// without a live runtime.
 		var done <-chan struct{}
-		if a.ctx != nil {
-			done = a.ctx.Done()
+		if ctx := a.wailsContext(); ctx != nil {
+			done = ctx.Done()
 		}
 		select {
 		case <-done:

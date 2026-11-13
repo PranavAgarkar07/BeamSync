@@ -1,6 +1,8 @@
 package main
 
 import (
+	"beamsync"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -615,11 +617,6 @@ func TestHandleIPChangeDoesNotPublishWithoutPort(t *testing.T) {
 	}
 }
 
-// TestStartIPMonitorUsesSharedIPChangeHandling pins that the 3-second IP
-// monitor goes through the same handling as the device_connected path.
-//
-// The two paths used to duplicate the logic, so one could regress while the
-
 // TestServerAndSavePathAccessorsAreRaceFree exercises the server-field
 // accessors concurrently.
 //
@@ -645,6 +642,111 @@ func TestServerAndSavePathAccessorsAreRaceFree(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			app.setSavePath(t.TempDir())
+		}()
+	}
+	wg.Wait()
+}
+
+// TestStopReceiverAndSenderDoNotDeadlock pins that stopping a running server
+// returns.
+//
+// stopReceiver takes the server under serverMu and clears the field. If the
+// clear went through setReceiverServer (which locks the SAME non-reentrant
+// mutex) the call would deadlock — and every "Stop receiver", "restart
+// receiver", "choose folder" and app-quit path would hang with it.
+//
+// The test exercises the real code path, so a reintroduced deadlock fails it
+// (the go test timeout) instead of shipping.
+func TestStopReceiverAndSenderDoNotDeadlock(t *testing.T) {
+	app := NewApp()
+	app.setReceiverServer(&beamsync.HTTPServer{})
+	app.setSenderServer(&beamsync.HTTPServer{})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = app.stopReceiver()
+		_ = app.stopSender()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stopReceiver/stopSender deadlocked")
+	}
+
+	if app.receiverServer() != nil {
+		t.Fatal("stopReceiver did not clear the receiver server")
+	}
+	if app.senderServer() != nil {
+		t.Fatal("stopSender did not clear the sender server")
+	}
+}
+
+// TestUpdateCurrentEndpointSetsPortAndToken pins the endpoint update that
+// feeds the QR code's port and token.
+//
+// A drop of the token would publish a tokenless URL on the next IP change,
+// so the token must be stored, not just the port.
+func TestUpdateCurrentEndpointSetsPortAndToken(t *testing.T) {
+	app := NewApp()
+	app.updateCurrentEndpoint("3000", "tok123")
+
+	_, port, token := app.endpointSnapshot()
+	if port != "3000" {
+		t.Fatalf("port = %q, want %q", port, "3000")
+	}
+	if token != "tok123" {
+		t.Fatalf("token = %q, want %q", token, "tok123")
+	}
+	// The IP must have been resolved, not left empty.
+	ip, _, _ := app.endpointSnapshot()
+	if ip == "" {
+		t.Fatal("currentIP is empty after updateCurrentEndpoint")
+	}
+}
+
+// TestUpdateCurrentEndpointKeepsExistingTokenWhenEmpty pins that an empty
+// token does not wipe the token already in use.
+func TestUpdateCurrentEndpointKeepsExistingTokenWhenEmpty(t *testing.T) {
+	app := NewApp()
+	app.setCurrentPortAndToken("3000", "tok123")
+	app.updateCurrentEndpoint("3001", "")
+
+	_, port, token := app.endpointSnapshot()
+	if port != "3001" {
+		t.Fatalf("port = %q, want %q", port, "3001")
+	}
+	if token != "tok123" {
+		t.Fatalf("token = %q, want the existing token %q", token, "tok123")
+	}
+}
+
+// TestVersionAndAudioAccessorsAreRaceFree exercises the version, context and
+// audio accessors concurrently.
+//
+// Wails runs OnStartup on one goroutine while the frontend already calls
+// GetVersion/PlaySound on others, so these fields are written and read
+// concurrently.
+func TestVersionAndAudioAccessorsAreRaceFree(t *testing.T) {
+	app := NewApp()
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_ = app.versionString()
+			_ = app.audioEngine()
+			_ = app.wailsContext()
+		}()
+		go func() {
+			defer wg.Done()
+			app.setVersion("v1.2.3")
+			app.setAudioEngine(nil)
+			// context.TODO rather than nil: the accessor must tolerate a
+			// context that is not the Wails runtime, and staticcheck rejects
+			// a nil Context.
+			app.setWailsContext(context.TODO())
 		}()
 	}
 	wg.Wait()
