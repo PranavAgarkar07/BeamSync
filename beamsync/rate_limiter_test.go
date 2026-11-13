@@ -222,3 +222,49 @@ func TestRateLimitMiddlewareRoundsRetryAfterUp(t *testing.T) {
 		t.Fatalf("retryAfter = %d, want %d", body.RetryAfter, 2)
 	}
 }
+
+// TestRateLimitMiddlewareReadsCurrentSettings pins that the rate-limit
+// middleware reads the CURRENT transfer settings on every request.
+//
+// The settings are a provider, not a pointer captured at route-registration
+// time: the desktop can replace the blocklist and trustlist while the server
+// runs. A regression that captured the pointer would keep applying the
+// settings that were live at startup — so a device trusted (or blocked)
+// later would be ignored.
+func TestRateLimitMiddlewareReadsCurrentSettings(t *testing.T) {
+	now := time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)
+	limiter := newClientRateLimiter(1, time.Minute)
+	limiter.now = func() time.Time { return now }
+
+	current := &TransferSettings{} // nobody trusted yet
+	handler := rateLimitMiddleware(limiter, func() *TransferSettings { return current }, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "192.168.1.50:1234"
+
+	// First request consumes the single-token window.
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("first request status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+
+	// Second request exceeds the window and the device is not trusted.
+	rec = httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request status = %d, want %d (untrusted device, window exhausted)", rec.Code, http.StatusTooManyRequests)
+	}
+
+	// Now trust the device: the very next request must bypass the limit,
+	// which it only can if the middleware READ the current settings.
+	current = &TransferSettings{TrustedDevices: []DeviceRule{{IP: "192.168.1.50", FriendlyName: "Phone"}}}
+
+	rec = httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("request after trusting the device = %d, want %d (the middleware must read the current settings)", rec.Code, http.StatusNoContent)
+	}
+}
