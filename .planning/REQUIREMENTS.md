@@ -64,7 +64,7 @@
 ### Phase 8: Documentation & Cleanup
 - [ ] DOC-01 — Update ARCHITECTURE.md to reflect new structure
 - [x] DOC-02 — Update CONTRIBUTING.md to match current DevEx
-- [ ] DOC-03 — Remove duplicate on-disk firewall scripts (`beamsync/firewall_setup.sh`, `build/linux/firewall_setup.sh`)
+- [ ] DOC-03 — Remove the duplicate on-disk firewall script (`build/linux/firewall_setup.sh` only — `beamsync/firewall_setup.sh` is the `//go:embed` source and must stay)
 - [ ] DOC-04 — Add transfer history persistence (JSON file in XDG config dir)
 - [x] DOC-05 — Verify README.md matches reality
 
