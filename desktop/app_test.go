@@ -402,7 +402,7 @@ func TestInitVersionStoresParsedVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseVersion(wailsJSONData) returned error: %v", err)
 	}
-	if app.version != expected {
+	if app.versionString() != expected {
 		t.Fatalf("app.version = %q, want %q (the parsed productVersion)", app.version, expected)
 	}
 }
@@ -750,4 +750,106 @@ func TestVersionAndAudioAccessorsAreRaceFree(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// TestProcessEventsRelaysEveryEvent pins that the event-channel consumer
+// keeps running and relays EVERY event, not just the first.
+//
+// The consumer is a loop; a regression that made it return after one event
+// would leave the desktop relaying a single backend event for the whole
+// process lifetime. Each test here drives exactly one event, so this test
+// drives several in sequence.
+func TestProcessEventsRelaysEveryEvent(t *testing.T) {
+	app := NewApp()
+	app.setCurrentIP("192.168.1.10")
+
+	done := make(chan struct{})
+	go func() {
+		app.processEvents()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		close(app.eventsClosed)
+		<-done
+	})
+
+	callback := app.makeCallback()
+	const eventCount = 5
+	for i := 0; i < eventCount; i++ {
+		callback("url_changed", "http://192.168.1.10:8080/?token=tok")
+	}
+
+	// Every event must have been consumed: the consumer extracts the token
+	// from each one, and a consumer that stopped after the first would leave
+	// the endpoint state untouched afterwards.
+	deadline := time.After(3 * time.Second)
+	for {
+		_, port, token := app.endpointSnapshot()
+		if port == "8080" && token == "tok" {
+			// Give any remaining events a chance to be consumed, then
+			// confirm the consumer is still alive and working.
+			time.Sleep(50 * time.Millisecond)
+			callback("url_changed", "http://192.168.1.10:9090/?token=tok2")
+			deadline2 := time.After(2 * time.Second)
+			for {
+				_, p2, t2 := app.endpointSnapshot()
+				if p2 == "9090" && t2 == "tok2" {
+					return
+				}
+				select {
+				case <-deadline2:
+					t.Fatalf("consumer stopped relaying: port=%q token=%q, want 9090/tok2", p2, t2)
+				case <-time.After(5 * time.Millisecond):
+				}
+			}
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("consumer did not relay the events: port=%q token=%q", port, token)
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
+// TestShutdownStopsServersAndClosesChannels pins the app-quit path.
+//
+// This is where a previous deadlock lived (stopReceiver re-locking the
+// server mutex), so the path is covered explicitly: it must shut the servers
+// down, close the event channels, and return without deadlocking.
+func TestShutdownStopsServersAndClosesChannels(t *testing.T) {
+	app := NewApp()
+	app.setReceiverServer(&beamsync.HTTPServer{})
+	app.setSenderServer(&beamsync.HTTPServer{})
+
+	done := make(chan struct{})
+	go func() {
+		app.shutdown(context.Background())
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("shutdown deadlocked")
+	}
+
+	if app.receiverServer() != nil {
+		t.Fatal("shutdown did not clear the receiver server")
+	}
+	if app.senderServer() != nil {
+		t.Fatal("shutdown did not clear the sender server")
+	}
+
+	// The event channels must be closed, so a later emit is a no-op rather
+	// than a send on a closed channel.
+	select {
+	case <-app.eventsClosed:
+	default:
+		t.Fatal("shutdown did not close eventsClosed")
+	}
+	select {
+	case <-app.ipMonitorStop:
+	default:
+		t.Fatal("shutdown did not close ipMonitorStop")
+	}
 }
