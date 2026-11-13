@@ -192,60 +192,112 @@ None. Phase 1 is fully standalone and must be done first.
 
 ## Phase 4: Go Structural Refactor — `server.go` Extraction
 
-**Goal:** Split `beamsync/server.go` (1414 lines as of 2026-11-12; was 1726 when this roadmap was written — Phase 1/2 already extracted `auth_tokens.go`, `permissions.go`, `history.go`, `stats.go`, `tls.go`, `port_manager.go`, `firewall.go`) into ~10 focused files within `package beamsync`. No behavior changes. Extract in dependency order.
+**Goal:** Split `beamsync/server.go` (1538 lines as of 2026-11-13; 1414 at the start of the
+Phase 3 fixes, which added the progress-event, settings-snapshot and locking work) into
+focused files within `package beamsync`. **No behavior changes.** Extract in risk-ascending
+order, verifying the full suite after every step.
 
-**Requirements:** STR-01, STR-02, STR-03, STR-04, STR-05, STR-06, STR-07, STR-08, STR-09, STR-10
+**UI hint**: no
+
+**Requirements:** STR-01, STR-02, STR-04, STR-05, STR-06, STR-07, STR-08, STR-09
+
+> STR-03 (merge `progressWriter` / `downloadProgressWriter`) and STR-10 (`shareURL()` helper)
+> were delivered in earlier phases and are excluded from this phase.
+
+**Plans:** 9 plans
+
+- [ ] 04-01-PLAN.md — Extract `events.go` (STR-06)
+- [ ] 04-02-PLAN.md — Extract `rate_limiter.go` (STR-01)
+- [ ] 04-03-PLAN.md — Extract `progress.go` (STR-02)
+- [ ] 04-04-PLAN.md — Extract `io_helpers.go` (STR-04)
+- [ ] 04-05-PLAN.md — Extract `middleware.go` (STR-05)
+- [ ] 04-06-PLAN.md — Extract `helpers.go` (STR-09)
+- [ ] 04-07-PLAN.md — Extract `upload_handler.go` (STR-07)
+- [ ] 04-08-PLAN.md — Extract `download_handler.go` (STR-08)
+- [ ] 04-09-PLAN.md — Trim `server.go` (STR-09)
 
 ### Plans
 
-4.1 **Extract `helpers.go`** — Move `generateID`, `sha256Hex`, `hashMatches`, `clientIP`, `autoRenamePath`, `processManifest`, `uploadBufferInitialCapacity` from `server.go` -> `helpers.go`. No struct dependencies. **Risk: Low.**
+Re-derived from the current 1538-line file — the previous plan list named nine symbols that no
+longer exist (`hashMatches`, `processManifest`, `uploadBufferInitialCapacity`, `writeJob`,
+`writeWorkerCount`, `largeFileThreshold`, `startWriteWorkers`, `writeFileToDisk`,
+`downloadProgressWriter`).
 
-4.2 **Extract `rate_limiter.go`** — Move `clientRateLimiter` type + `allow()` method + bucket logic + existing `rate_limiter_test.go`. Move the full type (struct + all methods) as one unit per PITFALLS.md 1e. **Risk: Low.**
+4.1 **Extract `events.go`** — Move `EventCallback`, `eventDispatchJob`, the `eventDispatcher`
+type with all its methods, `var defaultEventDispatcher`, `startWatchdog`, `safeEmit`,
+`logTransfer`, and the `PendingTransfer` type. **The singleton moves WITH its type**
+(PITFALLS.md 1a). The global stays global — see the decision recorded in `04-CONTEXT.md`
+(D-02). **Risk: Low.**
 
-4.3 **Extract `progress.go`** — Merge `progressWriter` + `downloadProgressWriter` into single `progressWriter` with `direction string` field ("upload" / "download"). Combine event name selection. Write test for merged type. **Risk: Low.**
+4.2 **Extract `rate_limiter.go`** — Move `rateLimitState`, `rateLimitDecision` and the
+`clientRateLimiter` type with all its methods as one unit (PITFALLS.md 1e). The existing
+`rate_limiter_test.go` moves with it. **Risk: Low.**
 
-4.4 **Extract `io_helpers.go`** — Move `copyChunked` + `chunkBufferPool` + related tests. **Risk: Low.** Note: `chunkBufferPool` must be declared in a shared location — put it here; upload_handler.go and download handlers reference `io_helpers.chunkBufferPool` (same package so just `chunkBufferPool`).
+4.3 **Extract `progress.go`** — Move the `progressWriter` type and its `Write` method. Keep
+the `eventName` and `now` fields Phase 3 added, and keep `Write`'s zero-byte guard and
+nil-guarded clock exactly as they are. **Risk: Low.**
 
-4.5 **Extract `middleware.go`** — Move `tokenMiddleware`, `rateLimitMiddleware`, `setCORSHeaders`, `setRateLimitHeaders`. Extract inline closures from `StartServer`/`StartSender` into methods on `*HTTPServer` to avoid 8-parameter functions (PITFALLS.md 1c). **Risk: Low.**
+4.4 **Extract `io_helpers.go`** — Move `copyChunked` and the `chunkBufferPool` declaration
+(PITFALLS.md 1b: one declaration, referenced from the upload and download handlers).
+**Risk: Low.**
 
-4.6 **Extract `events.go`** — Move `EventCallback`, `eventDispatchJob`, `eventDispatcher` struct + methods, `startWatchdog`, `safeEmit`, `logTransfer`. **Critical: move `var defaultEventDispatcher` with the type, not separately** (PITFALLS.md 1a). After move: `rg "defaultEventDispatcher" beamsync/` — exactly 1 declaration, N > 0 usages. Add event name constants here:
-   ```go
-   const (
-       EventDeviceConnected    = "device_connected"
-       EventDeviceDisconnected = "device_disconnected"
-       EventUploadProgress     = "upload_progress"
-       EventDownloadProgress   = "download_progress"
-       EventTransferRequest    = "transfer_request"
-       EventTransferLogged     = "transfer_logged"
-       // ...
-   )
-   ```
-   **Risk: Medium.** Must update all `safeEmit` callers if signature changes. Kill the global singleton — make `HTTPServer` hold its own `*eventDispatcher`.
+4.5 **Extract `middleware.go`** — Move `extractToken`, `tokenMiddleware`,
+`tokenMiddlewareAny`, `setRateLimitHeaders`, `rateLimitMiddleware`, `setCORSHeaders` and
+`clientIP`. `rateLimitMiddleware` keeps taking a settings **provider** — Phase 3 pinned that
+it reads the current snapshot per request, and that test must stay green. **Risk: Low.**
 
-4.7 **Extract `upload_handler.go`** — Move write pipeline: `writeJob`, `manifestEntry`, `writeWorkerCount`, `largeFileThreshold`, `startWriteWorkers`, `writeFileToDisk`. Extract inline upload closures into `*HTTPServer` methods. Depends on: `progress.go`, `io_helpers.go`, `helpers.go`, `events.go`. **Risk: Medium.** Test via Phase 3 integration tests.
+4.6 **Extract `helpers.go`** — Move `generateID`, `sha256Hex`, `autoRenamePath`, the
+`uploadIntegrityHeader` constant and the `uiFS` embed declaration. **Risk: Low.**
 
-4.8 **Extract `download_handler.go`** — Move download pipeline if separate from `StartSender` inline handlers. If download logic is tightly coupled to sender state, keep as `*HTTPServer` methods in `server.go` and extract later. **Risk: Medium.**
+4.7 **Extract `upload_handler.go`** — Move the `/upload` handler body out of the inline
+closure into a method on `*HTTPServer` (PITFALLS.md 1c). The handler needs `uploadDir`,
+which is a `StartServerE` parameter — add it as an `HTTPServer` field so the method does not
+grow a parameter list. **Risk: Medium.**
 
-4.9 **Trim `server.go`** — After all extractions, `server.go` retains: `HTTPServer` struct, `StartServer()`, `StartSender()`, `serverState`, route setup. It imports nothing new (same `package beamsync`). Verify: `go build ./...` passes. **Risk: High** — last step, must compile against all extracted files.
+4.8 **Extract `download_handler.go`** — Move the `/download` and `/download/N` handler
+bodies into methods on `*HTTPServer`. Preserve the per-site `eventName` and the terminal
+completion emit Phase 3 added — both are pinned by tests. **Risk: Medium.**
 
-4.10 **Deduplicate URL construction** — `desktop/app.go`: add `func (a *App) shareURL(port, token string) string` helper. Replace 6+ inline `fmt.Sprintf` calls with it. Also extract `gatherFileEntries` to eliminate duplicate file-info gathering (CONCERNS.md lines 392-407 and 444-459).
+4.9 **Trim `server.go`** — After the extractions, `server.go` retains: the `HTTPServer`
+struct, `serverState`, `StartServerE`, `StartSenderE`, the route registration, and the
+`//go:embed ui/*.html ui/*.png` directive (PITFALLS.md 1d — it must stay in the package
+that serves the assets). **Risk: Medium.**
 
-4.11 **Delete duplicate firewall scripts** — Remove `beamsync/firewall_setup.sh` and `build/linux/firewall_setup.sh`. Keep only the embedded script in `beamsync/firewall.go`.
+### Deferred to later phases
+
+- **Per-server event dispatcher** (previously plan 4.6's "kill the global singleton") — a
+  behavior change, not a move. Deferred to a phase that can design it deliberately.
+- **Event-name constants** — Phase 5's `SVE-08` owns the shared Go/Svelte event names.
+- **Duplicate firewall script** — `build/linux/firewall_setup.sh` is the true duplicate and
+  is `DOC-03` in Phase 8. The previous plan 4.11 also named
+  `beamsync/firewall_setup.sh`, but that file is the `//go:embed` source: deleting it
+  breaks the build. It stays.
 
 ### Dependencies
 
-- Phase 3 (tests exist to catch regressions from every extraction step)
-- Extract in numbered order within this phase — each step depends on prior extractions
+- Phase 3 — the safety net that catches a regression from every extraction step
+- Extract in numbered order within this phase — each step depends on the prior extractions
 
 ### Risks
 
-- **Package-level singleton split across files** (PITFALLS.md 1a): Move `defaultEventDispatcher` with `events.go`, not before it.
-- **`chunkBufferPool` double-declaration** (PITFALLS.md 1b): One declaration in `io_helpers.go`, reference it from `upload_handler.go` and download handlers.
-- **Handler closure captures become 8-parameter functions** (PITFALLS.md 1c): Use `*HTTPServer` methods instead.
-- **`go:embed` breaks** (PITFALLS.md 1d): Keep `//go:embed ui/*.html ui/*.png` in `server.go` — don't move to another file or package.
-- **go vet / build after each extraction** — run `go vet ./...` and `go test ./...` after every extraction step (ARCHITECTURE.md precondition 5).
+- **Package-level singleton split across files** (PITFALLS.md 1a): Move
+  `defaultEventDispatcher` with `events.go`, not before it. After the move,
+  `rg "defaultEventDispatcher" beamsync/` must show exactly 1 declaration.
+- **`chunkBufferPool` double-declaration** (PITFALLS.md 1b): One declaration in
+  `io_helpers.go`, referenced from the upload and download handlers.
+- **Handler closure captures become 8-parameter functions** (PITFALLS.md 1c): Use
+  `*HTTPServer` methods instead.
+- **`go:embed` breaks** (PITFALLS.md 1d): Keep `//go:embed ui/*.html ui/*.png` in
+  `server.go` — do not move it to another file or package. Likewise
+  `//go:embed firewall_setup.sh` stays in `firewall.go`.
+- **The Phase 3 hardening must survive the move** — `endpointMu`, `serverMu`, `stateMu`,
+  `settingsMu`, the `eventName`/`now` fields on `progressWriter`, and the settings snapshot
+  are all pinned by tests. An extraction that drops one is a behavior change.
+- **go vet / build after each extraction** — run `go vet ./...` and `go test -race ./...`
+  after every extraction step (ARCHITECTURE.md precondition 5).
 - **`git mv` for continuity** — use `git mv` for renamed/moved files to preserve git history.
-- **High risk for step 4.9** (final trim) — verify every reference in `server.go` is accounted for.
+- **Medium risk for step 4.9** (final trim) — verify every reference in `server.go` is
+  accounted for.
 
 ---
 
