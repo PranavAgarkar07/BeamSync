@@ -5,10 +5,10 @@ milestone_name: milestone
 current_phase: 3
 current_phase_name: Tests Before Refactoring
 status: complete
-stopped_at: "Phase 3 complete — verification passed (18/18 must-haves)"
-last_updated: "2026-11-12T12:30:00.000Z"
-last_activity: 2026-11-12
-last_activity_desc: Phase 3 complete — 24/50 requirements, verification passed 18/18
+stopped_at: "Phase 3 complete — verification passed 18/18, code review clean (33/33 mutants killed)"
+last_updated: "2026-11-13T09:00:00.000Z"
+last_activity: 2026-11-13
+last_activity_desc: Phase 3 complete — 24/50 requirements; verification 18/18; code review clean
 progress:
   total_phases: 8
   completed_phases: 3
@@ -18,7 +18,7 @@ progress:
 
 # Project State
 
-**Last Updated:** 2026-11-12
+**Last Updated:** 2026-11-13
 
 Phase 1: complete — 6/6.
 Phase 2: complete — 7/7.
@@ -26,17 +26,17 @@ Phase 3: complete — 6/6 (TST-03, TST-05, TST-06 landed with the initial test s
 
 ## Current Position
 
-Phase: 3 of 8 — Tests Before Refactoring — **COMPLETE, verification passed (18/18 must-haves)**
+Phase: 3 of 8 — Tests Before Refactoring — **COMPLETE, verification passed (18/18) + code review clean**
 Plan: 3 of 3 in current phase — 03-01, 03-02, 03-03 all complete
 Status: Phase complete — next is Phase 4 (Go Structural Refactor)
-Last activity: 2026-11-12 — Phase 3 complete
+Last activity: 2026-11-13 — Phase 3 complete (review closed)
 Progress: [██████████] 100%
 
 ### Phase 3 outcome
 
 Test safety net delivered: **24/50 requirements complete** (was 13/50 at the start of this
-session). 85 test functions across both Go modules; `go test -race` green in both;
-`golangci-lint` clean in both; Windows cross-build OK.
+session). **115 test functions** across both Go modules; `go test -race` green in both;
+`golangci-lint` clean in both; Windows cross-build OK; stable under `-race -shuffle=on`.
 
 Live bugs found and fixed while building the net:
 - **`download_progress` was emitted by nothing.** Phase 1 deleted `downloadProgressWriter` and
@@ -53,6 +53,21 @@ Live bugs found and fixed while building the net:
 - **CI was red** on `main` and `dev` — `errorlint` violations in the firewall-failover error
   path plus a `typecheck` failure on the `/v2`-suffixed wails import. Both fixed; CI lint is
   now clean.
+- **Upload progress was indeterminate.** The manifest's file sizes were parsed then
+  discarded, so `progressWriter.total` stayed 0 and the desktop could not compute a
+  percentage. The declared size is now used, matched to parts in order so two files
+  sharing a base name each get their own size.
+- **A `serverMu` deadlock.** `stopReceiver()` held the lock and then called
+  `setReceiverServer(nil)`, which locks the same non-reentrant mutex — every
+  Stop/restart/choose-folder/quit path hung with a receiver running.
+- **Races on the shared App fields.** `currentIP`/`currentPort`/`currentToken`,
+  `lastSavePath`/`serverApp`/`senderApp`, `ctx`/`audio`/`version` and the live
+  `TransferSettings` (device blocklist) were all written from one goroutine and read
+  from another. Wails dispatches every bound-method call on its own goroutine. All are
+  now behind dedicated locks with snapshot/set accessors.
+- **The quit guard was non-deterministic.** `makeCallback` checked `eventsClosed` and the
+  channel send in one `select`; with both ready Go picks randomly, so 92 of 200 events
+  were still enqueued after the app quit. The quit signal is now checked first.
 
 ### Safety net quality
 
@@ -60,7 +75,16 @@ Every production `eventName` literal is protected by an end-to-end test that dri
 HTTP handler — mutating any one of the three sites fails the suite. The dispatcher tests use a
 primer construction (a callback that signals entry from inside the blocking callback) so the
 drop-on-full assertion is deterministic rather than a scheduler coin-flip (measured: 197/200
-flips with a scheduler yield). Nine mutants were written and all are killed.
+flips with a scheduler yield).
+
+**33 mutants were written during the phase and all 33 are killed** — each one applied to a
+throwaway copy and confirmed to turn the suite red. The final code review is
+`status: clean` (0 blockers, 0 warnings); see `.planning/phases/03-tests-before-refactoring/03-REVIEW.md`
+for the full mutation table.
+
+The safety net is mutation-verified, not assertion-verified: for every production
+behaviour this phase introduced or repaired, there is a test that FAILS when the
+behaviour is broken — not merely a test that passes today.
 
 Deferred to later phases (logged in `.planning/phases/03-tests-before-refactoring/deferred-items.md`):
 the `|`-in-filename payload ambiguity, and the Linux-only CI matrix (Phase 7) that leaves the
