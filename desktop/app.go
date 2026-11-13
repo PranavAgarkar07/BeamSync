@@ -614,9 +614,16 @@ func (a *App) GetVersion() string {
 // makeCallback returns an EventCallback that queues events into the channel.
 func (a *App) makeCallback() beamsync.EventCallback {
 	return func(name string, data string) {
+		// Check the quit signal FIRST, in its own select. A single select
+		// with both the closed eventsClosed channel and a send to a
+		// non-full eventChan picks RANDOMLY among the ready cases, so
+		// events could keep being enqueued after the app had quit.
 		select {
 		case <-a.eventsClosed:
 			return
+		default:
+		}
+		select {
 		case a.eventChan <- EventData{Name: name, Data: data}:
 		default:
 			fmt.Printf("Dropping frontend event because queue is full: %s\n", name)

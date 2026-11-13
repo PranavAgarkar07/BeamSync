@@ -853,3 +853,46 @@ func TestShutdownStopsServersAndClosesChannels(t *testing.T) {
 		t.Fatal("shutdown did not close ipMonitorStop")
 	}
 }
+
+// TestShutdownIsIdempotent pins that calling shutdown twice is safe.
+//
+// The shutdownOnce guard is load-bearing: a second shutdown would close the
+// event channels again and panic with "close of closed channel".
+func TestShutdownIsIdempotent(t *testing.T) {
+	app := NewApp()
+
+	app.shutdown(context.Background())
+	// A second shutdown must not panic.
+	app.shutdown(context.Background())
+
+	select {
+	case <-app.eventsClosed:
+	default:
+		t.Fatal("eventsClosed is not closed after shutdown")
+	}
+}
+
+// TestMakeCallbackDropsEventsAfterQuit pins that the event callback stops
+// enqueuing once the app has quit.
+//
+// A single select over the closed eventsClosed channel and a send to a
+// non-full eventChan picks RANDOMLY among the ready cases, so events could
+// still be enqueued after the quit.
+func TestMakeCallbackDropsEventsAfterQuit(t *testing.T) {
+	app := NewApp()
+	callback := app.makeCallback()
+
+	close(app.eventsClosed)
+
+	// Drain anything that slipped through before the check.
+	for len(app.eventChan) > 0 {
+		<-app.eventChan
+	}
+
+	for i := 0; i < 200; i++ {
+		callback("late_event", "x")
+	}
+	if got := len(app.eventChan); got != 0 {
+		t.Fatalf("event channel holds %d events after quit, want 0", got)
+	}
+}
