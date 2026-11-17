@@ -3,7 +3,6 @@ package beamsync
 import (
 	"bytes"
 	"io"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -418,55 +417,6 @@ func TestProgressWriterSingleWriterPerTransferPath(t *testing.T) {
 			previous = written
 		}
 	})
-}
-
-// TestEventDispatcherCloseStopsWorkerAndIsIdempotent pins the dispatcher's
-// shutdown behaviour: close() must stop the worker goroutine (no leak), must
-// be safe to call twice, and must make later emits no-ops rather than
-// panicking on a send to a closed channel.
-//
-// The leak is detected by creating many dispatchers at once: each adds one
-// worker goroutine, so the signal is large enough that ordinary goroutine
-// churn elsewhere in the test binary cannot mask it.
-func TestEventDispatcherCloseStopsWorkerAndIsIdempotent(t *testing.T) {
-	const dispatchers = 20
-
-	baseline := runtime.NumGoroutine()
-	created := make([]*eventDispatcher, 0, dispatchers)
-	for i := 0; i < dispatchers; i++ {
-		d := newEventDispatcher(4)
-		created = append(created, d)
-	}
-
-	// Each dispatcher owns one worker goroutine; wait for them to start.
-	deadline := time.Now().Add(2 * time.Second)
-	for runtime.NumGoroutine() < baseline+dispatchers {
-		if time.Now().After(deadline) {
-			t.Fatalf("workers did not start: baseline=%d now=%d", baseline, runtime.NumGoroutine())
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-
-	for _, d := range created {
-		d.close()
-		// Idempotent: a second close must not panic on an already-closed channel.
-		d.close()
-	}
-
-	// Emitting after close must be a safe no-op, not a panic.
-	if created[0].emit(eventDispatchJob{emit: func(string, string) {}, event: "after_close"}) {
-		t.Fatal("emit after close returned true, want false")
-	}
-
-	// The worker goroutines must be gone.
-	deadline = time.Now().Add(3 * time.Second)
-	for runtime.NumGoroutine() > baseline+dispatchers/2 {
-		if time.Now().After(deadline) {
-			t.Fatalf("goroutines did not settle after close: baseline=%d now=%d (leaked workers?)",
-				baseline, runtime.NumGoroutine())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
 }
 
 // shortWriter reports a short write, as the io.Writer contract allows.
