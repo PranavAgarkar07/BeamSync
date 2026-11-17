@@ -224,10 +224,11 @@ longer exist (`hashMatches`, `processManifest`, `uploadBufferInitialCapacity`, `
 `downloadProgressWriter`).
 
 4.1 **Extract `events.go`** — Move `EventCallback`, `eventDispatchJob`, the `eventDispatcher`
-type with all its methods, `var defaultEventDispatcher`, `startWatchdog`, `safeEmit`,
-`logTransfer`, and the `PendingTransfer` type. **The singleton moves WITH its type**
+type with all its methods, `var defaultEventDispatcher`, `startWatchdog`,
+`startBootstrapRotator`, `safeEmit`, and `logTransfer`. **The singleton moves WITH its type**
 (PITFALLS.md 1a). The global stays global — see the decision recorded in `04-CONTEXT.md`
-(D-02). **Risk: Low.**
+(D-02). `PendingTransfer` **stays** in `server.go`: it is `HTTPServer.pendingTransfers`
+state, not an event type. **Risk: Low.**
 
 4.2 **Extract `rate_limiter.go`** — Move `rateLimitState`, `rateLimitDecision` and the
 `clientRateLimiter` type with all its methods as one unit (PITFALLS.md 1e). The existing
@@ -246,8 +247,10 @@ nil-guarded clock exactly as they are. **Risk: Low.**
 `clientIP`. `rateLimitMiddleware` keeps taking a settings **provider** — Phase 3 pinned that
 it reads the current snapshot per request, and that test must stay green. **Risk: Low.**
 
-4.6 **Extract `helpers.go`** — Move `generateID`, `sha256Hex`, `autoRenamePath`, the
-`uploadIntegrityHeader` constant and the `uiFS` embed declaration. **Risk: Low.**
+4.6 **Extract `helpers.go`** — Move `generateID`, `sha256Hex`, `autoRenamePath`,
+`getLocalIPForURL` and the `uploadIntegrityHeader` constant. `uiFS` and its
+`//go:embed ui/*.html ui/*.png` directive **stay** in `server.go` (D-06) — its four use
+sites are all there, so keeping it leaves zero cross-file references. **Risk: Low.**
 
 4.7 **Extract `upload_handler.go`** — Move the `/upload` handler body out of the inline
 closure into a method on `*HTTPServer` (PITFALLS.md 1c). The handler needs `uploadDir`,
@@ -255,7 +258,8 @@ which is a `StartServerE` parameter — add it as an `HTTPServer` field so the m
 grow a parameter list. **Risk: Medium.**
 
 4.8 **Extract `download_handler.go`** — Move the `/download` and `/download/N` handler
-bodies into methods on `*HTTPServer`. Preserve the per-site `eventName` and the terminal
+bodies into a single `handleDownload(filePath, w, r)` method on `*HTTPServer` (D-12: the two
+bodies are behaviorally identical). Preserve the per-site `eventName` and the terminal
 completion emit Phase 3 added — both are pinned by tests. **Risk: Medium.**
 
 4.9 **Trim `server.go`** — After the extractions, `server.go` retains: the `HTTPServer`

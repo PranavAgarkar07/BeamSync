@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 3
-current_phase_name: Tests Before Refactoring
-status: complete
-stopped_at: "Phase 3 complete — verification passed 18/18, code review clean (33/33 mutants killed)"
-last_updated: "2026-11-13T09:00:00.000Z"
-last_activity: 2026-11-13
-last_activity_desc: Phase 3 complete — 24/50 requirements; verification 18/18; code review clean
+current_phase: 4
+current_phase_name: Go Structural Refactor — server.go Extraction
+status: planned
+stopped_at: "Phase 4 planning complete — 9 plans created and validated (0 errors, 0 warnings each); ready to execute"
+last_updated: "2026-11-17T00:00:00.000Z"
+last_activity: 2026-11-17
+last_activity_desc: Phase 4 plans created and plan-checked through 3 revision passes
 progress:
   total_phases: 8
   completed_phases: 3
-  total_plans: 7
+  total_plans: 16
   completed_plans: 7
 ---
 
@@ -26,11 +26,21 @@ Phase 3: complete — 6/6 (TST-03, TST-05, TST-06 landed with the initial test s
 
 ## Current Position
 
-Phase: 3 of 8 — Tests Before Refactoring — **COMPLETE, verification passed (18/18) + code review clean**
-Plan: 3 of 3 in current phase — 03-01, 03-02, 03-03 all complete
-Status: Phase complete — next is Phase 4 (Go Structural Refactor)
-Last activity: 2026-11-13 — Phase 3 complete (review closed)
-Progress: [██████████] 100%
+Phase: 4 of 8 — Go Structural Refactor (`server.go` Extraction) — **PLANNED, ready to execute**
+Plan: 0 of 9 in current phase — 04-01 … 04-09 created, all 9 passing `verify plan-structure`
+Status: Planning complete — next is `/gsd-execute-phase 4`
+Last activity: 2026-11-17 — Phase 4 plans finalized after 3 plan-checker revision passes
+Progress: [██████░░░░] 38% (phases 1–3 of 8 complete)
+
+### Phase 4 plan shape
+
+Nine serial extractions out of the 1538-line `beamsync/server.go`, risk-ascending: pure file
+moves first (04-01 `events.go`, 04-02 `rate_limiter.go`, 04-03 `progress.go`, 04-04
+`io_helpers.go`, 04-05 `middleware.go`, 04-06 `helpers.go`), then the two closure-to-method
+conversions (04-07 `upload_handler.go`, 04-08 `download_handler.go`), then the final trim
+(04-09). Every task's `<verify>` carries `go build` + `go vet` + `go test -race`, and every
+plan's last task also gates the `desktop` module. Locked decisions D-01…D-13 live in
+`04-CONTEXT.md`; the file→analog map and derived import blocks live in `04-PATTERNS.md`.
 
 ### Phase 3 outcome
 
