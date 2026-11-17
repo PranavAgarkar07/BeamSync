@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 4
+current_phase: 04
 current_phase_name: Go Structural Refactor — server.go Extraction
-status: planned
-stopped_at: "Phase 4 planning complete — 9 plans created and validated (0 errors, 0 warnings each); ready to execute"
-last_updated: "2026-11-17T00:00:00.000Z"
+status: executing
+stopped_at: Completed 04-01-PLAN.md (events.go extraction)
+last_updated: "2026-11-17T16:52:09.856Z"
 last_activity: 2026-11-17
 last_activity_desc: Phase 4 plans created and plan-checked through 3 revision passes
 progress:
-  total_phases: 8
+  total_phases: 4
   completed_phases: 3
   total_plans: 16
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -26,11 +26,11 @@ Phase 3: complete — 6/6 (TST-03, TST-05, TST-06 landed with the initial test s
 
 ## Current Position
 
-Phase: 4 of 8 — Go Structural Refactor (`server.go` Extraction) — **PLANNED, ready to execute**
-Plan: 0 of 9 in current phase — 04-01 … 04-09 created, all 9 passing `verify plan-structure`
-Status: Planning complete — next is `/gsd-execute-phase 4`
-Last activity: 2026-11-17 — Phase 4 plans finalized after 3 plan-checker revision passes
-Progress: [██████░░░░] 38% (phases 1–3 of 8 complete)
+Phase: 04 (Go Structural Refactor — server.go Extraction) — EXECUTING
+Plan: 2 of 9
+Status: Ready to execute
+Last activity: 2026-11-17 — Phase 04 execution started
+Progress: [█████░░░░░] 50% (phases 1–3 of 8 complete)
 
 ### Phase 4 plan shape
 
@@ -49,32 +49,40 @@ session). **115 test functions** across both Go modules; `go test -race` green i
 `golangci-lint` clean in both; Windows cross-build OK; stable under `-race -shuffle=on`.
 
 Live bugs found and fixed while building the net:
+
 - **`download_progress` was emitted by nothing.** Phase 1 deleted `downloadProgressWriter` and
   pointed the sender at `progressWriter`, whose `Write` hardcoded `upload_progress` — so the
   desktop send-direction panel never moved. Now `progressWriter` carries an `eventName` field
   set per path at all three construction sites, and the send path emits a completion event.
+
 - **A fast send emitted zero progress events.** The send path re-seeded `lastEmit`, so a
   transfer finishing inside the 500 ms throttle window emitted nothing at all.
+
 - **Data race on the shared endpoint fields.** `currentIP`/`currentPort`/`currentToken` were
   written from three goroutines (processEvents, startIPMonitor, the Wails call handlers) and
   read from others. Now guarded by `endpointMu` with snapshot/set accessors.
+
 - **`extractPortFromURL` returned `1]`** for a bracketed IPv6 host with no port.
 - **The home-directory guard used a raw string prefix**, accepting `<home>-evil` as inside home.
 - **CI was red** on `main` and `dev` — `errorlint` violations in the firewall-failover error
   path plus a `typecheck` failure on the `/v2`-suffixed wails import. Both fixed; CI lint is
   now clean.
+
 - **Upload progress was indeterminate.** The manifest's file sizes were parsed then
   discarded, so `progressWriter.total` stayed 0 and the desktop could not compute a
   percentage. The declared size is now used, matched to parts in order so two files
   sharing a base name each get their own size.
+
 - **A `serverMu` deadlock.** `stopReceiver()` held the lock and then called
   `setReceiverServer(nil)`, which locks the same non-reentrant mutex — every
   Stop/restart/choose-folder/quit path hung with a receiver running.
+
 - **Races on the shared App fields.** `currentIP`/`currentPort`/`currentToken`,
   `lastSavePath`/`serverApp`/`senderApp`, `ctx`/`audio`/`version` and the live
   `TransferSettings` (device blocklist) were all written from one goroutine and read
   from another. Wails dispatches every bound-method call on its own goroutine. All are
   now behind dedicated locks with snapshot/set accessors.
+
 - **The quit guard was non-deterministic.** `makeCallback` checked `eventsClosed` and the
   channel send in one `select`; with both ready Go picks randomly, so 92 of 200 events
   were still enqueued after the app quit. The quit signal is now checked first.
@@ -198,8 +206,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 
 ## Session
 
-**Last session:** 2026-11-12T12:00:12.038Z
-**Stopped at:** Completed 03-02-PLAN.md
+**Last session:** 2026-11-17T16:52:09.837Z
+**Stopped at:** Completed 04-01-PLAN.md (events.go extraction)
 **Resume file:** None
 
 ## Decisions
@@ -211,6 +219,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 - [Phase 3]: D-07/D-08: committed the send-path event-name test RED before the fix, so the download_progress fix is provably what turned it green; the test asserts the event name per path (upload_progress on receive, download_progress on send), not just the payload
 - [Phase 3]: D-09: progressWriter gained an injectable now func() time.Time clock (mirroring clientRateLimiter.now) with a nil-guard fallback to time.Now, so the throttle is tested with a fake clock and never time.Sleep
 - [Phase 3]: Left lastEmit unset at the receive-path progressWriter construction site, preserving the asymmetry where the first write always emits — now pinned by a test instead of left as an accident
+- [Phase 4]: D-01/D-02 — moved the event dispatcher type, its stateMu/close() and the defaultEventDispatcher singleton into beamsync/events.go in one block so no second dispatcher can be created by a stranded declaration; the singleton stays a package global (per-server dispatch is a behavior change, deferred)
+- [Phase 4]: D-13 — TestEventDispatcherCloseStopsWorkerAndIsIdempotent moved from progress_test.go to event_dispatcher_test.go with its name unchanged, because the Phase 3 33-mutant table keys on test function names
 
 ## Performance Metrics
 
@@ -218,3 +228,4 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 |------|----------|-------|-------|
 | Phase 03 P03 | 14min | 3 tasks | 5 files |
 | Phase 03 P02 | 5min | 3 tasks | 2 files |
+| Phase 04 P01 | 8min | 3 tasks | 4 files |

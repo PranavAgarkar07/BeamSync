@@ -204,9 +204,9 @@ order, verifying the full suite after every step.
 > STR-03 (merge `progressWriter` / `downloadProgressWriter`) and STR-10 (`shareURL()` helper)
 > were delivered in earlier phases and are excluded from this phase.
 
-**Plans:** 9 plans
+**Plans:** 1/9 plans executed
 
-- [ ] 04-01-PLAN.md — Extract `events.go` (STR-06)
+- [x] 04-01-PLAN.md — Extract `events.go` (STR-06)
 - [ ] 04-02-PLAN.md — Extract `rate_limiter.go` (STR-01)
 - [ ] 04-03-PLAN.md — Extract `progress.go` (STR-02)
 - [ ] 04-04-PLAN.md — Extract `io_helpers.go` (STR-04)
@@ -271,6 +271,7 @@ that serves the assets). **Risk: Medium.**
 
 - **Per-server event dispatcher** (previously plan 4.6's "kill the global singleton") — a
   behavior change, not a move. Deferred to a phase that can design it deliberately.
+
 - **Event-name constants** — Phase 5's `SVE-08` owns the shared Go/Svelte event names.
 - **Duplicate firewall script** — `build/linux/firewall_setup.sh` is the true duplicate and
   is `DOC-03` in Phase 8. The previous plan 4.11 also named
@@ -287,18 +288,24 @@ that serves the assets). **Risk: Medium.**
 - **Package-level singleton split across files** (PITFALLS.md 1a): Move
   `defaultEventDispatcher` with `events.go`, not before it. After the move,
   `rg "defaultEventDispatcher" beamsync/` must show exactly 1 declaration.
+
 - **`chunkBufferPool` double-declaration** (PITFALLS.md 1b): One declaration in
   `io_helpers.go`, referenced from the upload and download handlers.
+
 - **Handler closure captures become 8-parameter functions** (PITFALLS.md 1c): Use
   `*HTTPServer` methods instead.
+
 - **`go:embed` breaks** (PITFALLS.md 1d): Keep `//go:embed ui/*.html ui/*.png` in
   `server.go` — do not move it to another file or package. Likewise
   `//go:embed firewall_setup.sh` stays in `firewall.go`.
+
 - **The Phase 3 hardening must survive the move** — `endpointMu`, `serverMu`, `stateMu`,
   `settingsMu`, the `eventName`/`now` fields on `progressWriter`, and the settings snapshot
   are all pinned by tests. An extraction that drops one is a behavior change.
+
 - **go vet / build after each extraction** — run `go vet ./...` and `go test -race ./...`
   after every extraction step (ARCHITECTURE.md precondition 5).
+
 - **`git mv` for continuity** — use `git mv` for renamed/moved files to preserve git history.
 - **Medium risk for step 4.9** (final trim) — verify every reference in `server.go` is
   accounted for.
