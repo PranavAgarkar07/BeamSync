@@ -1124,7 +1124,7 @@ import (
 
 | Kept item | Current lines | Note |
 |---|---|---|
-| `package beamsync` + the import block | 1-26 → shrinks to 12 imports | see below |
+| `package beamsync` + the import block | 1-26 → shrinks to 11 imports | see below |
 | `//go:embed ui/*.html ui/*.png` + `var uiFS embed.FS` | 241-242 | **PITFALLS 1d / D-06 — must stay here** |
 | `serverState` type + its 5 methods | 251-300 | `sync.Mutex` + `time` |
 | `HTTPServer` struct + all its methods | 302-420 | `RespondToTransfer`, `Settings`, `UpdateSettings`, `currentSettings`, `TransferHistory`, `Stats`, `Shutdown`, `CurrentBootstrapToken`, `RotateBootstrapToken` |
@@ -1149,7 +1149,7 @@ import (
 )
 ```
 
-**12 imports, down from 23.** The 11 that leave: `bufio`, `crypto/rand`, `crypto/sha256`,
+**11 imports, down from 22.** The 11 that leave: `bufio`, `crypto/rand`, `crypto/sha256`,
 `encoding/hex`, `io`, `math`, `mime`, `mime/multipart`, `net`, `strconv`, `sync/atomic`.
 
 > ⚠️ `"embed"` (named) stays in `server.go` because `uiFS` is `embed.FS`. Do **not** switch to
