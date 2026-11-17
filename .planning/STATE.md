@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Go Structural Refactor — server.go Extraction
 status: executing
-stopped_at: Completed 04-01-PLAN.md (events.go extraction)
-last_updated: "2026-11-17T16:52:09.856Z"
+stopped_at: Completed 04-02-PLAN.md (rate_limiter.go extraction)
+last_updated: "2026-11-17T16:57:09.208Z"
 last_activity: 2026-11-17
 last_activity_desc: Phase 4 plans created and plan-checked through 3 revision passes
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 16
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -27,10 +27,10 @@ Phase 3: complete — 6/6 (TST-03, TST-05, TST-06 landed with the initial test s
 ## Current Position
 
 Phase: 04 (Go Structural Refactor — server.go Extraction) — EXECUTING
-Plan: 2 of 9
+Plan: 3 of 9
 Status: Ready to execute
 Last activity: 2026-11-17 — Phase 04 execution started
-Progress: [█████░░░░░] 50% (phases 1–3 of 8 complete)
+Progress: [██████░░░░] 56% (phases 1–3 of 8 complete)
 
 ### Phase 4 plan shape
 
@@ -115,13 +115,13 @@ Windows-only branch of `desktop/app.go` unexercised.
 | 1 — Event System & Version | ● Complete | 6/6 reqs |
 | 2 — DevEx Tooling & CI | ● Complete | 7/7 reqs |
 | 3 — Tests Before Refactoring | ● Complete | 6/6 reqs |
-| 4 — Go Structural Refactor | ○ Planned | 1/10 reqs |
+| 4 — Go Structural Refactor | ● In Progress | 2/10 reqs |
 | 5 — Svelte Component Split | ○ Planned | 0/9 reqs |
 | 6 — Error Handling & Logging | ○ Planned | 1/4 reqs |
 | 7 — CI/CD & Release | ○ Planned | 0/3 reqs |
 | 8 — Documentation & Cleanup | ○ Planned | 2/5 reqs |
 
-**Total:** 24/50 requirements complete
+**Total:** 25/50 requirements complete
 
 ## Active Phase
 
@@ -206,8 +206,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 
 ## Session
 
-**Last session:** 2026-11-17T16:52:09.837Z
-**Stopped at:** Completed 04-01-PLAN.md (events.go extraction)
+**Last session:** 2026-11-17T16:57:09.186Z
+**Stopped at:** Completed 04-02-PLAN.md (rate_limiter.go extraction)
 **Resume file:** None
 
 ## Decisions
@@ -221,6 +221,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 - [Phase 3]: Left lastEmit unset at the receive-path progressWriter construction site, preserving the asymmetry where the first write always emits — now pinned by a test instead of left as an accident
 - [Phase 4]: D-01/D-02 — moved the event dispatcher type, its stateMu/close() and the defaultEventDispatcher singleton into beamsync/events.go in one block so no second dispatcher can be created by a stranded declaration; the singleton stays a package global (per-server dispatch is a behavior change, deferred)
 - [Phase 4]: D-13 — TestEventDispatcherCloseStopsWorkerAndIsIdempotent moved from progress_test.go to event_dispatcher_test.go with its name unchanged, because the Phase 3 33-mutant table keys on test function names
+- [Phase 4]: Phase 4 plan 02: moved the rate limiter as one contiguous block (state/decision structs, type, constructor, allow/prune/evictOldestIfFull) into beamsync/rate_limiter.go and proved it byte-identical by diffing the origin line range against the new file body before deleting — the window-boundary arithmetic, empty-key lookup and oldest-client eviction are the same characters, satisfying T-04-02-01
+- [Phase 4]: Phase 4 plan 02: Task 2.2 was a guard with a designed zero delta — rate_limiter_test.go already held exactly the three TestClientRateLimiter* tests, so the split was verified by counting test functions per prefix and committed with --allow-empty rather than inventing a change; the five TestRateLimitMiddleware* tests stay for 04-05 Task 5.2 and no test was renamed (D-13)
 
 ## Performance Metrics
 
@@ -229,3 +231,4 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 | Phase 03 P03 | 14min | 3 tasks | 5 files |
 | Phase 03 P02 | 5min | 3 tasks | 2 files |
 | Phase 04 P01 | 8min | 3 tasks | 4 files |
+| Phase 04 P02 | 4min | 2 tasks | 2 files |

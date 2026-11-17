@@ -28,7 +28,7 @@
 - [x] TST-06 — Add integration test for token auth (valid, expired, wrong scope, wrong IP)
 
 ### Phase 4: Go Structural Refactor
-- [ ] STR-01 — Extract rate limiter from `server.go` into `rate_limiter.go`
+- [x] STR-01 — Extract rate limiter from `server.go` into `rate_limiter.go`
 - [ ] STR-02 — Extract progress tracking types into `progress.go`
 - [x] STR-03 — Merge duplicate `progressWriter` / `downloadProgressWriter` into single type
 - [ ] STR-04 — Extract I/O helpers into `io_helpers.go`
