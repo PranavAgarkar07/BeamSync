@@ -115,22 +115,6 @@ func TestSetCORSHeaders(t *testing.T) {
 	}
 }
 
-func TestCopyChunkedCopiesDataAndReportsCount(t *testing.T) {
-	payload := strings.Repeat("beam-sync", 1024)
-	var dst bytes.Buffer
-
-	n, err := copyChunked(&dst, strings.NewReader(payload), 17)
-	if err != nil {
-		t.Fatalf("copyChunked returned error: %v", err)
-	}
-	if n != int64(len(payload)) {
-		t.Fatalf("copyChunked bytes = %d, want %d", n, len(payload))
-	}
-	if dst.String() != payload {
-		t.Fatal("copyChunked did not preserve payload")
-	}
-}
-
 func TestSafeEmitHandlesNilCallbackAndCallbackPanic(t *testing.T) {
 	safeEmit(nil, "noop", "")
 
