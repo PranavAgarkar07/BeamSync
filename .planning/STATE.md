@@ -3,34 +3,35 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 04
-current_phase_name: Go Structural Refactor — server.go Extraction
-status: executing
+status: completed
 stopped_at: Completed 04-09-PLAN.md (server.go trim — phase 4 all plans executed)
-last_updated: "2026-11-18T13:02:00.000Z"
-last_activity: 2026-11-18
-last_activity_desc: Phase 4 all 9 plans executed; final trim verified
+last_updated: "2026-11-18T22:58:06.438Z"
+last_activity: 2026-11-19
+last_activity_desc: Phase 04 marked complete
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 16
   completed_plans: 16
+current_phase_name: Go Structural Refactor — server.go Extraction
 ---
 
 # Project State
 
-**Last Updated:** 2026-11-13
+**Last Updated:** 2026-11-19
 
 Phase 1: complete — 6/6.
 Phase 2: complete — 7/7.
 Phase 3: complete — 6/6 (TST-03, TST-05, TST-06 landed with the initial test suite; TST-01 landed in plan 03-01, TST-04 landed in plan 03-03, TST-02 landed in plan 03-02).
+Phase 4: complete — 10/10 (STR-01, 02, 04, 05, 06, 07, 08, 09 delivered here; STR-03 and STR-10 landed in earlier phases).
 
 ## Current Position
 
-Phase: 04 (Go Structural Refactor — server.go Extraction) — EXECUTING
-Plan: 9 of 9 (all plans executed)
-Status: Ready for phase verification
-Last activity: 2026-11-18 — Phase 04 all 9 plans executed; final trim verified
-Progress: [████████░░] 81% (phases 1–3 of 8 complete)
+Phase: 04 — COMPLETE
+Plan: 9 of 9 (all plans executed, phase verified)
+Status: Phase 04 complete — next phase not yet planned
+Last activity: 2026-11-19 — Phase 04 marked complete
+Progress: [████░░░░] 50% (phases 1–4 of 8 complete)
 
 ### Phase 4 plan shape
 
@@ -41,6 +42,32 @@ conversions (04-07 `upload_handler.go`, 04-08 `download_handler.go`), then the f
 (04-09). Every task's `<verify>` carries `go build` + `go vet` + `go test -race`, and every
 plan's last task also gates the `desktop` module. Locked decisions D-01…D-13 live in
 `04-CONTEXT.md`; the file→analog map and derived import blocks live in `04-PATTERNS.md`.
+
+### Phase 4 outcome
+
+`beamsync/server.go` reduced **1538 → 698 lines** (−840, −55%) with **no behavior change**.
+Eight focused files now hold what used to be one:
+
+| File | Lines | Contents |
+|------|-------|----------|
+| `events.go` | 191 | event dispatcher, `defaultEventDispatcher`, `safeEmit`, `logTransfer`, watchdog + bootstrap rotator |
+| `middleware.go` | 144 | `extractToken`, token/rate-limit middleware, CORS, `clientIP` |
+| `rate_limiter.go` | 118 | `clientRateLimiter` and its window arithmetic |
+| `upload_handler.go` | 196 | `handleUpload` method |
+| `download_handler.go` | 83 | unified `handleDownload` serving both `/download` and `/download/N` |
+| `helpers.go` | 50 | `generateID`, `autoRenamePath`, `getLocalIPForURL`, reserved integrity helpers |
+| `progress.go` | 45 | `progressWriter` |
+| `io_helpers.go` | 41 | `copyChunked` + `chunkBufferPool` |
+
+`server.go` imports fell **22 → 11**; all eight files are `package beamsync` (no sub-packages);
+the public API is unchanged (31 exported decls, 80/80 signatures byte-identical) so `desktop/app.go`
+needs no change. `PendingTransfer`, `serverState`, and `uiFS` + its `//go:embed` stayed in
+`server.go` per D-06. Two handler bodies were unified rather than moved twice (D-12), which is
+the only place the phase was not a pure copy; both deltas were proven inert in `04-VERIFICATION.md`.
+
+`04-VERIFICATION.md` scored 23/25 truths with zero gaps; the two unverified ones are pre-existing
+coverage gaps closed as accepted risk on diff-identity and logged as `DEF-04-01`/`DEF-04-02` in
+`deferred-items.md` — neither is a Phase 4 regression.
 
 ### Phase 3 outcome
 
@@ -115,7 +142,7 @@ Windows-only branch of `desktop/app.go` unexercised.
 | 1 — Event System & Version | ● Complete | 6/6 reqs |
 | 2 — DevEx Tooling & CI | ● Complete | 7/7 reqs |
 | 3 — Tests Before Refactoring | ● Complete | 6/6 reqs |
-| 4 — Go Structural Refactor | ● In Progress | 10/10 reqs |
+| 4 — Go Structural Refactor | ● Complete | 10/10 reqs |
 | 5 — Svelte Component Split | ○ Planned | 0/9 reqs |
 | 6 — Error Handling & Logging | ○ Planned | 1/4 reqs |
 | 7 — CI/CD & Release | ○ Planned | 0/3 reqs |

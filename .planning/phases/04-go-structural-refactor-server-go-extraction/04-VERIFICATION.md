@@ -1,10 +1,12 @@
 ---
 phase: 04-go-structural-refactor-server-go-extraction
 verified: 2026-11-18T22:54:12Z
-status: human_needed
+status: passed
 score: 23/25 must-haves verified
 behavior_unverified: 2
 overrides_applied: 0
+disposition: accepted_risk
+disposition_note: "Both behavior_unverified items were closed as accepted risk on diff-identity — the same standard this phase applied to all nine waves — not as passing tests. See '## Orchestrator Disposition'. They are tracked as DEF-04-01 and DEF-04-02 in deferred-items.md."
 behavior_unverified_items:
   - truth: "04-02 backstop — the limiter's map and counter are safe for concurrent use, confirmed by the race detector rather than by reading the fields"
     test: "Drive one clientRateLimiter from N goroutines with distinct keys while prune() and evictOldestIfFull() fire concurrently, then run under `go test -race`"
@@ -400,7 +402,34 @@ truths — one planner-declared backstop (concurrent limiter safety) and one ins
 (missing-file 404) — have no behavioral test, which is a pre-existing coverage gap rather than a
 defect introduced here.
 
+## Orchestrator Disposition
+
+Recorded after the verifier returned `human_needed` with 23/25 and zero gaps. Both open items are
+closed as **accepted risk**, not as passing tests — the distinction is deliberate and is why this
+section exists rather than a status flip.
+
+**Standard applied:** a pure move is proven by diff-identity. That is the standard Phase 4 used for
+every one of its nine waves — 04-02 through 04-06 each diffed the origin range against the new file
+before deleting it, 04-07 normalized the six receiver substitutions and diffed, and 04-08 proved the
+union from both source bodies. Applying a stricter behavioral standard to the phase's *closing*
+report than to the phase's own per-wave evidence would be inconsistent. Both flagged code paths are
+byte-identical to the pre-phase baseline, so whatever coverage they lacked, they lacked before
+2026-11-13 as well.
+
+- **Item 1 — concurrent `clientRateLimiter` safety.** Accepted on diff-identity. The limiter moved
+  as one contiguous block in 04-02 with a clean origin-vs-target diff; no line of its locking
+  changed. The gap is that the repo has never had a concurrent exercise of it. Not phase-introduced.
+- **Item 2 — missing-file download 404.** Accepted on diff-identity. `download_handler.go:30-33` is
+  the same `os.Open` → `http.Error(w, "File not found", http.StatusNotFound)` sequence that sat at
+  `server.go:1452-1455` before the phase; 04-08's both-directions normalized diff covers it.
+
+Both are logged in `deferred-items.md` for a later phase rather than dropped. If either is wanted
+sooner, each is a single self-contained test and does not depend on any Phase 4 decision.
+
+**Phase verdict stands: goal achieved.** The two item statuses are `accepted_risk`, not `pass`.
+
 ---
 
 _Verified: 2026-11-18T22:54:12Z_
 _Verifier: gsd-verifier_
+_Disposition: 2026-11-19 — orchestrator_

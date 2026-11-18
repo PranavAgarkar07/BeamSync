@@ -204,7 +204,7 @@ order, verifying the full suite after every step.
 > STR-03 (merge `progressWriter` / `downloadProgressWriter`) and STR-10 (`shareURL()` helper)
 > were delivered in earlier phases and are excluded from this phase.
 
-**Plans:** 9/9 plans executed
+**Plans:** 9/9 plans complete
 
 - [x] 04-01-PLAN.md — Extract `events.go` (STR-06)
 - [x] 04-02-PLAN.md — Extract `rate_limiter.go` (STR-01)
