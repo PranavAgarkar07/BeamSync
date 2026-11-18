@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Go Structural Refactor — server.go Extraction
 status: executing
-stopped_at: Completed 04-05-PLAN.md (middleware.go)
-last_updated: "2026-11-18T12:31:09.847Z"
+stopped_at: Completed 04-06-PLAN.md (helpers.go)
+last_updated: "2026-11-18T12:35:13.422Z"
 last_activity: 2026-11-17
 last_activity_desc: Phase 4 plans created and plan-checked through 3 revision passes
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 16
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # Project State
@@ -27,10 +27,10 @@ Phase 3: complete — 6/6 (TST-03, TST-05, TST-06 landed with the initial test s
 ## Current Position
 
 Phase: 04 (Go Structural Refactor — server.go Extraction) — EXECUTING
-Plan: 6 of 9
+Plan: 7 of 9
 Status: Ready to execute
 Last activity: 2026-11-17 — Phase 04 execution started
-Progress: [████████░░] 75% (phases 1–3 of 8 complete)
+Progress: [████████░░] 81% (phases 1–3 of 8 complete)
 
 ### Phase 4 plan shape
 
@@ -206,8 +206,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 
 ## Session
 
-**Last session:** 2026-11-18T12:31:09.794Z
-**Stopped at:** Completed 04-05-PLAN.md (middleware.go)
+**Last session:** 2026-11-18T12:35:13.366Z
+**Stopped at:** Completed 04-06-PLAN.md (helpers.go)
 **Resume file:** None
 
 ## Decisions
@@ -230,6 +230,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 - [Phase 4]: 04-04: TestCopyChunkedCopiesDataAndReportsCount moved into the new beamsync/io_helpers_test.go without renaming (D-13) and gained empty / shorter-than-chunk / exactly-one-chunk subtests so both must_have truths are pinned by the suite
 - [Phase 4]: 04-05: the middleware chain moved as one contiguous block in traversal order; server.go's diff is deletion-only (0 additions), which is the proof that no route registration or chain order changed (T-04-05-01)
 - [Phase 4]: 04-05: math/strconv/net pruned from server.go in the same commit as the move; encoding/json and strings kept because the upload/download bodies still use them until 04-07/04-08
+- [Phase 4]: 04-06: the seven-declaration helper cluster moved to beamsync/helpers.go as a byte-identical copy of server.go:210-246 (md5-verified before deletion); crypto/rand, crypto/sha256 and encoding/hex pruned from server.go because their only four uses were inside the moved range, while fmt/os/filepath/strings/time stayed (46/8/13/8/33 remaining uses)
+- [Phase 4]: 04-06: both //nolint:unused // reserved markers and both var _ = blank assignments travelled verbatim, so the lint posture is unchanged — go build would pass without the markers but CI golangci-lint would not; //go:embed ui/* + uiFS were deliberately left at server.go:33-34 per D-06
 
 ## Performance Metrics
 
@@ -242,3 +244,4 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 | Phase 04 P03 | 2min | 2 tasks | 2 files |
 | Phase 04 P04 | 3min | 2 tasks | 4 files |
 | Phase 04 P05 | 3min | 3 tasks | 4 files |
+| Phase 04 P06 | 2min | 2 tasks | 2 files |
