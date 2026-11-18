@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Go Structural Refactor — server.go Extraction
 status: executing
-stopped_at: Completed 04-07-PLAN.md (upload_handler.go)
-last_updated: "2026-11-18T12:40:16.000Z"
+stopped_at: Completed 04-08-PLAN.md (download_handler.go)
+last_updated: "2026-11-18T12:52:00.000Z"
 last_activity: 2026-11-18
-last_activity_desc: Phase 4 plan 04-07 executed (upload handler extraction)
+last_activity_desc: Phase 4 plan 04-08 executed (download handler extraction)
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 16
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # Project State
@@ -27,9 +27,9 @@ Phase 3: complete — 6/6 (TST-03, TST-05, TST-06 landed with the initial test s
 ## Current Position
 
 Phase: 04 (Go Structural Refactor — server.go Extraction) — EXECUTING
-Plan: 8 of 9
+Plan: 9 of 9
 Status: Ready to execute
-Last activity: 2026-11-18 — Phase 04 plan 04-07 executed (upload handler extraction)
+Last activity: 2026-11-18 — Phase 04 plan 04-08 executed (download handler extraction)
 Progress: [████████░░] 81% (phases 1–3 of 8 complete)
 
 ### Phase 4 plan shape
@@ -115,13 +115,13 @@ Windows-only branch of `desktop/app.go` unexercised.
 | 1 — Event System & Version | ● Complete | 6/6 reqs |
 | 2 — DevEx Tooling & CI | ● Complete | 7/7 reqs |
 | 3 — Tests Before Refactoring | ● Complete | 6/6 reqs |
-| 4 — Go Structural Refactor | ● In Progress | 8/10 reqs |
+| 4 — Go Structural Refactor | ● In Progress | 9/10 reqs |
 | 5 — Svelte Component Split | ○ Planned | 0/9 reqs |
 | 6 — Error Handling & Logging | ○ Planned | 1/4 reqs |
 | 7 — CI/CD & Release | ○ Planned | 0/3 reqs |
 | 8 — Documentation & Cleanup | ○ Planned | 2/5 reqs |
 
-**Total:** 30/50 requirements complete
+**Total:** 31/50 requirements complete
 
 ## Active Phase
 
@@ -206,8 +206,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 
 ## Session
 
-**Last session:** 2026-11-18T12:40:16.000Z
-**Stopped at:** Completed 04-07-PLAN.md (upload_handler.go)
+**Last session:** 2026-11-18T12:52:00.000Z
+**Stopped at:** Completed 04-08-PLAN.md (download_handler.go)
 **Resume file:** None
 
 ## Decisions
@@ -237,6 +237,10 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 - [Phase 4]: 04-07: split TestUploadWithoutFileReturnsBadRequest into empty multipart body (the original case, which reaches the later "No files uploaded" 400) and non-multipart content type (which reaches "Expected multipart/form-data" for the first time) rather than adding a new top-level test, keeping the Phase 3 mutation table's key set unchanged (D-13)
 - [Phase 4]: 04-07: io and mime/multipart pruned from server.go with the move; bufio and mime kept because the download closure still needs bufio.NewReader and mime.TypeByExtension — those are exactly the two 04-08 must prune to reach the final 11 imports
 - [Phase 4]: 04-07: the executor was interrupted after Task 7.3's gate and before the summary write; all three task commits (2212b23, ad8beaa, 4c0b484) had landed, so the orchestrator verified every acceptance criterion independently and wrote the summary rather than re-executing the plan
+- [Phase 4]: 04-08: D-12 delivered — one handleDownload(filePath, w, r) now serves both /download and /download/N, proved from BOTH source bodies: the multi-file body needed only the six receiver swaps, the single-file body additionally needed realName := filepath.Base(filePath) prepended and seven filename → realName identifier rewrites, and each normalized text diffed empty against the single new method; the filename= inside the Content-Disposition format string was preserved (a naive \bfilename\b rewrite would have corrupted the header with no compiler error)
+- [Phase 4]: 04-08: the two outer locals filePath := filePaths[0] and filename := filepath.Base(filePath) were deleted in the same commit as the route rewiring — once the closures became delegations they were "declared and not used", a hard build error, so deferring would have left an uncompilable tree; the multi-file loop keeps idx := i and filePath := path because each per-index registration still captures them
+- [Phase 4]: 04-08: bufio and mime pruned with the move, landing server.go on exactly the final 11 imports (context embed encoding/json fmt net/http os path/filepath runtime/debug strings sync time) — 04-09 now only has to assert that set, not derive it; server.go is 698 lines
+- [Phase 4]: 04-08: the completion comment kept the fuller 3-line single-file version rather than the multi-file "see the single-file send path for why" cross-reference, which would have dangled once both bodies became one — a cosmetic delta, recorded rather than silently smoothed
 
 ## Performance Metrics
 
@@ -251,3 +255,4 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 | Phase 04 P05 | 3min | 3 tasks | 4 files |
 | Phase 04 P06 | 2min | 2 tasks | 2 files |
 | Phase 04 P07 | 3min | 3 tasks | 3 files |
+| Phase 04 P08 | 5min | 3 tasks | 3 files |
