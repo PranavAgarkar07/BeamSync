@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Go Structural Refactor — server.go Extraction
 status: executing
-stopped_at: Completed 04-06-PLAN.md (helpers.go)
-last_updated: "2026-11-18T12:35:13.422Z"
-last_activity: 2026-11-17
-last_activity_desc: Phase 4 plans created and plan-checked through 3 revision passes
+stopped_at: Completed 04-07-PLAN.md (upload_handler.go)
+last_updated: "2026-11-18T12:40:16.000Z"
+last_activity: 2026-11-18
+last_activity_desc: Phase 4 plan 04-07 executed (upload handler extraction)
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 16
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # Project State
@@ -27,9 +27,9 @@ Phase 3: complete — 6/6 (TST-03, TST-05, TST-06 landed with the initial test s
 ## Current Position
 
 Phase: 04 (Go Structural Refactor — server.go Extraction) — EXECUTING
-Plan: 7 of 9
+Plan: 8 of 9
 Status: Ready to execute
-Last activity: 2026-11-17 — Phase 04 execution started
+Last activity: 2026-11-18 — Phase 04 plan 04-07 executed (upload handler extraction)
 Progress: [████████░░] 81% (phases 1–3 of 8 complete)
 
 ### Phase 4 plan shape
@@ -115,13 +115,13 @@ Windows-only branch of `desktop/app.go` unexercised.
 | 1 — Event System & Version | ● Complete | 6/6 reqs |
 | 2 — DevEx Tooling & CI | ● Complete | 7/7 reqs |
 | 3 — Tests Before Refactoring | ● Complete | 6/6 reqs |
-| 4 — Go Structural Refactor | ● In Progress | 2/10 reqs |
+| 4 — Go Structural Refactor | ● In Progress | 8/10 reqs |
 | 5 — Svelte Component Split | ○ Planned | 0/9 reqs |
 | 6 — Error Handling & Logging | ○ Planned | 1/4 reqs |
 | 7 — CI/CD & Release | ○ Planned | 0/3 reqs |
 | 8 — Documentation & Cleanup | ○ Planned | 2/5 reqs |
 
-**Total:** 25/50 requirements complete
+**Total:** 30/50 requirements complete
 
 ## Active Phase
 
@@ -206,8 +206,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 
 ## Session
 
-**Last session:** 2026-11-18T12:35:13.366Z
-**Stopped at:** Completed 04-06-PLAN.md (helpers.go)
+**Last session:** 2026-11-18T12:40:16.000Z
+**Stopped at:** Completed 04-07-PLAN.md (upload_handler.go)
 **Resume file:** None
 
 ## Decisions
@@ -232,6 +232,11 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 - [Phase 4]: 04-05: math/strconv/net pruned from server.go in the same commit as the move; encoding/json and strings kept because the upload/download bodies still use them until 04-07/04-08
 - [Phase 4]: 04-06: the seven-declaration helper cluster moved to beamsync/helpers.go as a byte-identical copy of server.go:210-246 (md5-verified before deletion); crypto/rand, crypto/sha256 and encoding/hex pruned from server.go because their only four uses were inside the moved range, while fmt/os/filepath/strings/time stayed (46/8/13/8/33 remaining uses)
 - [Phase 4]: 04-06: both //nolint:unused // reserved markers and both var _ = blank assignments travelled verbatim, so the lint posture is unchanged — go build would pass without the markers but CI golangci-lint would not; //go:embed ui/* + uiFS were deliberately left at server.go:33-34 per D-06
+- [Phase 4]: 04-07: the /upload closure became func (s *HTTPServer) handleUpload in beamsync/upload_handler.go as a 177-line move with exactly six receiver substitutions, proven by applying those six swaps to the OLD captured body and diffing it against the new file (empty diff) — the compiler alone could not prove it because emit/state also resolve as package-scope names
+- [Phase 4]: 04-07: added emit EventCallback to HTTPServer and set it in BOTH constructors, even though only StartServerE's upload handler reads it today — StartSenderE registers /download and 04-08's handleDownload reads s.emit, so deferring the assignment one plan would leave a buildable tree that panics on a nil callback at runtime; uploadDir is set in StartServerE only because the sender registers no upload route
+- [Phase 4]: 04-07: split TestUploadWithoutFileReturnsBadRequest into empty multipart body (the original case, which reaches the later "No files uploaded" 400) and non-multipart content type (which reaches "Expected multipart/form-data" for the first time) rather than adding a new top-level test, keeping the Phase 3 mutation table's key set unchanged (D-13)
+- [Phase 4]: 04-07: io and mime/multipart pruned from server.go with the move; bufio and mime kept because the download closure still needs bufio.NewReader and mime.TypeByExtension — those are exactly the two 04-08 must prune to reach the final 11 imports
+- [Phase 4]: 04-07: the executor was interrupted after Task 7.3's gate and before the summary write; all three task commits (2212b23, ad8beaa, 4c0b484) had landed, so the orchestrator verified every acceptance criterion independently and wrote the summary rather than re-executing the plan
 
 ## Performance Metrics
 
@@ -245,3 +250,4 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 | Phase 04 P04 | 3min | 2 tasks | 4 files |
 | Phase 04 P05 | 3min | 3 tasks | 4 files |
 | Phase 04 P06 | 2min | 2 tasks | 2 files |
+| Phase 04 P07 | 3min | 3 tasks | 3 files |
