@@ -367,20 +367,42 @@ func TestUploadWithoutFileReturnsBadRequest(t *testing.T) {
 	server, baseURL, token, _, _ := startServerForTest(t)
 	defer func() { _ = server.Shutdown() }() //nolint:errcheck
 
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	if err := writer.Close(); err != nil {
-		t.Fatalf("close multipart writer: %v", err)
-	}
+	// A well-formed multipart body with zero parts passes the content-type
+	// check and is rejected later, by the "No files uploaded" branch.
+	t.Run("empty multipart body", func(t *testing.T) {
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		if err := writer.Close(); err != nil {
+			t.Fatalf("close multipart writer: %v", err)
+		}
 
-	resp, err := http.Post(baseURL+"/upload?token="+token, writer.FormDataContentType(), &body)
-	if err != nil {
-		t.Fatalf("POST /upload: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("upload status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
-	}
+		resp, err := http.Post(baseURL+"/upload?token="+token, writer.FormDataContentType(), &body)
+		if err != nil {
+			t.Fatalf("POST /upload: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("upload status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+		}
+	})
+
+	// A body that is not multipart at all is rejected by the content-type
+	// check, which the empty-multipart case above never reaches. Without this
+	// subtest the "Expected multipart/form-data" branch has no coverage.
+	t.Run("non-multipart content type", func(t *testing.T) {
+		resp, err := http.Post(baseURL+"/upload?token="+token, "application/json", strings.NewReader(`{"note":"not a multipart upload"}`))
+		if err != nil {
+			t.Fatalf("POST /upload: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("non-multipart upload status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+		}
+		respBody, _ := io.ReadAll(resp.Body)
+		if !strings.Contains(string(respBody), "Expected multipart/form-data") {
+			t.Fatalf("non-multipart upload body = %q, want it to contain %q", respBody, "Expected multipart/form-data")
+		}
+	})
 }
 
 func TestUploadWithFileSavesToDiskAndEmitsEvents(t *testing.T) {
