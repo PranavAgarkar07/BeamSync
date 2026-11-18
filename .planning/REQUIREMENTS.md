@@ -29,7 +29,7 @@
 
 ### Phase 4: Go Structural Refactor
 - [x] STR-01 — Extract rate limiter from `server.go` into `rate_limiter.go`
-- [ ] STR-02 — Extract progress tracking types into `progress.go`
+- [x] STR-02 — Extract progress tracking types into `progress.go`
 - [x] STR-03 — Merge duplicate `progressWriter` / `downloadProgressWriter` into single type
 - [ ] STR-04 — Extract I/O helpers into `io_helpers.go`
 - [ ] STR-05 — Extract HTTP middleware into `middleware.go`
