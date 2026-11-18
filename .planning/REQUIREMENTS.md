@@ -32,7 +32,7 @@
 - [x] STR-02 — Extract progress tracking types into `progress.go`
 - [x] STR-03 — Merge duplicate `progressWriter` / `downloadProgressWriter` into single type
 - [x] STR-04 — Extract I/O helpers into `io_helpers.go`
-- [ ] STR-05 — Extract HTTP middleware into `middleware.go`
+- [x] STR-05 — Extract HTTP middleware into `middleware.go`
 - [x] STR-06 — Extract event dispatcher into `events.go`
 - [ ] STR-07 — Extract upload handler into `upload_handler.go`
 - [ ] STR-08 — Extract download handler into `download_handler.go`

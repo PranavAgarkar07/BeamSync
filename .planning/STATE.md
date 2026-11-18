@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Go Structural Refactor — server.go Extraction
 status: executing
-stopped_at: Completed 04-04-PLAN.md (io_helpers.go)
-last_updated: "2026-11-18T12:25:58.065Z"
+stopped_at: Completed 04-05-PLAN.md (middleware.go)
+last_updated: "2026-11-18T12:31:09.847Z"
 last_activity: 2026-11-17
 last_activity_desc: Phase 4 plans created and plan-checked through 3 revision passes
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 16
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # Project State
@@ -27,10 +27,10 @@ Phase 3: complete — 6/6 (TST-03, TST-05, TST-06 landed with the initial test s
 ## Current Position
 
 Phase: 04 (Go Structural Refactor — server.go Extraction) — EXECUTING
-Plan: 5 of 9
+Plan: 6 of 9
 Status: Ready to execute
 Last activity: 2026-11-17 — Phase 04 execution started
-Progress: [███████░░░] 69% (phases 1–3 of 8 complete)
+Progress: [████████░░] 75% (phases 1–3 of 8 complete)
 
 ### Phase 4 plan shape
 
@@ -206,8 +206,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 
 ## Session
 
-**Last session:** 2026-11-18T12:25:58.012Z
-**Stopped at:** Completed 04-04-PLAN.md (io_helpers.go)
+**Last session:** 2026-11-18T12:31:09.794Z
+**Stopped at:** Completed 04-05-PLAN.md (middleware.go)
 **Resume file:** None
 
 ## Decisions
@@ -228,6 +228,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 - [Phase 4]: 04-03: progress_test.go needed no change; its eight TestProgressWriter* functions and three fixture helpers already sat at the target path, so Task 3.2 was committed --allow-empty as a zero-delta guard
 - [Phase 4]: 04-04: chunkBufferPool and copyChunked moved to beamsync/io_helpers.go as two byte-identical blocks (pool diffed and copy loop diffed separately against their own origin ranges); exactly one pool declaration remains and the io/sync imports stayed in server.go because the upload body still needs them until 04-07
 - [Phase 4]: 04-04: TestCopyChunkedCopiesDataAndReportsCount moved into the new beamsync/io_helpers_test.go without renaming (D-13) and gained empty / shorter-than-chunk / exactly-one-chunk subtests so both must_have truths are pinned by the suite
+- [Phase 4]: 04-05: the middleware chain moved as one contiguous block in traversal order; server.go's diff is deletion-only (0 additions), which is the proof that no route registration or chain order changed (T-04-05-01)
+- [Phase 4]: 04-05: math/strconv/net pruned from server.go in the same commit as the move; encoding/json and strings kept because the upload/download bodies still use them until 04-07/04-08
 
 ## Performance Metrics
 
@@ -239,3 +241,4 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 | Phase 04 P02 | 4min | 2 tasks | 2 files |
 | Phase 04 P03 | 2min | 2 tasks | 2 files |
 | Phase 04 P04 | 3min | 2 tasks | 4 files |
+| Phase 04 P05 | 3min | 3 tasks | 4 files |
