@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Go Structural Refactor — server.go Extraction
 status: executing
-stopped_at: Completed 04-03-PLAN.md (progressWriter → progress.go)
-last_updated: "2026-11-18T12:19:53.551Z"
+stopped_at: Completed 04-04-PLAN.md (io_helpers.go)
+last_updated: "2026-11-18T12:25:58.065Z"
 last_activity: 2026-11-17
 last_activity_desc: Phase 4 plans created and plan-checked through 3 revision passes
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 16
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -27,10 +27,10 @@ Phase 3: complete — 6/6 (TST-03, TST-05, TST-06 landed with the initial test s
 ## Current Position
 
 Phase: 04 (Go Structural Refactor — server.go Extraction) — EXECUTING
-Plan: 4 of 9
+Plan: 5 of 9
 Status: Ready to execute
 Last activity: 2026-11-17 — Phase 04 execution started
-Progress: [██████░░░░] 63% (phases 1–3 of 8 complete)
+Progress: [███████░░░] 69% (phases 1–3 of 8 complete)
 
 ### Phase 4 plan shape
 
@@ -206,8 +206,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 
 ## Session
 
-**Last session:** 2026-11-18T12:19:53.502Z
-**Stopped at:** Completed 04-03-PLAN.md (progressWriter → progress.go)
+**Last session:** 2026-11-18T12:25:58.012Z
+**Stopped at:** Completed 04-04-PLAN.md (io_helpers.go)
 **Resume file:** None
 
 ## Decisions
@@ -226,6 +226,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 - [Phase 4]: 04-03: progressWriter (struct + Write + doc comment) moved to beamsync/progress.go as a byte-identical copy of server.go:220-256, diffed before deletion — the Phase 3 invariants (eventName field, nil-guarded now clock, zero-byte n==0 guard) travelled verbatim
 - [Phase 4]: 04-03: no import edits were needed in either file — server.go still uses fmt/io/time (io via copyChunked, which 04-04 moves), so removing io here would have broken the build
 - [Phase 4]: 04-03: progress_test.go needed no change; its eight TestProgressWriter* functions and three fixture helpers already sat at the target path, so Task 3.2 was committed --allow-empty as a zero-delta guard
+- [Phase 4]: 04-04: chunkBufferPool and copyChunked moved to beamsync/io_helpers.go as two byte-identical blocks (pool diffed and copy loop diffed separately against their own origin ranges); exactly one pool declaration remains and the io/sync imports stayed in server.go because the upload body still needs them until 04-07
+- [Phase 4]: 04-04: TestCopyChunkedCopiesDataAndReportsCount moved into the new beamsync/io_helpers_test.go without renaming (D-13) and gained empty / shorter-than-chunk / exactly-one-chunk subtests so both must_have truths are pinned by the suite
 
 ## Performance Metrics
 
@@ -236,3 +238,4 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 | Phase 04 P01 | 8min | 3 tasks | 4 files |
 | Phase 04 P02 | 4min | 2 tasks | 2 files |
 | Phase 04 P03 | 2min | 2 tasks | 2 files |
+| Phase 04 P04 | 3min | 2 tasks | 4 files |
