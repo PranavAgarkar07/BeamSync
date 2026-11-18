@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: Go Structural Refactor — server.go Extraction
 status: executing
-stopped_at: Completed 04-08-PLAN.md (download_handler.go)
-last_updated: "2026-11-18T12:52:00.000Z"
+stopped_at: Completed 04-09-PLAN.md (server.go trim — phase 4 all plans executed)
+last_updated: "2026-11-18T13:02:00.000Z"
 last_activity: 2026-11-18
-last_activity_desc: Phase 4 plan 04-08 executed (download handler extraction)
+last_activity_desc: Phase 4 all 9 plans executed; final trim verified
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 16
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # Project State
@@ -27,9 +27,9 @@ Phase 3: complete — 6/6 (TST-03, TST-05, TST-06 landed with the initial test s
 ## Current Position
 
 Phase: 04 (Go Structural Refactor — server.go Extraction) — EXECUTING
-Plan: 9 of 9
-Status: Ready to execute
-Last activity: 2026-11-18 — Phase 04 plan 04-08 executed (download handler extraction)
+Plan: 9 of 9 (all plans executed)
+Status: Ready for phase verification
+Last activity: 2026-11-18 — Phase 04 all 9 plans executed; final trim verified
 Progress: [████████░░] 81% (phases 1–3 of 8 complete)
 
 ### Phase 4 plan shape
@@ -115,13 +115,13 @@ Windows-only branch of `desktop/app.go` unexercised.
 | 1 — Event System & Version | ● Complete | 6/6 reqs |
 | 2 — DevEx Tooling & CI | ● Complete | 7/7 reqs |
 | 3 — Tests Before Refactoring | ● Complete | 6/6 reqs |
-| 4 — Go Structural Refactor | ● In Progress | 9/10 reqs |
+| 4 — Go Structural Refactor | ● In Progress | 10/10 reqs |
 | 5 — Svelte Component Split | ○ Planned | 0/9 reqs |
 | 6 — Error Handling & Logging | ○ Planned | 1/4 reqs |
 | 7 — CI/CD & Release | ○ Planned | 0/3 reqs |
 | 8 — Documentation & Cleanup | ○ Planned | 2/5 reqs |
 
-**Total:** 31/50 requirements complete
+**Total:** 32/50 requirements complete
 
 ## Active Phase
 
@@ -206,8 +206,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 
 ## Session
 
-**Last session:** 2026-11-18T12:52:00.000Z
-**Stopped at:** Completed 04-08-PLAN.md (download_handler.go)
+**Last session:** 2026-11-18T13:02:00.000Z
+**Stopped at:** Completed 04-09-PLAN.md (server.go trim — phase 4 all plans executed)
 **Resume file:** None
 
 ## Decisions
@@ -241,6 +241,10 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 - [Phase 4]: 04-08: the two outer locals filePath := filePaths[0] and filename := filepath.Base(filePath) were deleted in the same commit as the route rewiring — once the closures became delegations they were "declared and not used", a hard build error, so deferring would have left an uncompilable tree; the multi-file loop keeps idx := i and filePath := path because each per-index registration still captures them
 - [Phase 4]: 04-08: bufio and mime pruned with the move, landing server.go on exactly the final 11 imports (context embed encoding/json fmt net/http os path/filepath runtime/debug strings sync time) — 04-09 now only has to assert that set, not derive it; server.go is 698 lines
 - [Phase 4]: 04-08: the completion comment kept the fuller 3-line single-file version rather than the multi-file "see the single-file send path for why" cross-reference, which would have dangled once both bodies became one — a cosmetic delta, recorded rather than silently smoothed
+- [Phase 4]: 04-09: designed zero-delta guard — a 30-pattern declaration sweep against server.go returned zero matches on the first try, because waves 1–8 each deleted its own declarations and waves 7–8 pruned the last orphaned imports; the task was committed --allow-empty (76828ca) rather than manufacturing a cosmetic diff, matching 04-02 Task 2.2 and 04-03 Task 3.2
+- [Phase 4]: 04-09: the real T-04-09-01 check was call-site reconciliation, because a deleted auth call compiles clean — server.go-only counts dropped for setCORSHeaders (5→4), extractToken (4→2) and clientIP (2→1), and each drop was traced to a caller that moved into middleware.go; package-wide non-test counts are byte-for-byte identical to the 1538-line baseline (6/5/3/8/12 for setCORSHeaders/extractToken/clientIP/tokenMiddlewareAny/rateLimitMiddleware), and the route registry is an identical multiset of 11 registrations over the same 8 path expressions
+- [Phase 4]: 04-09: getLocalIPForURL has no caller in server.go and never did after 04-01 — its only caller is startBootstrapRotator, which moved to events.go; the executor declined to add a reference just to satisfy the briefing's list, which is the correct call since adding a call would be a behavior change
+- [Phase 4]: Phase 4 complete — server.go 1538 → 698 lines (−840, −55%), 8 focused files created (events, rate_limiter, progress, io_helpers, middleware, helpers, upload_handler, download_handler), imports 22 → 11, and zero test function names changed so the Phase 3 33-mutant table remains valid
 
 ## Performance Metrics
 
@@ -256,3 +260,4 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 | Phase 04 P06 | 2min | 2 tasks | 2 files |
 | Phase 04 P07 | 3min | 3 tasks | 3 files |
 | Phase 04 P08 | 5min | 3 tasks | 3 files |
+| Phase 04 P09 | 10min | 2 tasks | 1 file |

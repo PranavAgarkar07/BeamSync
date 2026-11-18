@@ -36,7 +36,7 @@
 - [x] STR-06 — Extract event dispatcher into `events.go`
 - [x] STR-07 — Extract upload handler into `upload_handler.go`
 - [x] STR-08 — Extract download handler into `download_handler.go`
-- [ ] STR-09 — Trim `server.go` to orchestration only (StartServer, StartSender, route setup)
+- [x] STR-09 — Trim `server.go` to orchestration only (StartServer, StartSender, route setup)
 - [x] STR-10 — Deduplicate URL construction pattern — add `shareURL()` helper on App struct
 
 ### Phase 5: Svelte Component Split
