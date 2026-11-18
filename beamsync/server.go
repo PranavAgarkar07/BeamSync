@@ -105,6 +105,15 @@ type HTTPServer struct {
 	bootstrapMu      sync.Mutex
 	bootstrapToken   string
 	state            *serverState
+	// uploadDir is the directory StartServerE writes uploads into. Only
+	// StartServerE sets it: the sender server registers no upload route, so
+	// the field stays empty there.
+	uploadDir string
+	// emit is this server's safeEmit-wrapped callback, stored so the handler
+	// methods can emit without each one taking the callback as a parameter.
+	// Both constructors set it — the download routes registered by StartSenderE
+	// emit transfer stats.
+	emit EventCallback
 }
 
 func (s *HTTPServer) RespondToTransfer(id string, approved bool) {
@@ -248,6 +257,8 @@ func StartServerE(uploadDir string, startPort int, settings TransferSettings, ca
 		heartbeatLimiter: newClientRateLimiter(120, time.Minute),
 		transferLimiter:  newClientRateLimiter(30, time.Minute),
 		uploadLimiter:    newClientRateLimiter(12, time.Minute),
+		uploadDir:        uploadDir,
+		emit:             emit,
 	}
 
 	mux := http.NewServeMux()
@@ -676,6 +687,7 @@ func StartSenderE(filePaths []string, callback EventCallback) (*HTTPServer, stri
 		heartbeatLimiter: newClientRateLimiter(120, time.Minute),
 		transferLimiter:  newClientRateLimiter(30, time.Minute),
 		uploadLimiter:    newClientRateLimiter(12, time.Minute),
+		emit:             emit,
 	}
 	startWatchdog(ctx, state, emit)
 
