@@ -1,12 +1,10 @@
 package beamsync
 
 import (
-	"bufio"
 	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -641,142 +639,15 @@ func StartSenderE(filePaths []string, callback EventCallback) (*HTTPServer, stri
 	}))
 
 	if len(filePaths) == 1 {
-		filePath := filePaths[0]
-		filename := filepath.Base(filePath)
 		mux.HandleFunc("/download", rateLimitMiddleware(httpServer.uploadLimiter, nil, tokenMiddlewareAny(tokens, []tokenScope{tokenScopeTransfer, tokenScopeBootstrap}, true, func(w http.ResponseWriter, r *http.Request) {
-			activeDownloads := state.beginUpload()
-			emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
-			defer func() {
-				activeDownloads := state.endUpload()
-				emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
-			}()
-			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
-			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-			w.Header().Set("X-Filename", filename)
-			w.Header().Set("Access-Control-Expose-Headers", "X-Filename")
-
-			file, err := os.Open(filePath)
-			if err != nil {
-				http.Error(w, "File not found", http.StatusNotFound)
-				return
-			}
-			defer file.Close()
-
-			fileInfo, err := file.Stat()
-			if err != nil {
-				http.Error(w, "Failed to stat file", http.StatusInternalServerError)
-				return
-			}
-
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
-			mimeType := mime.TypeByExtension(filepath.Ext(filename))
-			if mimeType == "" {
-				mimeType = "application/octet-stream"
-			}
-			w.Header().Set("Content-Type", mimeType)
-
-			startedAt := time.Now()
-			bufReader := bufio.NewReaderSize(file, 8*1024*1024)
-			pw := &progressWriter{
-				w:           w,
-				total:       fileInfo.Size(),
-				filename:    filename,
-				eventName:   "download_progress",
-				emit:        emit,
-				minInterval: 500 * time.Millisecond,
-				now:         time.Now,
-			}
-			written, copyErr := copyChunked(pw, bufReader, 8*1024*1024)
-			status := TransferStatusCompleted
-			errMsg := ""
-			if copyErr != nil {
-				status = TransferStatusFailed
-				errMsg = copyErr.Error()
-			} else {
-				// Completion event. Without it a fast transfer (finished inside the
-				// 500ms throttle window) emits NO progress event at all, so the
-				// desktop send-direction panel would never move.
-				emit(pw.eventName, fmt.Sprintf("%s|%d|%d", filename, written, written))
-				snapshot := httpServer.stats.recordSent(filename, written, state.activeUploads())
-				emit("transfer_stats", transferStatsJSON(snapshot))
-			}
-			logTransfer(httpServer.history, emit, TransferRecord{
-				Filename:  filename,
-				Direction: TransferDirectionSend,
-				Status:    status,
-				SizeBytes: written,
-				StartedAt: startedAt,
-				Error:     errMsg,
-			})
+			httpServer.handleDownload(filePaths[0], w, r)
 		})))
 	} else {
 		for i, path := range filePaths {
 			idx := i
 			filePath := path
 			mux.HandleFunc(fmt.Sprintf("/download/%d", idx), rateLimitMiddleware(httpServer.uploadLimiter, nil, tokenMiddlewareAny(tokens, []tokenScope{tokenScopeTransfer, tokenScopeBootstrap}, true, func(w http.ResponseWriter, r *http.Request) {
-				realName := filepath.Base(filePath)
-				activeDownloads := state.beginUpload()
-				emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
-				defer func() {
-					activeDownloads := state.endUpload()
-					emit("transfer_stats", transferStatsJSON(httpServer.stats.snapshotDownloads(activeDownloads)))
-				}()
-				w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
-				w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, realName))
-				w.Header().Set("X-Filename", realName)
-				w.Header().Set("Access-Control-Expose-Headers", "X-Filename")
-
-				file, err := os.Open(filePath)
-				if err != nil {
-					http.Error(w, "File not found", http.StatusNotFound)
-					return
-				}
-				defer file.Close()
-
-				fileInfo, err := file.Stat()
-				if err != nil {
-					http.Error(w, "Failed to stat file", http.StatusInternalServerError)
-					return
-				}
-
-				w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
-				mimeType := mime.TypeByExtension(filepath.Ext(realName))
-				if mimeType == "" {
-					mimeType = "application/octet-stream"
-				}
-				w.Header().Set("Content-Type", mimeType)
-
-				startedAt := time.Now()
-				bufReader := bufio.NewReaderSize(file, 8*1024*1024)
-				pw := &progressWriter{
-					w:           w,
-					total:       fileInfo.Size(),
-					filename:    realName,
-					eventName:   "download_progress",
-					emit:        emit,
-					minInterval: 500 * time.Millisecond,
-					now:         time.Now,
-				}
-				written, copyErr := copyChunked(pw, bufReader, 8*1024*1024)
-				status := TransferStatusCompleted
-				errMsg := ""
-				if copyErr != nil {
-					status = TransferStatusFailed
-					errMsg = copyErr.Error()
-				} else {
-					// Completion event — see the single-file send path for why.
-					emit(pw.eventName, fmt.Sprintf("%s|%d|%d", realName, written, written))
-					snapshot := httpServer.stats.recordSent(realName, written, state.activeUploads())
-					emit("transfer_stats", transferStatsJSON(snapshot))
-				}
-				logTransfer(httpServer.history, emit, TransferRecord{
-					Filename:  realName,
-					Direction: TransferDirectionSend,
-					Status:    status,
-					SizeBytes: written,
-					StartedAt: startedAt,
-					Error:     errMsg,
-				})
+				httpServer.handleDownload(filePath, w, r)
 			})))
 		}
 	}
