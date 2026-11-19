@@ -3,14 +3,14 @@
 // Central Wails store for BeamSync.
 //
 // Every Wails call the frontend makes routes through this module instead of
-// importing `../wailsjs/go/main/App.js` or `../wailsjs/runtime/runtime.js`
-// directly, so a binding rename breaks at compile time rather than at runtime
+// importing the generated App bindings or the runtime helpers directly,
+// so a binding rename breaks at compile time rather than at runtime
 // (PITFALLS 3a / T-05-01-01). Components import `./lib/wails.js`, never
 // `window.go.main.App` or `window.runtime`.
 //
 // Generated bindings:
-//   - ../wailsjs/go/main/App.js   (13 bound methods used by App.svelte)
-//   - ../wailsjs/runtime/runtime.js (5 runtime event/helpers used by App.svelte)
+//   - wailsjs/go/main/App.js   (13 bound methods used by App.svelte)
+//   - wailsjs/runtime/runtime.js (5 runtime event/helpers used by App.svelte)
 //
 // `runtime` re-exports `window.go.main.App` for the single direct call at
 // App.svelte:273 (`appVersion = await window.go.main.App.GetVersion()`).

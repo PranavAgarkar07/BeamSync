@@ -14,14 +14,13 @@
     SaveTransferSettings,
     ApproveTransfer,
     RejectTransfer,
-  } from "../wailsjs/go/main/App.js";
-  import {
     EventsOn,
     EventsOffAll,
     BrowserOpenURL,
     OnFileDrop,
     OnFileDropOff,
-  } from "../wailsjs/runtime/runtime.js";
+    runtime,
+  } from "./lib/wails.js";
   import QRCode from "qrcode";
   import { onMount, onDestroy } from "svelte";
   import { fly } from "svelte/transition";
@@ -270,7 +269,7 @@
     }, 1000);
 
     try {
-      appVersion = await window.go.main.App.GetVersion();
+      appVersion = await runtime.GetVersion();
     } catch { /* fallback already set */ }
 
     // Load settings
