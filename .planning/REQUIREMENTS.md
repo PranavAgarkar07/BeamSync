@@ -40,7 +40,7 @@
 - [x] STR-10 — Deduplicate URL construction pattern — add `shareURL()` helper on App struct
 
 ### Phase 5: Svelte Component Split
-- [ ] SVE-01 — Create Wails store module (`wails.js`) to centralize `window.runtime.*` access
+- [x] SVE-01 — Create Wails store module (`wails.js`) to centralize `window.runtime.*` access
 - [ ] SVE-02 — Extract `ReceiveView.svelte` (QR display, receive controls)
 - [ ] SVE-03 — Extract `SendView.svelte` (file drop area, send controls)
 - [ ] SVE-04 — Extract `SettingsView.svelte` (app settings panel)

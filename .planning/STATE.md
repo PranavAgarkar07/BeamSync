@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 04
-status: completed
-stopped_at: Completed 04-09-PLAN.md (server.go trim — phase 4 all plans executed)
-last_updated: "2026-11-18T22:58:06.438Z"
+current_phase: 05
+status: executing
+stopped_at: Completed 05-01-PLAN.md (wails store + App.svelte import routing)
+last_updated: "2026-11-19T03:10:44.672Z"
 last_activity: 2026-11-19
-last_activity_desc: Phase 04 marked complete
+last_activity_desc: Phase 05 planning complete, execution starting
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 4
-  total_plans: 16
-  completed_plans: 16
-current_phase_name: Go Structural Refactor — server.go Extraction
+  total_plans: 28
+  completed_plans: 17
+current_phase_name: Svelte Component Split
 ---
 
 # Project State
@@ -27,11 +27,11 @@ Phase 4: complete — 10/10 (STR-01, 02, 04, 05, 06, 07, 08, 09 delivered here; 
 
 ## Current Position
 
-Phase: 04 — COMPLETE
-Plan: 9 of 9 (all plans executed, phase verified)
-Status: Phase 04 complete — next phase not yet planned
-Last activity: 2026-11-19 — Phase 04 marked complete
-Progress: [████░░░░] 50% (phases 1–4 of 8 complete)
+Phase: 05 — EXECUTING
+Plan: 2 of 12
+Status: Phase 05 executing — starting 05-01 wails store
+Last activity: 2026-11-19 — Phase 05 planning complete, execution starting
+Progress: [██████░░░░] 61% (phases 1–4 of 8 complete)
 
 ### Phase 4 plan shape
 
@@ -233,8 +233,8 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 
 ## Session
 
-**Last session:** 2026-11-18T13:02:00.000Z
-**Stopped at:** Completed 04-09-PLAN.md (server.go trim — phase 4 all plans executed)
+**Last session:** 2026-11-19T03:10:44.655Z
+**Stopped at:** Completed 05-01-PLAN.md (wails store + App.svelte import routing)
 **Resume file:** None
 
 ## Decisions
@@ -272,6 +272,9 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 - [Phase 4]: 04-09: the real T-04-09-01 check was call-site reconciliation, because a deleted auth call compiles clean — server.go-only counts dropped for setCORSHeaders (5→4), extractToken (4→2) and clientIP (2→1), and each drop was traced to a caller that moved into middleware.go; package-wide non-test counts are byte-for-byte identical to the 1538-line baseline (6/5/3/8/12 for setCORSHeaders/extractToken/clientIP/tokenMiddlewareAny/rateLimitMiddleware), and the route registry is an identical multiset of 11 registrations over the same 8 path expressions
 - [Phase 4]: 04-09: getLocalIPForURL has no caller in server.go and never did after 04-01 — its only caller is startBootstrapRotator, which moved to events.go; the executor declined to add a reference just to satisfy the briefing's list, which is the correct call since adding a call would be a behavior change
 - [Phase 4]: Phase 4 complete — server.go 1538 → 698 lines (−840, −55%), 8 focused files created (events, rate_limiter, progress, io_helpers, middleware, helpers, upload_handler, download_handler), imports 22 → 11, and zero test function names changed so the Phase 3 33-mutant table remains valid
+- [Phase ?]: wails.js re-exports exactly the 13 App.svelte bound methods from wailsjs/go/main/App.js (not all 18 exports) plus the 5 runtime helpers; nothing orphaned, nothing unused
+- [Phase ?]: window.go.main.App re-exported as `runtime` from wails.js so App.svelte:273 GetVersion() routes through the store instead of touching the global
+- [Phase ?]: wails.js lives in src/lib/ so its binding imports use ../../wailsjs/… (resolved relative to the store), not the ../wailsjs/… App.svelte used
 
 ## Performance Metrics
 
@@ -288,3 +291,4 @@ Also stale: `ROADMAP.md` sizes `server.go` at 1726 lines (written at `6d2860f`; 
 | Phase 04 P07 | 3min | 3 tasks | 3 files |
 | Phase 04 P08 | 5min | 3 tasks | 3 files |
 | Phase 04 P09 | 10min | 2 tasks | 1 file |
+| Phase 05 P01 | 2min 25s | 2 tasks | 2 files |
