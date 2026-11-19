@@ -326,26 +326,37 @@ that serves the assets). **Risk: Medium.**
    - Reactive stores for common event streams
    - Components import the store, not `window.runtime` directly
    **Must be done before any component extraction** (PITFALLS.md 3a).
+   **Plan:** `05-01-PLAN.md` (Wave 1) — SVE-01
 
 5.2 **Define event name constants** — `desktop/frontend/src/lib/events.js`: centralize all event name strings matching `beamsync/events.go` constants. Components import event names from here, not inline strings (PITFALLS.md 3b).
+   **Plan:** `05-02-PLAN.md` (Wave 2) — SVE-08
 
 5.3 **Extract `lib/utils.js`** — Move `formatDuration`, `formatSize`, `fileIcon`, `isValidIPv4`, `normalizeTransferStats`, `toast` function from `App.svelte` into `src/lib/utils.js`.
+   **Plan:** `05-03-PLAN.md` (Wave 2) — SVE-03
 
 5.4 **Extract `ReceiveView.svelte`** — `src/views/ReceiveView.svelte`: QR display, connection state, file list, receive controls. Props for state; events for `changeSavePath`, `disconnectReset`, `openFile`. **Risk: Low.**
+   **Plan:** `05-04-PLAN.md` (Wave 3) — SVE-02
 
 5.5 **Extract `SendView.svelte`** — `src/views/SendView.svelte`: Sender dialog, QR, file list, send controls. Props for sender state. **Risk: Low.**
+   **Plan:** `05-05-PLAN.md` (Wave 3) — SVE-03
 
 5.6 **Extract `SettingsView.svelte`** — `src/views/SettingsView.svelte`: Transfer mode, devices, blocked extensions, sounds, save path. **Risk: Medium** — many handler callbacks pass back up; clear event interface needed.
+   **Plan:** `05-07-PLAN.md` (Wave 4) — SVE-04
 
 5.7 **Extract `AboutView.svelte`** — `src/views/AboutView.svelte`: Version display, credits, links. **Risk: Low** — static.
+   **Plan:** `05-06-PLAN.md` (Wave 3) — SVE-05
 
 5.8 **Extract `ToastManager.svelte`** — `src/components/ToastManager.svelte`: Toast notification rendering. Subscribes to toast state from App shell. **Risk: Low.**
+   **Plan:** `05-08-PLAN.md` (Wave 4) — SVE-06
 
 5.9 **Extract `ProgressOverlay.svelte`** — `src/components/ProgressOverlay.svelte`: Floating progress bars for active transfers. Includes progress timeout reset logic (30s → 120s, PITFALLS.md 3d). Keep timeout + event subscription + UI as one cohesive unit. **Risk: Low.**
+   **Plan:** `05-09-PLAN.md` (Wave 4) — SVE-07
 
 5.10 **Extract `TransferRequestModal.svelte`** — `src/components/TransferRequestModal.svelte`: Incoming transfer approval modal. **Risk: Low.**
+   **Plan:** `05-10-PLAN.md` (Wave 4) — SVE-04 (modal is part of transfer/settings flow)
 
 5.11 **Trim `App.svelte`** — After all extractions, `App.svelte` is a thin shell: global drag-and-drop, event binding orchestration, state ownership, mode routing, `svelte:window` handlers. Keep drag-and-drop in App shell (both HTML5 and Wails paths) per PITFALLS.md 3c.
+   **Plan:** `05-11-PLAN.md` (Wave 5) — SVE-01..SVE-07 (shell trim)
 
 5.12 **Add Vitest component tests** — Test each extracted component:
 
@@ -353,6 +364,7 @@ that serves the assets). **Risk: Medium.**
    - `SettingsView.svelte`: toggles settings, emits change events
    - `AboutView.svelte`: displays version string
    - `ToastManager.svelte`: shows/hides toasts
+   **Plan:** `05-12-PLAN.md` (Wave 6) — SVE-09
 
 ### Dependencies
 

@@ -143,7 +143,7 @@ Windows-only branch of `desktop/app.go` unexercised.
 | 2 — DevEx Tooling & CI | ● Complete | 7/7 reqs |
 | 3 — Tests Before Refactoring | ● Complete | 6/6 reqs |
 | 4 — Go Structural Refactor | ● Complete | 10/10 reqs |
-| 5 — Svelte Component Split | ○ Planned | 0/9 reqs |
+| 5 — Svelte Component Split | ○ Planned | 0/9 reqs (12 plans created: 05-01 through 05-12) |
 | 6 — Error Handling & Logging | ○ Planned | 1/4 reqs |
 | 7 — CI/CD & Release | ○ Planned | 0/3 reqs |
 | 8 — Documentation & Cleanup | ○ Planned | 2/5 reqs |

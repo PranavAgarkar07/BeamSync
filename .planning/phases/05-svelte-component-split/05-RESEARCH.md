@@ -356,14 +356,16 @@ test("ReceiveView dispatches openFile on file click", async () => {
 | A5 | Svelte 3 reactivity (assignment-triggered `$:`) applies when state moves out of App shell. | Common Pitfalls > Pitfall 3 | State mutations outside shell may not re-render views |
 | A6 | `window.go.main.App.GetVersion()` (App.svelte:273) is the only direct `window.go.main.App` call to centralize. | Architecture Patterns > Pattern 1 | If more direct calls exist, `wails.js` must cover them |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Toast state ownership:** `toast()` in App.svelte mutates the local `toasts` array. If `toast()` moves to `src/lib/utils.js`, toast state must live in a shared writable store that both App shell and `ToastManager` subscribe to. Decide: shared store in `wails.js`/`utils.js` vs. keep toast in App shell and pass `toasts` as a prop to `ToastManager` with a `dismiss` event. [Source: UI-SPEC Open Question #1]
-2. **Progress timeout value:** measured `30000ms` (30s) in App.svelte line 437. ROADMAP/PITFALLS reference "30s → 120s". Phase 5 is no-behavior-change — confirm 30s stays, or approve 120s as an intentional non-visual behavior change. [Source: UI-SPEC Open Question #2; App.svelte line 437]
-3. **`rememberDevice` binding:** `TransferRequestModal` uses `bind:checked={rememberDevice}` in App.svelte line 927. Component contract exposes `rememberDevice` prop + `rememberDeviceChange` event — confirm prop-in/event-out vs `bind`. [Source: UI-SPEC Open Question #3; App.svelte line 927]
-4. **QR generation location:** `generateQR()` (qrcode) is used by both Receive and Send. Confirm it stays in the App shell (passed as prop/function) vs. moved to a shared util. [Source: UI-SPEC Open Question #4]
-5. **Theme access from SettingsView:** `applyTheme`/`toggleTheme` touch `document.documentElement`. Confirm SettingsView receives `changeTheme`/`toggleTheme` events (App shell owns DOM) rather than importing theme logic directly. [Source: UI-SPEC Open Question #5]
-6. **View import path:** extracted views import design-system components via the barrel `./design-system/index.js` (established pattern) vs. direct file paths — confirm barrel usage. [Source: UI-SPEC Open Question #6]
+All six questions were resolved during planning (see `05-01-PLAN.md` through `05-12-PLAN.md`). No open questions remain.
+
+1. **Toast state ownership — RESOLVED:** toast stays in the App shell and `toasts` is passed as a prop to `ToastManager` with a `dismiss` event. No shared store in `wails.js`/`utils.js`. [Resolved by Plans 03, 08; UI-SPEC Component Contract]
+2. **Progress timeout value — RESOLVED:** measured `30000ms` (30s) at App.svelte line 437 stays as-is; no 120s change. ProgressOverlay keeps timeout + event subscription + UI as one cohesive unit. [Resolved by Plan 09; PITFALLS 3d]
+3. **`rememberDevice` binding — RESOLVED:** prop-in/event-out (`rememberDevice` prop + `rememberDeviceChange` event), not `bind:checked`. [Resolved by Plan 10; UI-SPEC Component Contract]
+4. **QR generation location — RESOLVED:** `generateQR()` (qrcode) stays in the App shell; `qrImage`/`qrGenerationTimer` passed as props/functions to ReceiveView and SendView. Not moved to a shared util. [Resolved by Plans 04, 05; UI-SPEC Component Contract]
+5. **Theme access from SettingsView — RESOLVED:** `applyTheme`/`toggleTheme` touch `document.documentElement`; SettingsView receives `changeTheme`/`toggleTheme` events from the App shell which owns DOM access. SettingsView does not import theme logic directly. [Resolved by Plan 07; UI-SPEC Component Contract]
+6. **View import path — RESOLVED:** extracted views import design-system components via the barrel `./design-system/index.js` (established pattern in App.svelte line 39), not direct file paths. [Resolved by all view plans 04-07; UI-SPEC Style Ownership Rules]
 
 ## Environment Availability
 
