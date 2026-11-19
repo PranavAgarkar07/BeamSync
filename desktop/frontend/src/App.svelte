@@ -21,6 +21,22 @@
     OnFileDropOff,
     runtime,
   } from "./lib/wails.js";
+  import {
+    EVT_DEVICE_CONNECTED,
+    EVT_DEVICE_DISCONNECTED,
+    EVT_TRANSFER_REQUEST,
+    EVT_FILE_RECEIVED,
+    EVT_TRANSFER_LOGGED,
+    EVT_TRANSFER_STATS,
+    EVT_UPLOAD_PROGRESS,
+    EVT_DOWNLOAD_PROGRESS,
+    EVT_URL_CHANGED,
+    EVT_TOKEN_ROTATED,
+    EVT_SENDER_STARTED,
+    EVT_SENDER_FILES,
+    EVT_UPDATE_AVAILABLE,
+    EVT_SERVER_ERROR,
+  } from "./lib/events.js";
   import QRCode from "qrcode";
   import { onMount, onDestroy } from "svelte";
   import { fly } from "svelte/transition";
@@ -277,24 +293,24 @@
       settings = await GetTransferSettings();
     } catch (_e) { /* settings not yet persisted */ }
 
-    EventsOn("device_connected", () => {
+    EventsOn(EVT_DEVICE_CONNECTED, () => {
       connectionState = "CONNECTED";
       playSound("connect");
       addSessionEntry("Device connected", "Ready for local transfer", "success");
       toast("⚡ Device linked to network", "success");
     });
-    EventsOn("device_disconnected", () => {
+    EventsOn(EVT_DEVICE_DISCONNECTED, () => {
       connectionState = "DISCONNECTED";
       playSound("click");
       addSessionEntry("Device disconnected", "Session link was lost", "warn");
       toast("💔 Signal lost — device disconnected", "warn");
     });
-    EventsOn("transfer_request", (dataStr) => {
+    EventsOn(EVT_TRANSFER_REQUEST, (dataStr) => {
       playSound("connect");
       transferRequest = JSON.parse(dataStr);
       addSessionEntry("Transfer request", transferRequest.filename, "info");
     });
-    EventsOn("file_received", (filename) => {
+    EventsOn(EVT_FILE_RECEIVED, (filename) => {
       refreshFileList();
       clearTimeout(_progressTimeout);
       clearTimeout(qrGenerationTimer);
@@ -330,7 +346,7 @@
 
       toast(`✅ Received: ${filename}`, "success");
     });
-    EventsOn("transfer_logged", (dataStr) => {
+    EventsOn(EVT_TRANSFER_LOGGED, (dataStr) => {
       try {
         const record = JSON.parse(dataStr);
         transferHistory = [record, ...transferHistory.filter((item) => item.id !== record.id)].slice(0, 20);
@@ -345,7 +361,7 @@
         addSessionEntry("Transfer logged", dataStr, "info");
       }
     });
-    EventsOn("transfer_stats", (dataStr) => {
+    EventsOn(EVT_TRANSFER_STATS, (dataStr) => {
       try {
         const nextStats = JSON.parse(dataStr);
         scheduleTransferStatsUpdate(normalizeTransferStats(nextStats));
@@ -454,26 +470,26 @@
       }, 30000);
     };
 
-    EventsOn("upload_progress", (data) => handleProgressUpdate(data, "receive"));
-    EventsOn("download_progress", (data) => handleProgressUpdate(data, "send"));
-    EventsOn("url_changed", (newURL) => {
+    EventsOn(EVT_UPLOAD_PROGRESS, (data) => handleProgressUpdate(data, "receive"));
+    EventsOn(EVT_DOWNLOAD_PROGRESS, (data) => handleProgressUpdate(data, "send"));
+    EventsOn(EVT_URL_CHANGED, (newURL) => {
       serverUrl = newURL;
       generateQR(newURL);
       if (showSenderDialog) senderUrl = newURL;
       toast("🔄 Network changed — QR refreshed", "info");
     });
-    EventsOn("token_rotated", (newURL) => {
+    EventsOn(EVT_TOKEN_ROTATED, (newURL) => {
       serverUrl = newURL;
       generateQR(newURL);
       if (showSenderDialog) senderUrl = newURL;
       toast("🔐 Security token rotated — QR updated", "info");
     });
-    EventsOn("sender_started", (url) => {
+    EventsOn(EVT_SENDER_STARTED, (url) => {
       senderUrl = url;
       showSenderDialog = true;
       generateQR(url);
     });
-    EventsOn("sender_files", (raw) => {
+    EventsOn(EVT_SENDER_FILES, (raw) => {
       try {
         senderFiles = JSON.parse(raw);
       } catch {
@@ -481,7 +497,7 @@
       }
     });
 
-    EventsOn("update_available", (raw) => {
+    EventsOn(EVT_UPDATE_AVAILABLE, (raw) => {
       try {
         updateInfo = JSON.parse(raw);
       } catch {
@@ -493,7 +509,7 @@
     // the receiver/sender cannot start — bind denied, firewall setup
     // failed/cancelled, no free port. Toast it; per-flow state is handled
     // where the call was made.
-    EventsOn("server_error", (msg) => {
+    EventsOn(EVT_SERVER_ERROR, (msg) => {
       toast(`❌ ${msg}`, "error");
       addSessionEntry("Server failed to start", msg, "error");
     });
