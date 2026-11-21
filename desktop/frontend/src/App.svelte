@@ -37,6 +37,13 @@
     EVT_UPDATE_AVAILABLE,
     EVT_SERVER_ERROR,
   } from "./lib/events.js";
+  import {
+    formatDuration,
+    formatSize,
+    fileIcon,
+    isValidIPv4,
+    normalizeTransferStats,
+  } from "./lib/utils.js";
   import QRCode from "qrcode";
   import { onMount, onDestroy } from "svelte";
   import { fly } from "svelte/transition";
@@ -191,20 +198,6 @@
     ].slice(0, 12);
   }
 
-  function normalizeTransferStats(nextStats) {
-    return {
-      startedAt: nextStats.startedAt || transferStats.startedAt,
-      filesReceived: Number(nextStats.filesReceived) || 0,
-      bytesReceived: Number(nextStats.bytesReceived) || 0,
-      filesSent: Number(nextStats.filesSent) || 0,
-      bytesSent: Number(nextStats.bytesSent) || 0,
-      activeUploads: Number(nextStats.activeUploads) || 0,
-      activeDownloads: Number(nextStats.activeDownloads) || 0,
-      lastFilename: nextStats.lastFilename || "",
-      lastDirection: nextStats.lastDirection || "",
-    };
-  }
-
   function transferStatsChanged(nextStats) {
     return Object.keys(nextStats).some((key) => nextStats[key] !== transferStats[key]);
   }
@@ -237,13 +230,6 @@
       pendingTransferStats = null;
       applyTransferStats(latestStats);
     }, TRANSFER_STATS_THROTTLE_MS - elapsed);
-  }
-
-  function formatDuration(ms = 0) {
-    if (!ms || ms < 1000) return "<1s";
-    const seconds = Math.round(ms / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
   }
 
   function formatTransferTime(value) {
@@ -364,7 +350,7 @@
     EventsOn(EVT_TRANSFER_STATS, (dataStr) => {
       try {
         const nextStats = JSON.parse(dataStr);
-        scheduleTransferStatsUpdate(normalizeTransferStats(nextStats));
+        scheduleTransferStatsUpdate(normalizeTransferStats(nextStats, transferStats.startedAt));
       } catch {
         addSessionEntry("Stats update failed", "Unable to read transfer stats", "warn");
       }
@@ -640,44 +626,6 @@
     OpenFile(name);
   }
 
-  function formatSize(bytes) {
-    if (!bytes) return "—";
-    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + " MB";
-    if (bytes >= 1024) return (bytes / 1024).toFixed(0) + " KB";
-    return bytes + " B";
-  }
-
-  function fileIcon(name = "") {
-    const ext = name.split(".").pop().toLowerCase();
-    const m = {
-      pdf: "📄",
-      jpg: "🖼️",
-      jpeg: "🖼️",
-      png: "🖼️",
-      gif: "🖼️",
-      webp: "🖼️",
-      svg: "🖼️",
-      mp4: "🎬",
-      mov: "🎬",
-      mkv: "🎬",
-      avi: "🎬",
-      mp3: "🎵",
-      wav: "🎵",
-      flac: "🎵",
-      zip: "📦",
-      tar: "📦",
-      gz: "📦",
-      rar: "📦",
-      txt: "📝",
-      md: "📝",
-      doc: "📝",
-      docx: "📝",
-      apk: "📱",
-      exe: "⚙️",
-    };
-    return m[ext] || "📁";
-  }
-
   async function resetAll() {
     playSound("click");
     await ResetApp();
@@ -754,15 +702,6 @@
   function removeBlockedExt(ext) {
     settings.blockedExtensions = settings.blockedExtensions.filter(e => e !== ext);
     settingsDirty = true;
-  }
-
-  function isValidIPv4(ip) {
-    const parts = ip.split(".");
-    return parts.length === 4 && parts.every((part) => {
-      if (!/^\d+$/.test(part)) return false;
-      const value = Number(part);
-      return value >= 0 && value <= 255 && String(value) === String(Number(part));
-    });
   }
 
   function upsertDevice(listName, ip, friendlyName) {
